@@ -46,6 +46,17 @@
             -webkit-font-smoothing: antialiased;
         }
 
+        .icon {
+            width: 16px;
+            height: 16px;
+            flex-shrink: 0;
+        }
+
+        .icon-lg {
+            width: 21px;
+            height: 21px;
+        }
+
         /* --- HEADER & CONTROLES --- */
         header {
             padding: 16px 15px 14px;
@@ -86,6 +97,9 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .btn-danger-sm:hover {
@@ -122,6 +136,11 @@
             color: var(--text-faint);
         }
 
+        input:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
         .btn-add-event {
             background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
             color: #14120a;
@@ -134,6 +153,10 @@
             width: auto;
             white-space: nowrap;
             transition: filter 0.15s ease, transform 0.1s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
         }
 
         .btn-add-event:hover { filter: brightness(1.08); }
@@ -176,6 +199,18 @@
             background: linear-gradient(180deg, var(--accent-gold-bright), var(--accent-gold));
             border-radius: 2px;
             display: inline-block;
+        }
+
+        h3.section-subhead {
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-weight: 700;
+            color: var(--accent-gold-bright);
+            display: flex;
+            align-items: center;
+            gap: 7px;
+            margin: 18px 0 10px;
         }
 
         /* --- FORMULARIOS --- */
@@ -230,6 +265,20 @@
             font-weight: 600;
         }
 
+        .checkbox-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+        }
+
+        .checkbox-row input {
+            width: auto;
+            accent-color: var(--accent-gold);
+        }
+
         .btn-save-all {
             background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
             color: #14120a;
@@ -245,6 +294,10 @@
             font-size: 13px;
             box-shadow: 0 8px 20px -6px rgba(217, 169, 53, 0.4);
             transition: filter 0.15s ease, transform 0.1s ease;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
         }
 
         .btn-save-all:hover { filter: brightness(1.06); }
@@ -256,7 +309,7 @@
             bottom: 0;
             left: 0;
             right: 0;
-            height: 74px;
+            height: 72px;
             background-color: rgba(10, 10, 11, 0.9);
             backdrop-filter: blur(14px);
             -webkit-backdrop-filter: blur(14px);
@@ -276,17 +329,17 @@
             background: none;
             border: none;
             cursor: pointer;
-            font-size: 9px;
+            font-size: 8.5px;
             font-weight: 600;
             text-transform: uppercase;
-            letter-spacing: 0.4px;
+            letter-spacing: 0.3px;
             gap: 5px;
             flex: 1;
             min-width: 0;
+            white-space: nowrap;
             transition: color 0.15s ease;
         }
 
-        .nav-item span { font-size: 18px; }
         .nav-item.active { color: var(--accent-gold-bright); }
 
         /* --- LOGIN OVERLAY --- */
@@ -340,18 +393,20 @@
             margin-bottom: 12px;
         }
 
-        .user-item {
-            border-bottom: 1px solid var(--border);
-            padding: 12px 0;
-        }
-
-        .user-item:last-child { border-bottom: none; }
-
         .user-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
             margin-bottom: 8px;
+        }
+
+        .user-role-tag {
+            font-size: 9px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 700;
+            margin-left: 6px;
         }
 
         .permission-grid {
@@ -387,11 +442,240 @@
             font-weight: 600;
             cursor: pointer;
             transition: all 0.15s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
         }
 
         .btn-logout:hover {
             border-color: var(--text-muted);
             color: var(--text-main);
+        }
+
+        /* --- MODAL DE EVENTO (crear / gestionar accesos) --- */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(5, 5, 6, 0.75);
+            backdrop-filter: blur(6px);
+            -webkit-backdrop-filter: blur(6px);
+            z-index: 3000;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .modal-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-soft);
+            border-radius: 16px;
+            padding: 24px;
+            width: 100%;
+            max-width: 400px;
+            max-height: 85vh;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .modal-card h3 {
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 18px;
+            color: var(--accent-gold-bright);
+        }
+
+        .modal-actions {
+            display: flex;
+            gap: 10px;
+            margin-top: 18px;
+        }
+
+        .modal-actions .btn-logout,
+        .modal-actions .btn-add-event {
+            flex: 1;
+            padding: 12px;
+            text-align: center;
+        }
+
+        /* --- CAMBIO DE CONTRASEÑA (panel admin) --- */
+        .password-row {
+            display: flex;
+            gap: 6px;
+            margin-top: 10px;
+        }
+
+        .password-row input {
+            flex: 1;
+        }
+
+        .password-row .btn-add-event {
+            white-space: nowrap;
+        }
+
+        /* --- VISTA DE EVENTOS (lista / calendario / buscador) --- */
+        .view-toggle-row {
+            display: flex;
+            gap: 8px;
+            margin: 4px 0 16px;
+        }
+
+        .view-toggle-btn {
+            flex: 1;
+            padding: 10px;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            background: var(--bg-elevated);
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+        }
+
+        .view-toggle-btn.active {
+            border-color: var(--accent-gold);
+            color: var(--accent-gold-bright);
+            background: var(--accent-gold-dim);
+        }
+
+        .event-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-soft);
+            border-radius: 12px;
+            padding: 14px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            cursor: pointer;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+
+        .event-card:hover {
+            border-color: rgba(217, 169, 53, 0.4);
+            background: var(--bg-card-hover);
+        }
+
+        .event-card-name {
+            font-weight: 700;
+            font-size: 14px;
+        }
+
+        .event-card-date {
+            font-size: 11px;
+            color: var(--text-muted);
+            margin-top: 4px;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .search-result-item {
+            background: var(--bg-elevated);
+            border-left: 2px solid var(--accent-gold);
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin-bottom: 8px;
+            cursor: pointer;
+        }
+
+        .sr-event { font-size: 12px; font-weight: 700; color: var(--accent-gold-bright); }
+        .sr-field { font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin: 2px 0; letter-spacing: 0.4px; }
+        .sr-snippet { font-size: 12px; color: var(--text-main); word-break: break-word; }
+
+        .empty-hint {
+            font-size: 12px;
+            color: var(--text-muted);
+            text-align: center;
+            padding: 20px 0;
+        }
+
+        /* Calendario */
+        .cal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .cal-nav-btn {
+            background: var(--bg-elevated);
+            border: 1px solid var(--border);
+            color: var(--text-main);
+            border-radius: 8px;
+            width: 32px;
+            height: 32px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cal-month-label {
+            font-weight: 700;
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .cal-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 4px;
+        }
+
+        .cal-daylabel {
+            font-size: 10px;
+            color: var(--text-faint);
+            text-align: center;
+            text-transform: uppercase;
+            padding: 4px 0;
+        }
+
+        .cal-day {
+            aspect-ratio: 1;
+            border-radius: 8px;
+            background: var(--bg-elevated);
+            border: 1px solid var(--border-soft);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .cal-day.has-events {
+            border-color: var(--accent-gold);
+            color: var(--text-main);
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .cal-day.empty {
+            background: transparent;
+            border: none;
+        }
+
+        .cal-day-dot {
+            width: 5px;
+            height: 5px;
+            border-radius: 50%;
+            background: var(--accent-gold-bright);
+            margin-top: 2px;
+        }
+
+        .cal-day-events {
+            margin-top: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
         }
     </style>
 </head>
@@ -414,58 +698,101 @@
         <div class="logo-row">
             <img src="logo.png" alt="FestivalYa" class="logo-img">
             <div style="display: flex; gap: 8px; align-items: center;">
-                <button class="btn-logout" onclick="logout()">Cerrar Sesión</button>
-                <button id="admin_delete_btn" class="btn-danger-sm" onclick="deleteCurrentEvent()">🗑️ Eliminar</button>
+                <button class="btn-logout" onclick="logout()">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+                    Salir
+                </button>
+                <button id="admin_access_btn" class="btn-danger-sm" style="background: var(--accent-gold-dim); color: var(--accent-gold-bright); border-color: rgba(217,169,53,0.35);" onclick="openEventAccessModal()">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-5.5 5.5"></path><path d="M15 8l3 3"></path><path d="M9.5 13.5a5 5 0 1 1-7 7 5 5 0 0 1 7-7z"></path><path d="M13 10l3 3"></path></svg>
+                    Accesos
+                </button>
+                <button id="admin_delete_btn" class="btn-danger-sm" onclick="deleteCurrentEvent()">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                    Eliminar
+                </button>
             </div>
         </div>
         <div class="event-selector-zone">
             <select id="eventSelect" onchange="loadEventData()">
                 </select>
-            <button id="admin_add_event_btn" class="btn-add-event" onclick="createNewEvent()">+ Nuevo</button>
+            <button id="admin_add_event_btn" class="btn-add-event" onclick="openCreateEventModal()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Nuevo
+            </button>
         </div>
     </header>
 
+    <div id="tab_eventos" class="app-page active">
+        <h2>Eventos</h2>
+        <div class="form-card">
+            <label>Buscar en todos los eventos</label>
+            <input type="text" id="global_search_input" placeholder="Escribí una palabra clave..." oninput="performGlobalSearch(this.value)">
+        </div>
+
+        <div id="search_results_wrap" style="display:none; margin-top: 14px;">
+            <div id="search_results"></div>
+        </div>
+
+        <div id="events_browser" style="margin-top: 16px;">
+            <div class="view-toggle-row">
+                <button type="button" id="view_toggle_list" class="view-toggle-btn active" onclick="setEventsView('list')">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
+                    Lista
+                </button>
+                <button type="button" id="view_toggle_calendar" class="view-toggle-btn" onclick="setEventsView('calendar')">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                    Calendario
+                </button>
+            </div>
+            <div id="events_list_view" class="card-group"></div>
+            <div id="events_calendar_view" style="display:none;"></div>
+        </div>
+    </div>
+
     <form id="festivalForm" onsubmit="saveAllFestivalData(event)">
 
-        <div id="tab_produccion" class="app-page active">
+        <div id="tab_produccion" class="app-page">
             <h2>Módulo de Producción</h2>
             <div class="card-group">
-                
+
                 <div class="form-card">
-                    <label>🎬 Escenario</label>
+                    <label>Escenario</label>
                     <div class="inline-row" style="margin-bottom: 8px;">
                         <select id="prod_escenario" onchange="handleEscenarioChange()">
                             <option value="">-- Elegir escenario --</option>
                         </select>
-                        <button type="button" class="btn-add-event" onclick="addCustomEscenario()">+ Añadir</button>
+                        <button type="button" class="btn-add-event" onclick="addCustomEscenario()">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            Añadir
+                        </button>
                     </div>
                     <div id="escenario_medidas_display" class="measures-badge"></div>
                 </div>
 
                 <div class="form-card">
-                    <label>🎸 Rider</label>
+                    <label>Rider</label>
                     <select id="prod_rider" onchange="toggleRiderEmpresa()">
                         <option value="no">No</option>
                         <option value="si">Sí</option>
                     </select>
                     <div id="box_rider_empresa" class="conditional-box">
-                        <label>🏢 Empresa de Sonido/Iluminación</label>
+                        <label>Empresa de Sonido/Iluminación</label>
                         <input type="text" id="prod_rider_empresa" placeholder="Nombre de la empresa proveedora">
                     </div>
                 </div>
 
                 <div class="form-card">
-                    <label>🛡️ Vallas Antipánico</label>
+                    <label>Vallas Antipánico</label>
                     <input type="text" id="prod_vallas_antipanico" placeholder="Ej: 15 metros lineales frente a escenario">
                 </div>
 
                 <div class="form-card">
-                    <label>🚧 Vallas Bajas (Ayuntamiento)</label>
+                    <label>Vallas Bajas (Ayuntamiento)</label>
                     <input type="text" id="prod_vallas_bajas" placeholder="Ej: Ayuntamiento de Porriño - 60 unidades">
                 </div>
 
                 <div class="form-card">
-                    <label>✨ Efectos FX</label>
+                    <label>Efectos FX</label>
                     <select id="prod_efectos">
                         <option value="no">No</option>
                         <option value="si">Sí</option>
@@ -474,7 +801,7 @@
                 </div>
 
                 <div class="form-card">
-                    <label>🎆 Pirotecnia</label>
+                    <label>Pirotecnia</label>
                     <select id="prod_pirotecnia">
                         <option value="no">No</option>
                         <option value="si">Sí</option>
@@ -482,96 +809,137 @@
                 </div>
 
                 <div class="form-card">
-                    <label>⚡ Generadores / Energía</label>
+                    <label>Generadores / Energía</label>
                     <input type="text" id="prod_generadores" placeholder="Ej: 2x Grupos Insonorizados 150KVA">
                 </div>
 
                 <div class="form-card">
-                    <label>🚾 Baños</label>
+                    <label>Baños</label>
                     <input type="text" id="prod_banos" placeholder="Ej: 10 Cabinas estándar + 2 PMR">
                 </div>
 
                 <div class="form-card">
-                    <label>🚑 Ambulancia / Asistencia</label>
+                    <label>Ambulancia / Asistencia</label>
                     <input type="text" id="prod_ambulancia" placeholder="Ej: 1 Soporte Vital Básico + 2 Técnicos">
                 </div>
 
                 <div class="form-card">
-                    <label>🗑️ Contenedores</label>
+                    <label>Contenedores</label>
                     <input type="text" id="prod_contenedores" placeholder="Ej: 8 unidades de 800L distribuidos">
                 </div>
 
                 <div class="form-card">
-                    <label>🧹 Limpieza</label>
+                    <label>Limpieza</label>
                     <input type="text" id="prod_limpieza" placeholder="Ej: Equipo de 4 personas post-evento">
                 </div>
 
             </div>
-            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+            <button type="submit" class="btn-save-all">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Guardar Cambios
+            </button>
         </div>
 
         <div id="tab_media" class="app-page">
             <h2>Equipo de Media / Prensa</h2>
             <div class="card-group">
                 <div class="form-card">
-                    <label>📹 Vídeo</label>
+                    <label>Vídeo</label>
                     <input type="text" id="media_video" placeholder="Operadores, horarios de entrega de reels...">
                 </div>
                 <div class="form-card">
-                    <label>📸 Foto</label>
+                    <label>Foto</label>
                     <input type="text" id="media_foto" placeholder="Fotógrafos asignados, enlaces rápidos...">
                 </div>
                 <div class="form-card">
-                    <label>🛸 Drone</label>
+                    <label>Drone</label>
                     <input type="text" id="media_drone" placeholder="Piloto autorizado, plan de vuelo e id drone...">
                 </div>
                 <div class="form-card">
-                    <label>🎙️ Speaker</label>
+                    <label>Speaker</label>
                     <input type="text" id="media_speaker" placeholder="Presentadores o locutores del festival...">
                 </div>
             </div>
-            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+            <button type="submit" class="btn-save-all">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Guardar Cambios
+            </button>
         </div>
 
         <div id="tab_hosteleria" class="app-page">
             <h2>Hostelería y Restauración</h2>
             <div class="card-group">
                 <div class="form-card">
-                    <label>🍺 Barras</label>
+                    <label>Barras</label>
                     <textarea id="host_barras" rows="3" placeholder="Medidas de barras, número de tiradores, encargados..."></textarea>
                 </div>
                 <div class="form-card">
-                    <label>🍔 Food Trucks</label>
+                    <label>Food Trucks</label>
                     <textarea id="host_foodtrucks" rows="3" placeholder="Listado de camiones de comida confirmados y potencia eléctrica requerida..."></textarea>
                 </div>
             </div>
-            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+            <button type="submit" class="btn-save-all">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Guardar Cambios
+            </button>
         </div>
 
         <div id="tab_logistica" class="app-page">
             <h2>Transfers y Camerinos</h2>
             <div class="card-group">
                 <div class="form-card">
-                    <label>🚗 Control de Transfers / Choferes</label>
+                    <label>Control de Transfers / Choferes</label>
                     <textarea id="log_transfers" rows="4" placeholder="Ej: Recogida en aeropuerto o estación de trenes, horarios de vehículos de producción..."></textarea>
                 </div>
                 <div class="form-card">
-                    <label>🚪 Disponibilidad de Camerinos</label>
+                    <label>Disponibilidad de Camerinos</label>
                     <textarea id="log_camerinos" rows="3" placeholder="Asignación y estado de camerinos en el backstage..."></textarea>
                 </div>
             </div>
-            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+            <button type="submit" class="btn-save-all">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
+                Guardar Cambios
+            </button>
+        </div>
+
+        <div id="tab_perfil" class="app-page">
+            <h2>Mi Perfil</h2>
+            <div class="card-group">
+                <div class="form-card">
+                    <label>Usuario</label>
+                    <input type="text" id="perfil_username" disabled>
+                </div>
+                <div class="form-card">
+                    <label>Nueva Contraseña</label>
+                    <input type="password" id="perfil_new_password" placeholder="Nueva contraseña">
+                </div>
+                <div class="form-card">
+                    <label>Confirmar Contraseña</label>
+                    <input type="password" id="perfil_confirm_password" placeholder="Repetir nueva contraseña">
+                </div>
+                <button type="button" class="btn-save-all" onclick="changeOwnPassword()">
+                    <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-5.5 5.5"></path><path d="M15 8l3 3"></path><path d="M9.5 13.5a5 5 0 1 1-7 7 5 5 0 0 1 7-7z"></path><path d="M13 10l3 3"></path></svg>
+                    Actualizar Contraseña
+                </button>
+            </div>
         </div>
 
         <div id="tab_admin" class="app-page">
             <h2>Gestión de Usuarios</h2>
             <div class="card-group">
                 <div class="form-card">
-                    <label>➕ Crear Nuevo Usuario</label>
+                    <label>Crear Nuevo Usuario</label>
                     <div style="display: flex; flex-direction: column; gap: 8px;">
                         <input type="text" id="new_username" placeholder="Nombre de usuario">
                         <input type="password" id="new_password" placeholder="Contraseña">
-                        <button type="button" class="btn-add-event" onclick="createNewUser()">+ Crear Usuario</button>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="new_user_is_admin">
+                            <span>Administrador total de la app</span>
+                        </label>
+                        <button type="button" class="btn-add-event" onclick="createNewUser()">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            Crear Usuario
+                        </button>
                     </div>
                 </div>
                 <div id="user_list_container">
@@ -582,21 +950,58 @@
 
     </form>
 
+    <div id="event-modal-overlay" class="modal-overlay">
+        <div class="modal-card">
+            <h3 id="event_modal_title">Nuevo Evento</h3>
+            <div class="card-group">
+                <div class="form-card" id="event_modal_name_wrap">
+                    <label>Nombre del Evento</label>
+                    <input type="text" id="event_modal_name" placeholder="Ej: Festival de Verano 2026">
+                </div>
+                <div class="form-card">
+                    <label>Fecha del Evento</label>
+                    <input type="date" id="event_modal_date">
+                </div>
+                <div class="form-card">
+                    <label>Usuarios con acceso</label>
+                    <div id="event_modal_users_list" class="permission-grid"></div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-logout" onclick="closeEventModal()">Cancelar</button>
+                <button type="button" class="btn-add-event" onclick="submitEventModal()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <nav class="nav-bar">
-        <button class="nav-item active" onclick="switchTab('tab_produccion', this)">
-            <span>🏗️</span>Prod
+        <button class="nav-item active" data-tab="tab_eventos" onclick="switchTab('tab_eventos')">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+            Eventos
         </button>
-        <button class="nav-item" onclick="switchTab('tab_media', this)">
-            <span>📸</span>Media
+        <button class="nav-item" data-tab="tab_produccion" onclick="switchTab('tab_produccion')">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
+            Prod
         </button>
-        <button class="nav-item" onclick="switchTab('tab_hosteleria', this)">
-            <span>🍔</span>Hostelería
+        <button class="nav-item" data-tab="tab_media" onclick="switchTab('tab_media')">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
+            Media
         </button>
-        <button class="nav-item" onclick="switchTab('tab_logistica', this)">
-            <span>🚗</span>Logística
+        <button class="nav-item" data-tab="tab_hosteleria" onclick="switchTab('tab_hosteleria')">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
+            Hostelería
         </button>
-        <button id="nav_admin" class="nav-item" onclick="switchTab('tab_admin', this)" style="display: none;">
-            <span>🛡️</span>Admin
+        <button class="nav-item" data-tab="tab_logistica" onclick="switchTab('tab_logistica')">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="1" y="3" width="15" height="13"></rect><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"></polygon><circle cx="5.5" cy="18.5" r="2.5"></circle><circle cx="18.5" cy="18.5" r="2.5"></circle></svg>
+            Logística
+        </button>
+        <button class="nav-item" data-tab="tab_perfil" onclick="switchTab('tab_perfil')">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+            Perfil
+        </button>
+        <button id="nav_admin" class="nav-item" data-tab="tab_admin" onclick="switchTab('tab_admin')" style="display: none;">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path></svg>
+            Admin
         </button>
     </nav>
 
@@ -607,12 +1012,24 @@
         const SUPABASE_KEY = 'sb_publishable_jAo0VLnlU5UFF2J5rl4LJQ_UGlSaMPu';
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
+        // Iconos SVG reutilizados en contenido generado por JS
+        const ICON_TRASH = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
+        const ICON_KEY = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-5.5 5.5"></path><path d="M15 8l3 3"></path><path d="M9.5 13.5a5 5 0 1 1-7 7 5 5 0 0 1 7-7z"></path><path d="M13 10l3 3"></path></svg>';
+        const ICON_USERS = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
+        const ICON_CALENDAR = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>';
+        const ICON_CHEVRON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+
         // Caches en memoria, recargadas desde Supabase
         let masterEscenarios = {};
         let usersCache = {};
         let eventsCache = {};
         let currentUser = sessionStorage.getItem('festivalya_user') || null;
         let currentEvent = null;
+
+        let eventModalMode = 'create';
+        let eventModalEditingId = null;
+        let eventsView = 'list';
+        let calendarCursor = null;
 
         const allFields = [
             'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_vallas_antipanico',
@@ -646,6 +1063,30 @@
             log_camerinos: 'log_camerinos'
         };
 
+        // Metadatos para el buscador global: a qué pestaña llevar por cada campo
+        const FIELD_META = {
+            prod_escenario: { label: 'Escenario', tab: 'tab_produccion' },
+            prod_rider: { label: 'Rider', tab: 'tab_produccion' },
+            prod_rider_empresa: { label: 'Empresa de Sonido/Iluminación', tab: 'tab_produccion' },
+            prod_vallas_antipanico: { label: 'Vallas Antipánico', tab: 'tab_produccion' },
+            prod_vallas_bajas: { label: 'Vallas Bajas', tab: 'tab_produccion' },
+            prod_efectos: { label: 'Efectos FX', tab: 'tab_produccion' },
+            prod_pirotecnia: { label: 'Pirotecnia', tab: 'tab_produccion' },
+            prod_generadores: { label: 'Generadores / Energía', tab: 'tab_produccion' },
+            prod_banos: { label: 'Baños', tab: 'tab_produccion' },
+            prod_ambulancia: { label: 'Ambulancia / Asistencia', tab: 'tab_produccion' },
+            prod_contenedores: { label: 'Contenedores', tab: 'tab_produccion' },
+            prod_limpieza: { label: 'Limpieza', tab: 'tab_produccion' },
+            media_video: { label: 'Vídeo', tab: 'tab_media' },
+            media_foto: { label: 'Foto', tab: 'tab_media' },
+            media_drone: { label: 'Drone', tab: 'tab_media' },
+            media_speaker: { label: 'Speaker', tab: 'tab_media' },
+            host_barras: { label: 'Barras', tab: 'tab_hosteleria' },
+            host_foodtrucks: { label: 'Food Trucks', tab: 'tab_hosteleria' },
+            log_transfers: { label: 'Transfers', tab: 'tab_logistica' },
+            log_camerinos: { label: 'Camerinos', tab: 'tab_logistica' }
+        };
+
         async function loadAllData() {
             const [{ data: users, error: usersErr }, { data: events, error: eventsErr }, { data: escenarios, error: escErr }] = await Promise.all([
                 sb.from('app_users').select('*'),
@@ -670,6 +1111,12 @@
             (escenarios || []).forEach(e => { masterEscenarios[e.id] = { name: e.name, measures: e.measures }; });
         }
 
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.innerText = str == null ? '' : String(str);
+            return div.innerHTML;
+        }
+
         // --- LÓGICA DE AUTENTICACIÓN ---
         async function checkAuth() {
             await loadAllData();
@@ -682,6 +1129,7 @@
                 updateEventSelect();
                 if (currentEvent) loadEventData();
                 renderAdminPanel();
+                setEventsView(eventsView);
             } else {
                 overlay.style.display = 'flex';
             }
@@ -715,16 +1163,22 @@
             const isAdmin = user.role === 'admin';
 
             document.getElementById('nav_admin').style.display = isAdmin ? 'flex' : 'none';
-            document.getElementById('admin_add_event_btn').style.display = isAdmin ? 'block' : 'none';
-            document.getElementById('admin_delete_btn').style.display = isAdmin ? 'block' : 'none';
+            document.getElementById('admin_add_event_btn').style.display = isAdmin ? 'inline-flex' : 'none';
+            document.getElementById('admin_delete_btn').style.display = isAdmin ? 'inline-flex' : 'none';
+            document.getElementById('admin_access_btn').style.display = isAdmin ? 'inline-flex' : 'none';
+
+            const perfilUsername = document.getElementById('perfil_username');
+            if (perfilUsername) perfilUsername.value = currentUser;
         }
 
         // --- GESTIÓN DE USUARIOS (ADMIN) ---
         async function createNewUser() {
             const usernameInput = document.getElementById('new_username');
             const passwordInput = document.getElementById('new_password');
+            const isAdminInput = document.getElementById('new_user_is_admin');
             const username = usernameInput.value.trim();
             const password = passwordInput.value.trim();
+            const role = isAdminInput.checked ? 'admin' : 'user';
 
             if (!username || !password) {
                 alert("Por favor, introduce un nombre de usuario y contraseña.");
@@ -736,7 +1190,7 @@
                 return;
             }
 
-            const { error } = await sb.from('app_users').insert({ username, password, role: 'user', allowed_events: [] });
+            const { error } = await sb.from('app_users').insert({ username, password, role, allowed_events: [] });
             if (error) {
                 alert("Error creando usuario: " + error.message);
                 return;
@@ -744,6 +1198,7 @@
 
             usernameInput.value = "";
             passwordInput.value = "";
+            isAdminInput.checked = false;
 
             await loadAllData();
             renderAdminPanel();
@@ -763,13 +1218,45 @@
             renderAdminPanel();
         }
 
+        async function adminChangePassword(username) {
+            const input = document.getElementById(`pwd_${username}`);
+            const newPass = input.value.trim();
+            if (!newPass) { alert("Introduce una nueva contraseña."); return; }
+
+            const { error } = await sb.from('app_users').update({ password: newPass }).eq('username', username);
+            if (error) { alert("Error cambiando contraseña: " + error.message); return; }
+
+            usersCache[username].password = newPass;
+            input.value = "";
+            alert(`Contraseña de "${username}" actualizada.`);
+        }
+
+        async function changeOwnPassword() {
+            const newPass = document.getElementById('perfil_new_password').value.trim();
+            const confirmPass = document.getElementById('perfil_confirm_password').value.trim();
+
+            if (!newPass || !confirmPass) { alert("Completa ambos campos de contraseña."); return; }
+            if (newPass !== confirmPass) { alert("Las contraseñas no coinciden."); return; }
+
+            const { error } = await sb.from('app_users').update({ password: newPass }).eq('username', currentUser);
+            if (error) { alert("Error actualizando contraseña: " + error.message); return; }
+
+            usersCache[currentUser].password = newPass;
+            document.getElementById('perfil_new_password').value = "";
+            document.getElementById('perfil_confirm_password').value = "";
+            alert("Contraseña actualizada correctamente.");
+        }
+
         async function toggleUserPermission(username, eventId, isAllowed) {
             const user = usersCache[username];
             if (!user) return;
 
             let allowed = user.allowedEvents ? [...user.allowedEvents] : [];
+            const already = allowed.includes(eventId);
+            if (isAllowed === already) return;
+
             if (isAllowed) {
-                if (!allowed.includes(eventId)) allowed.push(eventId);
+                allowed.push(eventId);
             } else {
                 allowed = allowed.filter(id => id !== eventId);
             }
@@ -781,7 +1268,6 @@
             }
 
             user.allowedEvents = allowed;
-            // Si el usuario editado es el actual, refrescar la lista de eventos
             if (username === currentUser) {
                 updateEventSelect();
             }
@@ -791,63 +1277,41 @@
             const container = document.getElementById('user_list_container');
             if (!container) return;
 
-            container.innerHTML = '<h3 style="font-size: 14px; margin-top: 15px; margin-bottom: 10px; color: var(--accent-gold-bright);">👥 Usuarios Registrados</h3>';
+            container.innerHTML = `<h3 class="section-subhead">${ICON_USERS} Usuarios Registrados</h3>`;
 
             let hasUsers = false;
             for (const username in usersCache) {
-                if (username === "admin") continue; // No autogestionar el admin principal
+                if (username === currentUser) continue; // Gestioná tu propia cuenta desde "Mi Perfil"
 
                 hasUsers = true;
                 const user = usersCache[username];
+                const isAdminUser = user.role === 'admin';
 
                 const userCard = document.createElement('div');
                 userCard.className = 'user-manager-card';
 
-                // Cabecera del usuario (Nombre y botón eliminar)
                 const header = document.createElement('div');
                 header.className = 'user-header';
                 header.innerHTML = `
-                    <span style="font-weight: bold; color: var(--accent-gold-bright);">${username}</span>
-                    <button type="button" class="btn-danger-sm" onclick="deleteUser('${username}')">🗑️ Eliminar</button>
+                    <span style="font-weight: bold; color: var(--accent-gold-bright);">${escapeHtml(username)}${isAdminUser ? '<span class="user-role-tag">Admin</span>' : ''}</span>
+                    <button type="button" class="btn-danger-sm" onclick="deleteUser('${username}')">${ICON_TRASH} Eliminar</button>
                 `;
                 userCard.appendChild(header);
 
-                // Sección de permisos de eventos
-                const permSection = document.createElement('div');
-                permSection.innerHTML = `<p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Permisos de acceso a eventos:</p>`;
+                const pwdRow = document.createElement('div');
+                pwdRow.className = 'password-row';
+                pwdRow.innerHTML = `
+                    <input type="password" id="pwd_${username}" placeholder="Nueva contraseña">
+                    <button type="button" class="btn-add-event" onclick="adminChangePassword('${username}')">${ICON_KEY} Cambiar</button>
+                `;
+                userCard.appendChild(pwdRow);
 
-                const grid = document.createElement('div');
-                grid.className = 'permission-grid';
-
-                // Mostrar todos los eventos disponibles para asignar permisos
-                for (const eventId in eventsCache) {
-                    const event = eventsCache[eventId];
-                    const isChecked = user.allowedEvents && user.allowedEvents.includes(eventId);
-
-                    const item = document.createElement('label');
-                    item.className = 'permission-item';
-                    item.innerHTML = `
-                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleUserPermission('${username}', '${eventId}', this.checked)">
-                        <span>${event.name}</span>
-                    `;
-                    grid.appendChild(item);
-                }
-
-                if (Object.keys(eventsCache).length === 0) {
-                    const noEvents = document.createElement('p');
-                    noEvents.style.cssText = "font-size: 11px; color: var(--danger); margin-top: 5px;";
-                    noEvents.innerText = "No hay eventos creados todavía.";
-                    grid.appendChild(noEvents);
-                }
-
-                permSection.appendChild(grid);
-                userCard.appendChild(permSection);
                 container.appendChild(userCard);
             }
 
             if (!hasUsers) {
                 const emptyMsg = document.createElement('p');
-                emptyMsg.style.cssText = "font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 15px;";
+                emptyMsg.className = 'empty-hint';
                 emptyMsg.innerText = "No hay otros usuarios creados.";
                 container.appendChild(emptyMsg);
             }
@@ -855,7 +1319,6 @@
 
         function populateEscenarios() {
             const select = document.getElementById('prod_escenario');
-            // Mantener la primera opción limpia
             select.innerHTML = '<option value="">-- Elegir escenario --</option>';
             for(const id in masterEscenarios) {
                 const opt = document.createElement('option');
@@ -871,7 +1334,7 @@
             const selectedId = select.value;
 
             if(selectedId && masterEscenarios[selectedId]) {
-                display.innerText = "📐 Medidas automáticas: " + masterEscenarios[selectedId].measures;
+                display.innerText = "Medidas automáticas: " + masterEscenarios[selectedId].measures;
             } else {
                 display.innerText = "";
             }
@@ -903,18 +1366,23 @@
             box.style.display = (riderVal === 'si') ? 'block' : 'none';
         }
 
+        function canUserSeeEvent(eventId) {
+            const user = usersCache[currentUser];
+            if (!user) return false;
+            if (user.role === 'admin') return true;
+            return !!(user.allowedEvents && user.allowedEvents.includes(eventId));
+        }
+
+        function getVisibleEvents() {
+            return Object.values(eventsCache).filter(e => canUserSeeEvent(e.id));
+        }
+
         function updateEventSelect() {
             const select = document.getElementById('eventSelect');
             select.innerHTML = '';
 
-            const user = usersCache[currentUser];
-            const isAdmin = user && user.role === 'admin';
-
             for (const key in eventsCache) {
-                // Si no es admin, verificar si el evento está permitido para este usuario
-                if (!isAdmin && user && (!user.allowedEvents || !user.allowedEvents.includes(key))) {
-                    continue;
-                }
+                if (!canUserSeeEvent(key)) continue;
 
                 const opt = document.createElement('option');
                 opt.value = key;
@@ -923,17 +1391,13 @@
                 select.appendChild(opt);
             }
 
-            // Si el evento seleccionado actualmente no está entre los permitidos para este usuario,
-            // cambiar el evento actual al primero de la lista (si existe).
             const selectedOpt = select.querySelector(`option[value="${currentEvent}"]`);
             if (!selectedOpt && select.options.length > 0) {
                 currentEvent = select.options[0].value;
                 select.value = currentEvent;
                 loadEventData();
             } else if (select.options.length === 0) {
-                // No tiene ningún evento permitido
                 currentEvent = "";
-                // Limpiar campos
                 allFields.forEach(f => {
                     const el = document.getElementById(f);
                     if (el) el.value = "";
@@ -941,23 +1405,9 @@
             }
         }
 
-        async function createNewEvent() {
-            const name = prompt("Nombre del nuevo festival o evento:");
-            if (!name) return;
-            const id = "fest_" + Date.now();
-            const newEvent = { id, name, rider: "no", efectos: "no", pirotecnia: "no" };
-
-            const { error } = await sb.from('events').insert(newEvent);
-            if (error) {
-                alert("Error creando evento: " + error.message);
-                return;
-            }
-
-            await loadAllData();
-            currentEvent = id;
-            updateEventSelect();
-            loadEventData();
-            renderAdminPanel();
+        function refreshEventsBrowser() {
+            if (eventsView === 'calendar') renderEventsCalendarView();
+            else renderEventsListView();
         }
 
         async function deleteCurrentEvent() {
@@ -972,7 +1422,6 @@
                 return;
             }
 
-            // Limpiar permisos de este evento en todos los usuarios afectados
             const affectedUsers = Object.entries(usersCache).filter(([, u]) => u.allowedEvents && u.allowedEvents.includes(currentId));
             await Promise.all(affectedUsers.map(([username, u]) => {
                 const allowed = u.allowedEvents.filter(id => id !== currentId);
@@ -986,6 +1435,7 @@
             if(currentEvent) loadEventData();
 
             renderAdminPanel();
+            refreshEventsBrowser();
         }
 
         function loadEventData() {
@@ -995,7 +1445,6 @@
 
             const event = eventsCache[currentEvent];
 
-            // Cargar datos en los inputs del DOM
             allFields.forEach(f => {
                 const element = document.getElementById(f);
                 if (element) {
@@ -1003,7 +1452,6 @@
                 }
             });
 
-            // Forzar refresco de las lógicas visuales de escenarios y condicionales
             handleEscenarioChange();
             toggleRiderEmpresa();
         }
@@ -1031,14 +1479,284 @@
             alert("¡Datos del evento guardados con éxito en FestivalYa!");
         }
 
-        function switchTab(tabId, button) {
+        // --- MODAL DE EVENTO (crear / gestionar accesos) ---
+        function openCreateEventModal() {
+            eventModalMode = 'create';
+            eventModalEditingId = null;
+            document.getElementById('event_modal_title').innerText = 'Nuevo Evento';
+            document.getElementById('event_modal_name_wrap').style.display = 'block';
+            document.getElementById('event_modal_name').value = '';
+            document.getElementById('event_modal_date').value = '';
+            renderEventModalUserList([]);
+            document.getElementById('event-modal-overlay').style.display = 'flex';
+        }
+
+        function openEventAccessModal() {
+            const eventId = currentEvent;
+            if (!eventId || !eventsCache[eventId]) { alert("Selecciona un evento primero."); return; }
+
+            eventModalMode = 'edit';
+            eventModalEditingId = eventId;
+            document.getElementById('event_modal_title').innerText = 'Editar: ' + eventsCache[eventId].name;
+            document.getElementById('event_modal_name_wrap').style.display = 'none';
+            document.getElementById('event_modal_date').value = eventsCache[eventId].event_date || '';
+
+            const allowedFor = Object.entries(usersCache)
+                .filter(([, u]) => u.role !== 'admin' && u.allowedEvents && u.allowedEvents.includes(eventId))
+                .map(([username]) => username);
+            renderEventModalUserList(allowedFor);
+            document.getElementById('event-modal-overlay').style.display = 'flex';
+        }
+
+        function closeEventModal() {
+            document.getElementById('event-modal-overlay').style.display = 'none';
+        }
+
+        function renderEventModalUserList(preselected) {
+            const container = document.getElementById('event_modal_users_list');
+            container.innerHTML = '';
+            const preselectedSet = new Set(preselected);
+            const nonAdminUsers = Object.entries(usersCache).filter(([, u]) => u.role !== 'admin');
+
+            if (nonAdminUsers.length === 0) {
+                const p = document.createElement('p');
+                p.className = 'empty-hint';
+                p.style.padding = '4px 0';
+                p.innerText = "No hay usuarios (no administradores) creados todavía.";
+                container.appendChild(p);
+                return;
+            }
+
+            nonAdminUsers.forEach(([username]) => {
+                const label = document.createElement('label');
+                label.className = 'permission-item';
+                label.innerHTML = `
+                    <input type="checkbox" data-username="${username}" ${preselectedSet.has(username) ? 'checked' : ''}>
+                    <span>${escapeHtml(username)}</span>
+                `;
+                container.appendChild(label);
+            });
+        }
+
+        async function submitEventModal() {
+            const dateInput = document.getElementById('event_modal_date');
+            const checkboxes = document.querySelectorAll('#event_modal_users_list input[type=checkbox]');
+            let eventId = eventModalEditingId;
+
+            if (eventModalMode === 'create') {
+                const name = document.getElementById('event_modal_name').value.trim();
+                if (!name) { alert("Por favor, introduce un nombre para el evento."); return; }
+
+                eventId = "fest_" + Date.now();
+                const newEvent = { id: eventId, name, rider: "no", efectos: "no", pirotecnia: "no", event_date: dateInput.value || null };
+                const { error } = await sb.from('events').insert(newEvent);
+                if (error) { alert("Error creando evento: " + error.message); return; }
+            } else {
+                const { error } = await sb.from('events').update({ event_date: dateInput.value || null }).eq('id', eventId);
+                if (error) { alert("Error actualizando el evento: " + error.message); return; }
+            }
+
+            const updates = [];
+            checkboxes.forEach(cb => {
+                updates.push(toggleUserPermission(cb.dataset.username, eventId, cb.checked));
+            });
+            await Promise.all(updates);
+
+            closeEventModal();
+            await loadAllData();
+
+            if (eventModalMode === 'create') currentEvent = eventId;
+            updateEventSelect();
+            if (currentEvent) loadEventData();
+            renderAdminPanel();
+            refreshEventsBrowser();
+        }
+
+        // --- VISTA DE EVENTOS: LISTA / CALENDARIO / BUSCADOR ---
+        function setEventsView(view) {
+            eventsView = view;
+            document.getElementById('view_toggle_list').classList.toggle('active', view === 'list');
+            document.getElementById('view_toggle_calendar').classList.toggle('active', view === 'calendar');
+            document.getElementById('events_list_view').style.display = view === 'list' ? 'flex' : 'none';
+            document.getElementById('events_calendar_view').style.display = view === 'calendar' ? 'block' : 'none';
+            if (view === 'list') renderEventsListView();
+            else renderEventsCalendarView();
+        }
+
+        function formatDateEs(dateStr) {
+            const d = new Date(dateStr + 'T00:00:00');
+            return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
+        }
+
+        function openEventById(eventId, tab) {
+            currentEvent = eventId;
+            updateEventSelect();
+            const select = document.getElementById('eventSelect');
+            select.value = eventId;
+            loadEventData();
+            switchTab(tab || 'tab_produccion');
+        }
+
+        function renderEventsListView() {
+            const container = document.getElementById('events_list_view');
+            if (!container) return;
+            container.innerHTML = '';
+
+            const events = getVisibleEvents().sort((a, b) => {
+                if (!a.event_date && !b.event_date) return a.name.localeCompare(b.name);
+                if (!a.event_date) return 1;
+                if (!b.event_date) return -1;
+                return new Date(a.event_date) - new Date(b.event_date);
+            });
+
+            if (events.length === 0) {
+                container.innerHTML = '<p class="empty-hint">No tenés eventos disponibles todavía.</p>';
+                return;
+            }
+
+            events.forEach(event => {
+                const card = document.createElement('div');
+                card.className = 'event-card';
+                const dateLabel = event.event_date ? formatDateEs(event.event_date) : 'Sin fecha asignada';
+                card.innerHTML = `
+                    <div>
+                        <div class="event-card-name">${escapeHtml(event.name)}</div>
+                        <div class="event-card-date">${ICON_CALENDAR} ${dateLabel}</div>
+                    </div>
+                    ${ICON_CHEVRON}
+                `;
+                card.onclick = () => openEventById(event.id, 'tab_produccion');
+                container.appendChild(card);
+            });
+        }
+
+        function renderEventsCalendarView() {
+            if (!calendarCursor) {
+                const now = new Date();
+                calendarCursor = { year: now.getFullYear(), month: now.getMonth() };
+            }
+
+            const container = document.getElementById('events_calendar_view');
+            if (!container) return;
+
+            const { year, month } = calendarCursor;
+            const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
+
+            const eventsByDay = {};
+            getVisibleEvents().forEach(e => {
+                if (!e.event_date) return;
+                const d = new Date(e.event_date + 'T00:00:00');
+                if (d.getFullYear() === year && d.getMonth() === month) {
+                    const day = d.getDate();
+                    if (!eventsByDay[day]) eventsByDay[day] = [];
+                    eventsByDay[day].push(e.id);
+                }
+            });
+
+            const firstDay = new Date(year, month, 1);
+            const startOffset = (firstDay.getDay() + 6) % 7;
+            const daysInMonth = new Date(year, month + 1, 0).getDate();
+
+            let html = `
+                <div class="cal-header">
+                    <button type="button" class="cal-nav-btn" onclick="shiftCalendar(-1)">${ICON_CHEVRON.replace('9 18 15 12 9 6', '15 18 9 12 15 6')}</button>
+                    <span class="cal-month-label">${monthNames[month]} ${year}</span>
+                    <button type="button" class="cal-nav-btn" onclick="shiftCalendar(1)">${ICON_CHEVRON}</button>
+                </div>
+                <div class="cal-grid">
+                    ${['L','M','X','J','V','S','D'].map(d => `<div class="cal-daylabel">${d}</div>`).join('')}
+            `;
+
+            for (let i = 0; i < startOffset; i++) html += `<div class="cal-day empty"></div>`;
+
+            for (let day = 1; day <= daysInMonth; day++) {
+                const hasEvents = !!eventsByDay[day];
+                html += `<div class="cal-day ${hasEvents ? 'has-events' : ''}" ${hasEvents ? `onclick="showCalendarDay(${day})"` : ''}>
+                    <span>${day}</span>${hasEvents ? '<div class="cal-day-dot"></div>' : ''}
+                </div>`;
+            }
+
+            html += `</div><div id="cal_day_events" class="cal-day-events"></div>`;
+            container.innerHTML = html;
+            container.dataset.eventsByDay = JSON.stringify(eventsByDay);
+        }
+
+        function shiftCalendar(delta) {
+            let { year, month } = calendarCursor;
+            month += delta;
+            if (month < 0) { month = 11; year -= 1; }
+            if (month > 11) { month = 0; year += 1; }
+            calendarCursor = { year, month };
+            renderEventsCalendarView();
+        }
+
+        function showCalendarDay(day) {
+            const container = document.getElementById('events_calendar_view');
+            const map = JSON.parse(container.dataset.eventsByDay || '{}');
+            const ids = map[day] || [];
+            const box = document.getElementById('cal_day_events');
+            box.innerHTML = ids.map(id => {
+                const e = eventsCache[id];
+                if (!e) return '';
+                return `<div class="event-card" onclick="openEventById('${id}','tab_produccion')">
+                    <div class="event-card-name">${escapeHtml(e.name)}</div>
+                    ${ICON_CHEVRON}
+                </div>`;
+            }).join('');
+        }
+
+        function performGlobalSearch(query) {
+            const q = query.trim().toLowerCase();
+            const resultsWrap = document.getElementById('search_results_wrap');
+            const resultsContainer = document.getElementById('search_results');
+            const browser = document.getElementById('events_browser');
+
+            if (!q) {
+                resultsWrap.style.display = 'none';
+                browser.style.display = 'block';
+                return;
+            }
+
+            browser.style.display = 'none';
+            resultsWrap.style.display = 'block';
+
+            const results = [];
+            getVisibleEvents().forEach(event => {
+                if (event.name && event.name.toLowerCase().includes(q)) {
+                    results.push({ eventId: event.id, eventName: event.name, field: 'Nombre del Evento', snippet: event.name, tab: 'tab_produccion' });
+                }
+                for (const domId in FIELD_META) {
+                    const col = fieldMap[domId];
+                    const val = event[col];
+                    if (val && String(val).toLowerCase().includes(q)) {
+                        results.push({ eventId: event.id, eventName: event.name, field: FIELD_META[domId].label, snippet: String(val), tab: FIELD_META[domId].tab });
+                    }
+                }
+            });
+
+            if (results.length === 0) {
+                resultsContainer.innerHTML = `<p class="empty-hint">Sin resultados para "${escapeHtml(query)}".</p>`;
+                return;
+            }
+
+            resultsContainer.innerHTML = results.map(r => `
+                <div class="search-result-item" onclick="openEventById('${r.eventId}','${r.tab}')">
+                    <div class="sr-event">${escapeHtml(r.eventName)}</div>
+                    <div class="sr-field">${escapeHtml(r.field)}</div>
+                    <div class="sr-snippet">${escapeHtml(r.snippet)}</div>
+                </div>
+            `).join('');
+        }
+
+        function switchTab(tabId) {
             const pages = document.querySelectorAll('.app-page');
             pages.forEach(p => p.classList.remove('active'));
             const navs = document.querySelectorAll('.nav-item');
             navs.forEach(n => n.classList.remove('active'));
 
             document.getElementById(tabId).classList.add('active');
-            button.classList.add('active');
+            const navBtn = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
+            if (navBtn) navBtn.classList.add('active');
             window.scrollTo({top: 0, behavior: 'smooth'});
         }
 

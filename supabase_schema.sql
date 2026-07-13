@@ -31,9 +31,13 @@ CREATE TABLE IF NOT EXISTS public.events (
     host_foodtrucks TEXT,
     log_transfers TEXT,
     log_camerinos TEXT,
+    event_date DATE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Por si la tabla ya existía de una instalación anterior sin esta columna
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS event_date DATE;
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$

@@ -518,38 +518,19 @@
         </button>
     </nav>
 
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
     <script>
-        // Listado global predefinido de escenarios con sus medidas automáticas
-        let masterEscenarios = JSON.parse(localStorage.getItem('festivalya_escenarios')) || {
-            "principal": { name: "Escenario Principal", measures: "14m x 10m" },
-            "secundario": { name: "Escenario Secundario", measures: "10m x 8m" },
-            "camion": { name: "Camión Escenario", measures: "12m x 6m" }
-        };
+        // --- CONEXIÓN A SUPABASE ---
+        const SUPABASE_URL = 'https://atmxqrkcvvatfqsvkdcm.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_jAo0VLnlU5UFF2J5rl4LJQ_UGlSaMPu';
+        const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-        // Estructura de Datos Mejorada
-        let database = JSON.parse(localStorage.getItem('festivalya_app_db')) || {
-            currentUser: null,
-            currentEvent: "demo",
-            users: {
-                "admin": { password: "admin", role: "admin", allowedEvents: ["all"] }
-            },
-            events: {
-                "demo": {
-                    name: "Festival Ejemplo",
-                    escenario_id: "principal", rider: "no", rider_empresa: "",
-                    vallas_antipanico: "", vallas_bajas: "", efectos: "no", pirotecnia: "no",
-                    generadores: "", banos: "", ambulancia: "", contenedores: "", limpieza: "",
-                    media_video: "", media_foto: "", media_drone: "", media_speaker: "",
-                    host_barras: "", host_foodtrucks: "", log_transfers: "", log_camerinos: ""
-                }
-            }
-        };
-
-        // Asegurar que admin exista si la DB es vieja
-        if (!database.users) {
-            database.users = { "admin": { password: "admin", role: "admin", allowedEvents: ["all"] } };
-            database.currentUser = null;
-        }
+        // Caches en memoria, recargadas desde Supabase
+        let masterEscenarios = {};
+        let usersCache = {};
+        let eventsCache = {};
+        let currentUser = sessionStorage.getItem('festivalya_user') || null;
+        let currentEvent = null;
 
         const allFields = [
             'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_vallas_antipanico',
@@ -559,111 +540,167 @@
             'host_barras', 'host_foodtrucks', 'log_transfers', 'log_camerinos'
         ];
 
+        // Los ids del formulario no coinciden 1:1 con las columnas de la tabla `events`
+        const fieldMap = {
+            prod_escenario: 'escenario_id',
+            prod_rider: 'rider',
+            prod_rider_empresa: 'rider_empresa',
+            prod_vallas_antipanico: 'vallas_antipanico',
+            prod_vallas_bajas: 'vallas_bajas',
+            prod_efectos: 'efectos',
+            prod_pirotecnia: 'pirotecnia',
+            prod_generadores: 'generadores',
+            prod_banos: 'banos',
+            prod_ambulancia: 'ambulancia',
+            prod_contenedores: 'contenedores',
+            prod_limpieza: 'limpieza',
+            media_video: 'media_video',
+            media_foto: 'media_foto',
+            media_drone: 'media_drone',
+            media_speaker: 'media_speaker',
+            host_barras: 'host_barras',
+            host_foodtrucks: 'host_foodtrucks',
+            log_transfers: 'log_transfers',
+            log_camerinos: 'log_camerinos'
+        };
+
+        async function loadAllData() {
+            const [{ data: users, error: usersErr }, { data: events, error: eventsErr }, { data: escenarios, error: escErr }] = await Promise.all([
+                sb.from('app_users').select('*'),
+                sb.from('events').select('*'),
+                sb.from('escenarios').select('*')
+            ]);
+
+            if (usersErr || eventsErr || escErr) {
+                alert("Error cargando datos de Supabase: " + (usersErr || eventsErr || escErr).message);
+                return;
+            }
+
+            usersCache = {};
+            (users || []).forEach(u => {
+                usersCache[u.username] = { password: u.password, role: u.role, allowedEvents: u.allowed_events || [] };
+            });
+
+            eventsCache = {};
+            (events || []).forEach(e => { eventsCache[e.id] = e; });
+
+            masterEscenarios = {};
+            (escenarios || []).forEach(e => { masterEscenarios[e.id] = { name: e.name, measures: e.measures }; });
+        }
+
         // --- LÓGICA DE AUTENTICACIÓN ---
-        function checkAuth() {
+        async function checkAuth() {
+            await loadAllData();
+            populateEscenarios();
+
             const overlay = document.getElementById('login-overlay');
-            if (database.currentUser && database.users[database.currentUser]) {
+            if (currentUser && usersCache[currentUser]) {
                 overlay.style.display = 'none';
                 setupUIByRole();
                 updateEventSelect();
-                if (database.currentEvent) loadEventData();
+                if (currentEvent) loadEventData();
                 renderAdminPanel();
             } else {
                 overlay.style.display = 'flex';
             }
         }
 
-        function handleLogin() {
-            const user = document.getElementById('login_user').value;
+        async function handleLogin() {
+            const user = document.getElementById('login_user').value.trim();
             const pass = document.getElementById('login_pass').value;
             const error = document.getElementById('login_error');
 
-            if (database.users[user] && database.users[user].password === pass) {
-                database.currentUser = user;
-                saveData();
+            const { data, error: err } = await sb.from('app_users').select('*').eq('username', user).maybeSingle();
+
+            if (!err && data && data.password === pass) {
+                currentUser = user;
+                sessionStorage.setItem('festivalya_user', user);
                 error.style.display = 'none';
-                checkAuth();
+                await checkAuth();
             } else {
                 error.style.display = 'block';
             }
         }
 
         function logout() {
-            database.currentUser = null;
-            saveData();
+            currentUser = null;
+            sessionStorage.removeItem('festivalya_user');
             location.reload();
         }
 
         function setupUIByRole() {
-            const user = database.users[database.currentUser];
+            const user = usersCache[currentUser];
             const isAdmin = user.role === 'admin';
-            
+
             document.getElementById('nav_admin').style.display = isAdmin ? 'flex' : 'none';
             document.getElementById('admin_add_event_btn').style.display = isAdmin ? 'block' : 'none';
             document.getElementById('admin_delete_btn').style.display = isAdmin ? 'block' : 'none';
         }
 
         // --- GESTIÓN DE USUARIOS (ADMIN) ---
-        function createNewUser() {
+        async function createNewUser() {
             const usernameInput = document.getElementById('new_username');
             const passwordInput = document.getElementById('new_password');
             const username = usernameInput.value.trim();
             const password = passwordInput.value.trim();
-            
+
             if (!username || !password) {
                 alert("Por favor, introduce un nombre de usuario y contraseña.");
                 return;
             }
-            
-            if (database.users[username]) {
+
+            if (usersCache[username]) {
                 alert("El usuario ya existe.");
                 return;
             }
-            
-            database.users[username] = {
-                password: password,
-                role: "user",
-                allowedEvents: []
-            };
-            
-            saveData();
+
+            const { error } = await sb.from('app_users').insert({ username, password, role: 'user', allowed_events: [] });
+            if (error) {
+                alert("Error creando usuario: " + error.message);
+                return;
+            }
+
             usernameInput.value = "";
             passwordInput.value = "";
-            
+
+            await loadAllData();
             renderAdminPanel();
             alert(`Usuario "${username}" creado correctamente.`);
         }
 
-        function deleteUser(username) {
-            if (confirm(`¿Estás seguro de que deseas eliminar al usuario "${username}"?`)) {
-                delete database.users[username];
-                saveData();
-                renderAdminPanel();
+        async function deleteUser(username) {
+            if (!confirm(`¿Estás seguro de que deseas eliminar al usuario "${username}"?`)) return;
+
+            const { error } = await sb.from('app_users').delete().eq('username', username);
+            if (error) {
+                alert("Error eliminando usuario: " + error.message);
+                return;
             }
+
+            await loadAllData();
+            renderAdminPanel();
         }
 
-        function toggleUserPermission(username, eventId, isAllowed) {
-            const user = database.users[username];
+        async function toggleUserPermission(username, eventId, isAllowed) {
+            const user = usersCache[username];
             if (!user) return;
-            
-            if (!user.allowedEvents) {
-                user.allowedEvents = [];
-            }
-            
+
+            let allowed = user.allowedEvents ? [...user.allowedEvents] : [];
             if (isAllowed) {
-                if (!user.allowedEvents.includes(eventId)) {
-                    user.allowedEvents.push(eventId);
-                }
+                if (!allowed.includes(eventId)) allowed.push(eventId);
             } else {
-                const index = user.allowedEvents.indexOf(eventId);
-                if (index > -1) {
-                    user.allowedEvents.splice(index, 1);
-                }
+                allowed = allowed.filter(id => id !== eventId);
             }
-            
-            saveData();
+
+            const { error } = await sb.from('app_users').update({ allowed_events: allowed }).eq('username', username);
+            if (error) {
+                alert("Error actualizando permisos: " + error.message);
+                return;
+            }
+
+            user.allowedEvents = allowed;
             // Si el usuario editado es el actual, refrescar la lista de eventos
-            if (username === database.currentUser) {
+            if (username === currentUser) {
                 updateEventSelect();
             }
         }
@@ -671,19 +708,19 @@
         function renderAdminPanel() {
             const container = document.getElementById('user_list_container');
             if (!container) return;
-            
+
             container.innerHTML = '<h3 style="font-size: 14px; margin-top: 15px; margin-bottom: 10px; color: var(--accent-neon);">👥 Usuarios Registrados</h3>';
-            
+
             let hasUsers = false;
-            for (const username in database.users) {
+            for (const username in usersCache) {
                 if (username === "admin") continue; // No autogestionar el admin principal
-                
+
                 hasUsers = true;
-                const user = database.users[username];
-                
+                const user = usersCache[username];
+
                 const userCard = document.createElement('div');
                 userCard.className = 'user-manager-card';
-                
+
                 // Cabecera del usuario (Nombre y botón eliminar)
                 const header = document.createElement('div');
                 header.className = 'user-header';
@@ -692,19 +729,19 @@
                     <button type="button" class="btn-danger-sm" onclick="deleteUser('${username}')">🗑️ Eliminar</button>
                 `;
                 userCard.appendChild(header);
-                
+
                 // Sección de permisos de eventos
                 const permSection = document.createElement('div');
                 permSection.innerHTML = `<p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Permisos de acceso a eventos:</p>`;
-                
+
                 const grid = document.createElement('div');
                 grid.className = 'permission-grid';
-                
+
                 // Mostrar todos los eventos disponibles para asignar permisos
-                for (const eventId in database.events) {
-                    const event = database.events[eventId];
+                for (const eventId in eventsCache) {
+                    const event = eventsCache[eventId];
                     const isChecked = user.allowedEvents && user.allowedEvents.includes(eventId);
-                    
+
                     const item = document.createElement('label');
                     item.className = 'permission-item';
                     item.innerHTML = `
@@ -713,19 +750,19 @@
                     `;
                     grid.appendChild(item);
                 }
-                
-                if (Object.keys(database.events).length === 0) {
+
+                if (Object.keys(eventsCache).length === 0) {
                     const noEvents = document.createElement('p');
                     noEvents.style.cssText = "font-size: 11px; color: var(--danger); margin-top: 5px;";
                     noEvents.innerText = "No hay eventos creados todavía.";
                     grid.appendChild(noEvents);
                 }
-                
+
                 permSection.appendChild(grid);
                 userCard.appendChild(permSection);
                 container.appendChild(userCard);
             }
-            
+
             if (!hasUsers) {
                 const emptyMsg = document.createElement('p');
                 emptyMsg.style.cssText = "font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 15px;";
@@ -750,7 +787,7 @@
             const select = document.getElementById('prod_escenario');
             const display = document.getElementById('escenario_medidas_display');
             const selectedId = select.value;
-            
+
             if(selectedId && masterEscenarios[selectedId]) {
                 display.innerText = "📐 Medidas automáticas: " + masterEscenarios[selectedId].measures;
             } else {
@@ -758,16 +795,21 @@
             }
         }
 
-        function addCustomEscenario() {
+        async function addCustomEscenario() {
             const name = prompt("Introduce el nombre del nuevo escenario:");
             if(!name) return;
             const measures = prompt("Introduce las medidas de este escenario (Ej: 16m x 12m):");
             if(!measures) return;
 
             const id = "esc_" + Date.now();
+
+            const { error } = await sb.from('escenarios').insert({ id, name, measures });
+            if (error) {
+                alert("Error guardando escenario: " + error.message);
+                return;
+            }
+
             masterEscenarios[id] = { name: name, measures: measures };
-            localStorage.setItem('festivalya_escenarios', JSON.stringify(masterEscenarios));
-            
             populateEscenarios();
             document.getElementById('prod_escenario').value = id;
             handleEscenarioChange();
@@ -782,38 +824,33 @@
         function updateEventSelect() {
             const select = document.getElementById('eventSelect');
             select.innerHTML = '';
-            
-            const currentUser = database.currentUser;
-            const user = database.users[currentUser];
+
+            const user = usersCache[currentUser];
             const isAdmin = user && user.role === 'admin';
-            
-            let hasData = false;
-            for (const key in database.events) {
+
+            for (const key in eventsCache) {
                 // Si no es admin, verificar si el evento está permitido para este usuario
                 if (!isAdmin && user && (!user.allowedEvents || !user.allowedEvents.includes(key))) {
                     continue;
                 }
-                
-                hasData = true;
+
                 const opt = document.createElement('option');
                 opt.value = key;
-                opt.innerText = database.events[key].name;
-                if(key === database.currentEvent) opt.selected = true;
+                opt.innerText = eventsCache[key].name;
+                if(key === currentEvent) opt.selected = true;
                 select.appendChild(opt);
             }
-            
+
             // Si el evento seleccionado actualmente no está entre los permitidos para este usuario,
             // cambiar el evento actual al primero de la lista (si existe).
-            const selectedOpt = select.querySelector(`option[value="${database.currentEvent}"]`);
+            const selectedOpt = select.querySelector(`option[value="${currentEvent}"]`);
             if (!selectedOpt && select.options.length > 0) {
-                database.currentEvent = select.options[0].value;
-                select.value = database.currentEvent;
-                saveData();
+                currentEvent = select.options[0].value;
+                select.value = currentEvent;
                 loadEventData();
             } else if (select.options.length === 0) {
                 // No tiene ningún evento permitido
-                database.currentEvent = "";
-                saveData();
+                currentEvent = "";
                 // Limpiar campos
                 allFields.forEach(f => {
                     const el = document.getElementById(f);
@@ -822,67 +859,65 @@
             }
         }
 
-        function createNewEvent() {
+        async function createNewEvent() {
             const name = prompt("Nombre del nuevo festival o evento:");
             if (!name) return;
             const id = "fest_" + Date.now();
-            database.events[id] = { name: name };
-            allFields.forEach(f => {
-                if(f === 'prod_rider' || f === 'prod_efectos' || f === 'prod_pirotecnia') {
-                    database.events[id][f] = "no";
-                } else {
-                    database.events[id][f] = "";
-                }
-            });
-            database.currentEvent = id;
-            saveData();
+            const newEvent = { id, name, rider: "no", efectos: "no", pirotecnia: "no" };
+
+            const { error } = await sb.from('events').insert(newEvent);
+            if (error) {
+                alert("Error creando evento: " + error.message);
+                return;
+            }
+
+            await loadAllData();
+            currentEvent = id;
             updateEventSelect();
             loadEventData();
             renderAdminPanel();
         }
 
-        function deleteCurrentEvent() {
-            const currentId = database.currentEvent;
-            if(!database.events[currentId]) return;
+        async function deleteCurrentEvent() {
+            const currentId = currentEvent;
+            if(!eventsCache[currentId]) return;
 
-            if(confirm(`¿Estás seguro de eliminar el evento "${database.events[currentId].name}"?`)) {
-                delete database.events[currentId];
-                
-                // Limpiar permisos de este evento en todos los usuarios
-                for (const username in database.users) {
-                    const user = database.users[username];
-                    if (user && user.allowedEvents) {
-                        const index = user.allowedEvents.indexOf(currentId);
-                        if (index > -1) {
-                            user.allowedEvents.splice(index, 1);
-                        }
-                    }
-                }
-                
-                const keys = Object.keys(database.events);
-                database.currentEvent = keys.length > 0 ? keys[0] : "";
-                saveData();
-                updateEventSelect();
-                if(database.currentEvent) loadEventData();
-                else location.reload();
-                
-                renderAdminPanel();
+            if(!confirm(`¿Estás seguro de eliminar el evento "${eventsCache[currentId].name}"?`)) return;
+
+            const { error } = await sb.from('events').delete().eq('id', currentId);
+            if (error) {
+                alert("Error eliminando evento: " + error.message);
+                return;
             }
+
+            // Limpiar permisos de este evento en todos los usuarios afectados
+            const affectedUsers = Object.entries(usersCache).filter(([, u]) => u.allowedEvents && u.allowedEvents.includes(currentId));
+            await Promise.all(affectedUsers.map(([username, u]) => {
+                const allowed = u.allowedEvents.filter(id => id !== currentId);
+                return sb.from('app_users').update({ allowed_events: allowed }).eq('username', username);
+            }));
+
+            await loadAllData();
+            const keys = Object.keys(eventsCache);
+            currentEvent = keys.length > 0 ? keys[0] : "";
+            updateEventSelect();
+            if(currentEvent) loadEventData();
+
+            renderAdminPanel();
         }
 
         function loadEventData() {
             const select = document.getElementById('eventSelect');
             if(!select.value) return;
-            database.currentEvent = select.value;
-            saveData();
+            currentEvent = select.value;
 
-            const event = database.events[database.currentEvent];
+            const event = eventsCache[currentEvent];
 
             // Cargar datos en los inputs del DOM
             allFields.forEach(f => {
                 const element = document.getElementById(f);
                 if (element) {
-                    element.value = event[f] || "";
+                    element.value = event[fieldMap[f]] || "";
                 }
             });
 
@@ -891,25 +926,27 @@
             toggleRiderEmpresa();
         }
 
-        function saveAllFestivalData(e) {
+        async function saveAllFestivalData(e) {
             e.preventDefault();
-            const currentId = database.currentEvent;
-            if(!currentId || !database.events[currentId]) return;
+            const currentId = currentEvent;
+            if(!currentId || !eventsCache[currentId]) return;
 
-            const event = database.events[currentId];
+            const updateObj = {};
             allFields.forEach(f => {
                 const element = document.getElementById(f);
                 if (element) {
-                    event[f] = element.value;
+                    updateObj[fieldMap[f]] = element.value;
                 }
             });
 
-            saveData();
-            alert("¡Datos del evento guardados con éxito en FestivalYa!");
-        }
+            const { error } = await sb.from('events').update(updateObj).eq('id', currentId);
+            if (error) {
+                alert("Error guardando: " + error.message);
+                return;
+            }
 
-        function saveData() {
-            localStorage.setItem('festivalya_app_db', JSON.stringify(database));
+            Object.assign(eventsCache[currentId], updateObj);
+            alert("¡Datos del evento guardados con éxito en FestivalYa!");
         }
 
         function switchTab(tabId, button) {
@@ -924,7 +961,6 @@
         }
 
         // Arranque Inicial
-        populateEscenarios();
         checkAuth();
     </script>
 </body>

@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FestivalYa - Gestión Técnica de Eventos</title>
+    <style>
+        :root {
+            --bg-primary: #0a0b0e;
+            --bg-card: #14161d;
+            --accent-neon: #ff3366;
+            --accent-cyan: #00f0ff;
+            --text-main: #ffffff;
+            --text-muted: #7e8693;
+            --border: #222630;
+            --danger: #df2249;
+            --success: #33ff99;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+        }
+
+        body {
+            background-color: var(--bg-primary);
+            color: var(--text-main);
+            padding-bottom: 90px;
+        }
+
+        /* --- HEADER & CONTROLES --- */
+        header {
+            padding: 15px;
+            background: #14161d;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            align-items: center;
+            position: sticky;
+            top: 0;
+            z-index: 999;
+        }
+
+        .logo-row {
+            display: flex;
+            justify-content: space-between;
+            width: 100%;
+            align-items: center;
+            max-width: 500px;
+        }
+
+        .logo {
+            font-size: 22px;
+            font-weight: 900;
+            text-transform: uppercase;
+            letter-spacing: 3px;
+            background: linear-gradient(45deg, var(--accent-neon), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .btn-danger-sm {
+            background: rgba(223, 34, 73, 0.15);
+            color: var(--danger);
+            border: 1px solid var(--danger);
+            padding: 5px 10px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .event-selector-zone {
+            display: flex;
+            gap: 8px;
+            width: 100%;
+            max-width: 500px;
+        }
+
+        select, input, textarea {
+            background: var(--bg-primary);
+            color: white;
+            border: 1px solid var(--border);
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            outline: none;
+            width: 100%;
+        }
+
+        select:focus, input:focus, textarea:focus {
+            border-color: var(--accent-cyan);
+        }
+
+        .btn-add-event {
+            background: var(--accent-cyan);
+            color: black;
+            border: none;
+            padding: 0 15px;
+            border-radius: 6px;
+            font-weight: bold;
+            cursor: pointer;
+            font-size: 13px;
+            width: auto;
+        }
+
+        /* --- CONTENEDOR DE SECCIONES --- */
+        .app-page {
+            display: none;
+            padding: 20px 15px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        .app-page.active {
+            display: block;
+        }
+
+        h2 {
+            font-size: 15px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            border-left: 3px solid var(--accent-neon);
+            padding-left: 10px;
+            color: #fff;
+        }
+
+        /* --- FORMULARIOS --- */
+        .card-group {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .form-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 14px;
+        }
+
+        .form-card label {
+            display: block;
+            font-size: 11px;
+            color: var(--accent-cyan);
+            text-transform: uppercase;
+            margin-bottom: 6px;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        .inline-row {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .conditional-box {
+            display: none;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(0, 240, 255, 0.03);
+            border-left: 2px solid var(--accent-cyan);
+            border-radius: 4px;
+        }
+
+        .measures-badge {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--success);
+            font-weight: bold;
+        }
+
+        .btn-save-all {
+            background: linear-gradient(45deg, var(--accent-neon), #d02550);
+            color: white;
+            border: none;
+            width: 100%;
+            padding: 14px;
+            border-radius: 6px;
+            font-weight: bold;
+            margin-top: 15px;
+            cursor: pointer;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            font-size: 13px;
+        }
+
+        /* --- NAVBAR INFERIOR --- */
+        .nav-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 70px;
+            background-color: #0c0d12;
+            border-top: 1px solid var(--border);
+            display: flex;
+            justify-content: space-around;
+            align-items: center;
+            z-index: 1000;
+            padding: 0 2px;
+        }
+
+        .nav-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            color: var(--text-muted);
+            background: none;
+            border: none;
+            cursor: pointer;
+            font-size: 9px;
+            text-transform: uppercase;
+            gap: 4px;
+            flex: 1;
+            min-width: 0;
+        }
+
+        .nav-item span { font-size: 18px; }
+        .nav-item.active { color: var(--accent-neon); }
+
+        /* --- LOGIN OVERLAY --- */
+        #login-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-primary);
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .login-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            padding: 30px;
+            border-radius: 12px;
+            width: 100%;
+            max-width: 350px;
+            text-align: center;
+        }
+
+        .login-card h1 {
+            font-size: 24px;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, var(--accent-neon), var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-weight: 900;
+        }
+
+        /* --- ADMIN PANEL STYLES --- */
+        .user-manager-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+
+        .user-item {
+            border-bottom: 1px solid var(--border);
+            padding: 12px 0;
+        }
+
+        .user-item:last-child { border-bottom: none; }
+
+        .user-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .permission-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 6px;
+            margin-top: 8px;
+        }
+
+        .permission-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            background: rgba(255,255,255,0.05);
+            padding: 6px;
+            border-radius: 4px;
+        }
+
+        .permission-item input {
+            width: auto;
+        }
+
+        .btn-logout {
+            background: none;
+            border: 1px solid var(--border);
+            color: var(--text-muted);
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 10px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="login-overlay">
+        <div class="login-card">
+            <h1>FestivalYa</h1>
+            <div style="display: flex; flex-direction: column; gap: 15px;">
+                <input type="text" id="login_user" placeholder="Usuario">
+                <input type="password" id="login_pass" placeholder="Contraseña">
+                <button class="btn-save-all" style="margin-top: 0;" onclick="handleLogin()">Entrar</button>
+            </div>
+            <p id="login_error" style="color: var(--danger); font-size: 12px; margin-top: 15px; display: none;">Credenciales incorrectas</p>
+        </div>
+    </div>
+
+    <header>
+        <div class="logo-row">
+            <div class="logo">FestivalYa</div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <button class="btn-logout" onclick="logout()">Cerrar Sesión</button>
+                <button id="admin_delete_btn" class="btn-danger-sm" onclick="deleteCurrentEvent()">🗑️ Eliminar</button>
+            </div>
+        </div>
+        <div class="event-selector-zone">
+            <select id="eventSelect" onchange="loadEventData()">
+                </select>
+            <button id="admin_add_event_btn" class="btn-add-event" onclick="createNewEvent()">+ Nuevo</button>
+        </div>
+    </header>
+
+    <form id="festivalForm" onsubmit="saveAllFestivalData(event)">
+
+        <div id="tab_produccion" class="app-page active">
+            <h2>Módulo de Producción</h2>
+            <div class="card-group">
+                
+                <div class="form-card">
+                    <label>🎬 Escenario</label>
+                    <div class="inline-row" style="margin-bottom: 8px;">
+                        <select id="prod_escenario" onchange="handleEscenarioChange()">
+                            <option value="">-- Elegir escenario --</option>
+                        </select>
+                        <button type="button" class="btn-add-event" onclick="addCustomEscenario()">+ Añadir</button>
+                    </div>
+                    <div id="escenario_medidas_display" class="measures-badge"></div>
+                </div>
+
+                <div class="form-card">
+                    <label>🎸 Rider</label>
+                    <select id="prod_rider" onchange="toggleRiderEmpresa()">
+                        <option value="no">No</option>
+                        <option value="si">Sí</option>
+                    </select>
+                    <div id="box_rider_empresa" class="conditional-box">
+                        <label>🏢 Empresa de Sonido/Iluminación</label>
+                        <input type="text" id="prod_rider_empresa" placeholder="Nombre de la empresa proveedora">
+                    </div>
+                </div>
+
+                <div class="form-card">
+                    <label>🛡️ Vallas Antipánico</label>
+                    <input type="text" id="prod_vallas_antipanico" placeholder="Ej: 15 metros lineales frente a escenario">
+                </div>
+
+                <div class="form-card">
+                    <label>🚧 Vallas Bajas (Ayuntamiento)</label>
+                    <input type="text" id="prod_vallas_bajas" placeholder="Ej: Ayuntamiento de Porriño - 60 unidades">
+                </div>
+
+                <div class="form-card">
+                    <label>✨ Efectos FX</label>
+                    <select id="prod_efectos">
+                        <option value="no">No</option>
+                        <option value="si">Sí</option>
+                        <option value="incluidos">Incluidos</option>
+                    </select>
+                </div>
+
+                <div class="form-card">
+                    <label>🎆 Pirotecnia</label>
+                    <select id="prod_pirotecnia">
+                        <option value="no">No</option>
+                        <option value="si">Sí</option>
+                    </select>
+                </div>
+
+                <div class="form-card">
+                    <label>⚡ Generadores / Energía</label>
+                    <input type="text" id="prod_generadores" placeholder="Ej: 2x Grupos Insonorizados 150KVA">
+                </div>
+
+                <div class="form-card">
+                    <label>🚾 Baños</label>
+                    <input type="text" id="prod_banos" placeholder="Ej: 10 Cabinas estándar + 2 PMR">
+                </div>
+
+                <div class="form-card">
+                    <label>🚑 Ambulancia / Asistencia</label>
+                    <input type="text" id="prod_ambulancia" placeholder="Ej: 1 Soporte Vital Básico + 2 Técnicos">
+                </div>
+
+                <div class="form-card">
+                    <label>🗑️ Contenedores</label>
+                    <input type="text" id="prod_contenedores" placeholder="Ej: 8 unidades de 800L distribuidos">
+                </div>
+
+                <div class="form-card">
+                    <label>🧹 Limpieza</label>
+                    <input type="text" id="prod_limpieza" placeholder="Ej: Equipo de 4 personas post-evento">
+                </div>
+
+            </div>
+            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+        </div>
+
+        <div id="tab_media" class="app-page">
+            <h2>Equipo de Media / Prensa</h2>
+            <div class="card-group">
+                <div class="form-card">
+                    <label>📹 Vídeo</label>
+                    <input type="text" id="media_video" placeholder="Operadores, horarios de entrega de reels...">
+                </div>
+                <div class="form-card">
+                    <label>📸 Foto</label>
+                    <input type="text" id="media_foto" placeholder="Fotógrafos asignados, enlaces rápidos...">
+                </div>
+                <div class="form-card">
+                    <label>🛸 Drone</label>
+                    <input type="text" id="media_drone" placeholder="Piloto autorizado, plan de vuelo e id drone...">
+                </div>
+                <div class="form-card">
+                    <label>🎙️ Speaker</label>
+                    <input type="text" id="media_speaker" placeholder="Presentadores o locutores del festival...">
+                </div>
+            </div>
+            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+        </div>
+
+        <div id="tab_hosteleria" class="app-page">
+            <h2>Hostelería y Restauración</h2>
+            <div class="card-group">
+                <div class="form-card">
+                    <label>🍺 Barras</label>
+                    <textarea id="host_barras" rows="3" placeholder="Medidas de barras, número de tiradores, encargados..."></textarea>
+                </div>
+                <div class="form-card">
+                    <label>🍔 Food Trucks</label>
+                    <textarea id="host_foodtrucks" rows="3" placeholder="Listado de camiones de comida confirmados y potencia eléctrica requerida..."></textarea>
+                </div>
+            </div>
+            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+        </div>
+
+        <div id="tab_logistica" class="app-page">
+            <h2>Transfers y Camerinos</h2>
+            <div class="card-group">
+                <div class="form-card">
+                    <label>🚗 Control de Transfers / Choferes</label>
+                    <textarea id="log_transfers" rows="4" placeholder="Ej: Recogida en aeropuerto o estación de trenes, horarios de vehículos de producción..."></textarea>
+                </div>
+                <div class="form-card">
+                    <label>🚪 Disponibilidad de Camerinos</label>
+                    <textarea id="log_camerinos" rows="3" placeholder="Asignación y estado de camerinos en el backstage..."></textarea>
+                </div>
+            </div>
+            <button type="submit" class="btn-save-all">💾 Guardar Cambios FestivalYa</button>
+        </div>
+
+        <div id="tab_admin" class="app-page">
+            <h2>Gestión de Usuarios</h2>
+            <div class="card-group">
+                <div class="form-card">
+                    <label>➕ Crear Nuevo Usuario</label>
+                    <div style="display: flex; flex-direction: column; gap: 8px;">
+                        <input type="text" id="new_username" placeholder="Nombre de usuario">
+                        <input type="password" id="new_password" placeholder="Contraseña">
+                        <button type="button" class="btn-add-event" onclick="createNewUser()">+ Crear Usuario</button>
+                    </div>
+                </div>
+                <div id="user_list_container">
+                    <!-- Lista de usuarios inyectada por JS -->
+                </div>
+            </div>
+        </div>
+
+    </form>
+
+    <nav class="nav-bar">
+        <button class="nav-item active" onclick="switchTab('tab_produccion', this)">
+            <span>🏗️</span>Prod
+        </button>
+        <button class="nav-item" onclick="switchTab('tab_media', this)">
+            <span>📸</span>Media
+        </button>
+        <button class="nav-item" onclick="switchTab('tab_hosteleria', this)">
+            <span>🍔</span>Hostelería
+        </button>
+        <button class="nav-item" onclick="switchTab('tab_logistica', this)">
+            <span>🚗</span>Logística
+        </button>
+        <button id="nav_admin" class="nav-item" onclick="switchTab('tab_admin', this)" style="display: none;">
+            <span>🛡️</span>Admin
+        </button>
+    </nav>
+
+    <script>
+        // Listado global predefinido de escenarios con sus medidas automáticas
+        let masterEscenarios = JSON.parse(localStorage.getItem('festivalya_escenarios')) || {
+            "principal": { name: "Escenario Principal", measures: "14m x 10m" },
+            "secundario": { name: "Escenario Secundario", measures: "10m x 8m" },
+            "camion": { name: "Camión Escenario", measures: "12m x 6m" }
+        };
+
+        // Estructura de Datos Mejorada
+        let database = JSON.parse(localStorage.getItem('festivalya_app_db')) || {
+            currentUser: null,
+            currentEvent: "demo",
+            users: {
+                "admin": { password: "admin", role: "admin", allowedEvents: ["all"] }
+            },
+            events: {
+                "demo": {
+                    name: "Festival Ejemplo",
+                    escenario_id: "principal", rider: "no", rider_empresa: "",
+                    vallas_antipanico: "", vallas_bajas: "", efectos: "no", pirotecnia: "no",
+                    generadores: "", banos: "", ambulancia: "", contenedores: "", limpieza: "",
+                    media_video: "", media_foto: "", media_drone: "", media_speaker: "",
+                    host_barras: "", host_foodtrucks: "", log_transfers: "", log_camerinos: ""
+                }
+            }
+        };
+
+        // Asegurar que admin exista si la DB es vieja
+        if (!database.users) {
+            database.users = { "admin": { password: "admin", role: "admin", allowedEvents: ["all"] } };
+            database.currentUser = null;
+        }
+
+        const allFields = [
+            'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_vallas_antipanico',
+            'prod_vallas_bajas', 'prod_efectos', 'prod_pirotecnia', 'prod_generadores',
+            'prod_banos', 'prod_ambulancia', 'prod_contenedores', 'prod_limpieza',
+            'media_video', 'media_foto', 'media_drone', 'media_speaker',
+            'host_barras', 'host_foodtrucks', 'log_transfers', 'log_camerinos'
+        ];
+
+        // --- LÓGICA DE AUTENTICACIÓN ---
+        function checkAuth() {
+            const overlay = document.getElementById('login-overlay');
+            if (database.currentUser && database.users[database.currentUser]) {
+                overlay.style.display = 'none';
+                setupUIByRole();
+                updateEventSelect();
+                if (database.currentEvent) loadEventData();
+                renderAdminPanel();
+            } else {
+                overlay.style.display = 'flex';
+            }
+        }
+
+        function handleLogin() {
+            const user = document.getElementById('login_user').value;
+            const pass = document.getElementById('login_pass').value;
+            const error = document.getElementById('login_error');
+
+            if (database.users[user] && database.users[user].password === pass) {
+                database.currentUser = user;
+                saveData();
+                error.style.display = 'none';
+                checkAuth();
+            } else {
+                error.style.display = 'block';
+            }
+        }
+
+        function logout() {
+            database.currentUser = null;
+            saveData();
+            location.reload();
+        }
+
+        function setupUIByRole() {
+            const user = database.users[database.currentUser];
+            const isAdmin = user.role === 'admin';
+            
+            document.getElementById('nav_admin').style.display = isAdmin ? 'flex' : 'none';
+            document.getElementById('admin_add_event_btn').style.display = isAdmin ? 'block' : 'none';
+            document.getElementById('admin_delete_btn').style.display = isAdmin ? 'block' : 'none';
+        }
+
+        // --- GESTIÓN DE USUARIOS (ADMIN) ---
+        function createNewUser() {
+            const usernameInput = document.getElementById('new_username');
+            const passwordInput = document.getElementById('new_password');
+            const username = usernameInput.value.trim();
+            const password = passwordInput.value.trim();
+            
+            if (!username || !password) {
+                alert("Por favor, introduce un nombre de usuario y contraseña.");
+                return;
+            }
+            
+            if (database.users[username]) {
+                alert("El usuario ya existe.");
+                return;
+            }
+            
+            database.users[username] = {
+                password: password,
+                role: "user",
+                allowedEvents: []
+            };
+            
+            saveData();
+            usernameInput.value = "";
+            passwordInput.value = "";
+            
+            renderAdminPanel();
+            alert(`Usuario "${username}" creado correctamente.`);
+        }
+
+        function deleteUser(username) {
+            if (confirm(`¿Estás seguro de que deseas eliminar al usuario "${username}"?`)) {
+                delete database.users[username];
+                saveData();
+                renderAdminPanel();
+            }
+        }
+
+        function toggleUserPermission(username, eventId, isAllowed) {
+            const user = database.users[username];
+            if (!user) return;
+            
+            if (!user.allowedEvents) {
+                user.allowedEvents = [];
+            }
+            
+            if (isAllowed) {
+                if (!user.allowedEvents.includes(eventId)) {
+                    user.allowedEvents.push(eventId);
+                }
+            } else {
+                const index = user.allowedEvents.indexOf(eventId);
+                if (index > -1) {
+                    user.allowedEvents.splice(index, 1);
+                }
+            }
+            
+            saveData();
+            // Si el usuario editado es el actual, refrescar la lista de eventos
+            if (username === database.currentUser) {
+                updateEventSelect();
+            }
+        }
+
+        function renderAdminPanel() {
+            const container = document.getElementById('user_list_container');
+            if (!container) return;
+            
+            container.innerHTML = '<h3 style="font-size: 14px; margin-top: 15px; margin-bottom: 10px; color: var(--accent-neon);">👥 Usuarios Registrados</h3>';
+            
+            let hasUsers = false;
+            for (const username in database.users) {
+                if (username === "admin") continue; // No autogestionar el admin principal
+                
+                hasUsers = true;
+                const user = database.users[username];
+                
+                const userCard = document.createElement('div');
+                userCard.className = 'user-manager-card';
+                
+                // Cabecera del usuario (Nombre y botón eliminar)
+                const header = document.createElement('div');
+                header.className = 'user-header';
+                header.innerHTML = `
+                    <span style="font-weight: bold; color: var(--accent-cyan);">${username}</span>
+                    <button type="button" class="btn-danger-sm" onclick="deleteUser('${username}')">🗑️ Eliminar</button>
+                `;
+                userCard.appendChild(header);
+                
+                // Sección de permisos de eventos
+                const permSection = document.createElement('div');
+                permSection.innerHTML = `<p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Permisos de acceso a eventos:</p>`;
+                
+                const grid = document.createElement('div');
+                grid.className = 'permission-grid';
+                
+                // Mostrar todos los eventos disponibles para asignar permisos
+                for (const eventId in database.events) {
+                    const event = database.events[eventId];
+                    const isChecked = user.allowedEvents && user.allowedEvents.includes(eventId);
+                    
+                    const item = document.createElement('label');
+                    item.className = 'permission-item';
+                    item.innerHTML = `
+                        <input type="checkbox" ${isChecked ? 'checked' : ''} onchange="toggleUserPermission('${username}', '${eventId}', this.checked)">
+                        <span>${event.name}</span>
+                    `;
+                    grid.appendChild(item);
+                }
+                
+                if (Object.keys(database.events).length === 0) {
+                    const noEvents = document.createElement('p');
+                    noEvents.style.cssText = "font-size: 11px; color: var(--danger); margin-top: 5px;";
+                    noEvents.innerText = "No hay eventos creados todavía.";
+                    grid.appendChild(noEvents);
+                }
+                
+                permSection.appendChild(grid);
+                userCard.appendChild(permSection);
+                container.appendChild(userCard);
+            }
+            
+            if (!hasUsers) {
+                const emptyMsg = document.createElement('p');
+                emptyMsg.style.cssText = "font-size: 12px; color: var(--text-muted); text-align: center; margin-top: 15px;";
+                emptyMsg.innerText = "No hay otros usuarios creados.";
+                container.appendChild(emptyMsg);
+            }
+        }
+
+        function populateEscenarios() {
+            const select = document.getElementById('prod_escenario');
+            // Mantener la primera opción limpia
+            select.innerHTML = '<option value="">-- Elegir escenario --</option>';
+            for(const id in masterEscenarios) {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.innerText = masterEscenarios[id].name;
+                select.appendChild(opt);
+            }
+        }
+
+        function handleEscenarioChange() {
+            const select = document.getElementById('prod_escenario');
+            const display = document.getElementById('escenario_medidas_display');
+            const selectedId = select.value;
+            
+            if(selectedId && masterEscenarios[selectedId]) {
+                display.innerText = "📐 Medidas automáticas: " + masterEscenarios[selectedId].measures;
+            } else {
+                display.innerText = "";
+            }
+        }
+
+        function addCustomEscenario() {
+            const name = prompt("Introduce el nombre del nuevo escenario:");
+            if(!name) return;
+            const measures = prompt("Introduce las medidas de este escenario (Ej: 16m x 12m):");
+            if(!measures) return;
+
+            const id = "esc_" + Date.now();
+            masterEscenarios[id] = { name: name, measures: measures };
+            localStorage.setItem('festivalya_escenarios', JSON.stringify(masterEscenarios));
+            
+            populateEscenarios();
+            document.getElementById('prod_escenario').value = id;
+            handleEscenarioChange();
+        }
+
+        function toggleRiderEmpresa() {
+            const riderVal = document.getElementById('prod_rider').value;
+            const box = document.getElementById('box_rider_empresa');
+            box.style.display = (riderVal === 'si') ? 'block' : 'none';
+        }
+
+        function updateEventSelect() {
+            const select = document.getElementById('eventSelect');
+            select.innerHTML = '';
+            
+            const currentUser = database.currentUser;
+            const user = database.users[currentUser];
+            const isAdmin = user && user.role === 'admin';
+            
+            let hasData = false;
+            for (const key in database.events) {
+                // Si no es admin, verificar si el evento está permitido para este usuario
+                if (!isAdmin && user && (!user.allowedEvents || !user.allowedEvents.includes(key))) {
+                    continue;
+                }
+                
+                hasData = true;
+                const opt = document.createElement('option');
+                opt.value = key;
+                opt.innerText = database.events[key].name;
+                if(key === database.currentEvent) opt.selected = true;
+                select.appendChild(opt);
+            }
+            
+            // Si el evento seleccionado actualmente no está entre los permitidos para este usuario,
+            // cambiar el evento actual al primero de la lista (si existe).
+            const selectedOpt = select.querySelector(`option[value="${database.currentEvent}"]`);
+            if (!selectedOpt && select.options.length > 0) {
+                database.currentEvent = select.options[0].value;
+                select.value = database.currentEvent;
+                saveData();
+                loadEventData();
+            } else if (select.options.length === 0) {
+                // No tiene ningún evento permitido
+                database.currentEvent = "";
+                saveData();
+                // Limpiar campos
+                allFields.forEach(f => {
+                    const el = document.getElementById(f);
+                    if (el) el.value = "";
+                });
+            }
+        }
+
+        function createNewEvent() {
+            const name = prompt("Nombre del nuevo festival o evento:");
+            if (!name) return;
+            const id = "fest_" + Date.now();
+            database.events[id] = { name: name };
+            allFields.forEach(f => {
+                if(f === 'prod_rider' || f === 'prod_efectos' || f === 'prod_pirotecnia') {
+                    database.events[id][f] = "no";
+                } else {
+                    database.events[id][f] = "";
+                }
+            });
+            database.currentEvent = id;
+            saveData();
+            updateEventSelect();
+            loadEventData();
+            renderAdminPanel();
+        }
+
+        function deleteCurrentEvent() {
+            const currentId = database.currentEvent;
+            if(!database.events[currentId]) return;
+
+            if(confirm(`¿Estás seguro de eliminar el evento "${database.events[currentId].name}"?`)) {
+                delete database.events[currentId];
+                
+                // Limpiar permisos de este evento en todos los usuarios
+                for (const username in database.users) {
+                    const user = database.users[username];
+                    if (user && user.allowedEvents) {
+                        const index = user.allowedEvents.indexOf(currentId);
+                        if (index > -1) {
+                            user.allowedEvents.splice(index, 1);
+                        }
+                    }
+                }
+                
+                const keys = Object.keys(database.events);
+                database.currentEvent = keys.length > 0 ? keys[0] : "";
+                saveData();
+                updateEventSelect();
+                if(database.currentEvent) loadEventData();
+                else location.reload();
+                
+                renderAdminPanel();
+            }
+        }
+
+        function loadEventData() {
+            const select = document.getElementById('eventSelect');
+            if(!select.value) return;
+            database.currentEvent = select.value;
+            saveData();
+
+            const event = database.events[database.currentEvent];
+
+            // Cargar datos en los inputs del DOM
+            allFields.forEach(f => {
+                const element = document.getElementById(f);
+                if (element) {
+                    element.value = event[f] || "";
+                }
+            });
+
+            // Forzar refresco de las lógicas visuales de escenarios y condicionales
+            handleEscenarioChange();
+            toggleRiderEmpresa();
+        }
+
+        function saveAllFestivalData(e) {
+            e.preventDefault();
+            const currentId = database.currentEvent;
+            if(!currentId || !database.events[currentId]) return;
+
+            const event = database.events[currentId];
+            allFields.forEach(f => {
+                const element = document.getElementById(f);
+                if (element) {
+                    event[f] = element.value;
+                }
+            });
+
+            saveData();
+            alert("¡Datos del evento guardados con éxito en FestivalYa!");
+        }
+
+        function saveData() {
+            localStorage.setItem('festivalya_app_db', JSON.stringify(database));
+        }
+
+        function switchTab(tabId, button) {
+            const pages = document.querySelectorAll('.app-page');
+            pages.forEach(p => p.classList.remove('active'));
+            const navs = document.querySelectorAll('.nav-item');
+            navs.forEach(n => n.classList.remove('active'));
+
+            document.getElementById(tabId).classList.add('active');
+            button.classList.add('active');
+            window.scrollTo({top: 0, behavior: 'smooth'});
+        }
+
+        // Arranque Inicial
+        populateEscenarios();
+        checkAuth();
+    </script>
+</body>
+</html>

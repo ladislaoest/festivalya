@@ -1953,7 +1953,15 @@
                 }
                 for (const domId in FIELD_META) {
                     const col = fieldMap[domId];
-                    const val = event[col];
+                    let val = event[col];
+
+                    // El escenario se guarda como ID interno; buscar por su nombre y medidas reales
+                    if (domId === 'prod_escenario') {
+                        if (!val || !masterEscenarios[val]) continue;
+                        const esc = masterEscenarios[val];
+                        val = esc.measures ? `${esc.name} (${esc.measures})` : esc.name;
+                    }
+
                     if (val && String(val).toLowerCase().includes(q)) {
                         results.push({ eventId: event.id, eventName: event.name, field: FIELD_META[domId].label, snippet: String(val), tab: FIELD_META[domId].tab });
                     }

@@ -58,13 +58,32 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     password TEXT NOT NULL,                    -- texto plano (ver nota de seguridad arriba)
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
     allowed_events TEXT[] NOT NULL DEFAULT '{}',
+    last_seen_notifications TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Por si la tabla ya existía de una instalación anterior sin esta columna
+ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS last_seen_notifications TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS public.escenarios (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     measures TEXT
+);
+
+-- Registro de actividad: qué usuario cambió qué en qué evento.
+-- `visible_to` guarda una foto de los usuarios con acceso al evento en
+-- el momento del cambio, para que la notificación no se pierda si
+-- luego se le quita el acceso a alguien (o se borra el evento).
+CREATE TABLE IF NOT EXISTS public.activity_log (
+    id BIGSERIAL PRIMARY KEY,
+    event_id TEXT,
+    event_name TEXT NOT NULL,
+    username TEXT NOT NULL,
+    action TEXT NOT NULL,
+    detail TEXT,
+    visible_to TEXT[] NOT NULL DEFAULT '{}',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- =====================================================================
@@ -92,6 +111,7 @@ ON CONFLICT (id) DO NOTHING;
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.escenarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public access events" ON public.events;
 CREATE POLICY "public access events" ON public.events FOR ALL USING (true) WITH CHECK (true);
@@ -101,3 +121,17 @@ CREATE POLICY "public access app_users" ON public.app_users FOR ALL USING (true)
 
 DROP POLICY IF EXISTS "public access escenarios" ON public.escenarios;
 CREATE POLICY "public access escenarios" ON public.escenarios FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access activity_log" ON public.activity_log;
+CREATE POLICY "public access activity_log" ON public.activity_log FOR ALL USING (true) WITH CHECK (true);
+
+-- =====================================================================
+-- REALTIME (para que las notificaciones lleguen sin recargar la app)
+-- =====================================================================
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_log;
+EXCEPTION WHEN OTHERS THEN
+    NULL; -- ya estaba agregada
+END $$;

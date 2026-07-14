@@ -916,11 +916,26 @@
     <div id="tab_disenos" class="app-page">
         <h2>Diseños</h2>
         <div class="category-tab-row" id="design_category_tabs"></div>
+
         <div class="form-card">
-            <label>Subir archivo</label>
-            <input type="file" id="design_file_input" onchange="uploadDesignFile(this)">
+            <label id="design_needed_label">¿Necesita Dossier?</label>
+            <select id="design_needed_select" onchange="onDesignNeededChange()">
+                <option value="no">No</option>
+                <option value="si">Sí</option>
+            </select>
         </div>
-        <div id="design_files_list" class="card-group" style="margin-top: 14px;"></div>
+
+        <div id="design_needed_box" class="conditional-box" style="padding:0; background:transparent; border-left:none; display:none;">
+            <div class="form-card" style="margin-bottom: 10px;">
+                <label>Comentarios</label>
+                <textarea id="design_comment_input" rows="3" placeholder="Notas, indicaciones, medidas..." onblur="saveDesignStatus()"></textarea>
+            </div>
+            <div class="form-card">
+                <label>Subir archivo</label>
+                <input type="file" id="design_file_input" onchange="uploadDesignFile(this)">
+            </div>
+            <div id="design_files_list" class="card-group" style="margin-top: 14px;"></div>
+        </div>
     </div>
 
     <form id="festivalForm" onsubmit="saveAllFestivalData(event)">
@@ -1669,6 +1684,7 @@
                 loadMapaIframe();
             }
             if (document.getElementById('tab_disenos').classList.contains('active')) {
+                loadDesignStatus();
                 loadDesignFiles();
             }
         }
@@ -2120,6 +2136,7 @@
                 loadMapaIframe();
             } else if (tabId === 'tab_disenos') {
                 renderDesignCategoryTabs();
+                loadDesignStatus();
                 loadDesignFiles();
             } else {
                 window.scrollTo({top: 0, behavior: 'smooth'});
@@ -2156,7 +2173,77 @@
         function setDesignCategory(key) {
             activeDesignCategory = key;
             renderDesignCategoryTabs();
+            loadDesignStatus();
             loadDesignFiles();
+        }
+
+        function updateDesignNeededVisibility() {
+            const select = document.getElementById('design_needed_select');
+            const box = document.getElementById('design_needed_box');
+            box.style.display = select.value === 'si' ? 'block' : 'none';
+        }
+
+        async function loadDesignStatus() {
+            const catObj = DESIGN_CATEGORIES.find(c => c.key === activeDesignCategory);
+            document.getElementById('design_needed_label').textContent = `¿Necesita ${catObj ? catObj.label : ''}?`;
+
+            const select = document.getElementById('design_needed_select');
+            const comment = document.getElementById('design_comment_input');
+
+            if (!currentEvent) {
+                select.value = 'no';
+                comment.value = '';
+                updateDesignNeededVisibility();
+                return;
+            }
+
+            const { data, error } = await sb.from('event_design_status')
+                .select('*')
+                .eq('event_id', currentEvent)
+                .eq('category', activeDesignCategory)
+                .maybeSingle();
+
+            if (!error && data) {
+                select.value = data.needed ? 'si' : 'no';
+                comment.value = data.comment || '';
+            } else {
+                select.value = 'no';
+                comment.value = '';
+            }
+
+            updateDesignNeededVisibility();
+        }
+
+        async function onDesignNeededChange() {
+            updateDesignNeededVisibility();
+            await saveDesignStatus();
+            if (document.getElementById('design_needed_select').value === 'si') {
+                loadDesignFiles();
+            }
+        }
+
+        async function saveDesignStatus() {
+            if (!currentEvent) return;
+
+            const select = document.getElementById('design_needed_select');
+            const comment = document.getElementById('design_comment_input');
+            const needed = select.value === 'si';
+
+            const { error } = await sb.from('event_design_status').upsert({
+                event_id: currentEvent,
+                category: activeDesignCategory,
+                needed: needed,
+                comment: comment.value
+            }, { onConflict: 'event_id,category' });
+
+            if (error) {
+                alert("Error guardando: " + error.message);
+                return;
+            }
+
+            const catObj = DESIGN_CATEGORIES.find(c => c.key === activeDesignCategory);
+            const eventName = eventsCache[currentEvent] ? eventsCache[currentEvent].name : '';
+            await logActivity(currentEvent, eventName, 'update', `Actualizó ${catObj ? catObj.label : activeDesignCategory}: ${needed ? 'Sí' : 'No'}`);
         }
 
         async function loadDesignFiles() {

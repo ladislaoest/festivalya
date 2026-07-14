@@ -36,3 +36,18 @@ ALTER TABLE public.event_files ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public access event_files" ON public.event_files;
 CREATE POLICY "public access event_files" ON public.event_files FOR ALL USING (true) WITH CHECK (true);
+
+-- 4. Estado por categoría: ¿este evento necesita Dossier/Impresión/Lona/...?
+--    y comentarios asociados a esa categoría.
+CREATE TABLE IF NOT EXISTS public.event_design_status (
+    event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    category TEXT NOT NULL CHECK (category IN ('dossier', 'impresion', 'lona', 'acreditaciones', 'otros')),
+    needed BOOLEAN NOT NULL DEFAULT false,
+    comment TEXT,
+    PRIMARY KEY (event_id, category)
+);
+
+ALTER TABLE public.event_design_status ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "public access event_design_status" ON public.event_design_status;
+CREATE POLICY "public access event_design_status" ON public.event_design_status FOR ALL USING (true) WITH CHECK (true);

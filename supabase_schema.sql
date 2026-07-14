@@ -88,6 +88,30 @@ CREATE TABLE IF NOT EXISTS public.activity_log (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Sección "Diseños": bucket de Storage para archivos + metadatos por evento
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('event-designs', 'event-designs', true)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.event_files (
+    id BIGSERIAL PRIMARY KEY,
+    event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    category TEXT NOT NULL CHECK (category IN ('dossier', 'impresion', 'lona', 'acreditaciones', 'otros')),
+    file_name TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    uploaded_by TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+-- ¿Este evento necesita Dossier/Impresión/Lona/...? + comentarios por categoría
+CREATE TABLE IF NOT EXISTS public.event_design_status (
+    event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    category TEXT NOT NULL CHECK (category IN ('dossier', 'impresion', 'lona', 'acreditaciones', 'otros')),
+    needed BOOLEAN NOT NULL DEFAULT false,
+    comment TEXT,
+    PRIMARY KEY (event_id, category)
+);
+
 -- =====================================================================
 -- DATOS INICIALES
 -- =====================================================================
@@ -114,6 +138,8 @@ ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.escenarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.event_files ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.event_design_status ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public access events" ON public.events;
 CREATE POLICY "public access events" ON public.events FOR ALL USING (true) WITH CHECK (true);
@@ -126,6 +152,24 @@ CREATE POLICY "public access escenarios" ON public.escenarios FOR ALL USING (tru
 
 DROP POLICY IF EXISTS "public access activity_log" ON public.activity_log;
 CREATE POLICY "public access activity_log" ON public.activity_log FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access event_files" ON public.event_files;
+CREATE POLICY "public access event_files" ON public.event_files FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access event_design_status" ON public.event_design_status;
+CREATE POLICY "public access event_design_status" ON public.event_design_status FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public read event-designs" ON storage.objects;
+CREATE POLICY "public read event-designs" ON storage.objects
+    FOR SELECT USING (bucket_id = 'event-designs');
+
+DROP POLICY IF EXISTS "public insert event-designs" ON storage.objects;
+CREATE POLICY "public insert event-designs" ON storage.objects
+    FOR INSERT WITH CHECK (bucket_id = 'event-designs');
+
+DROP POLICY IF EXISTS "public delete event-designs" ON storage.objects;
+CREATE POLICY "public delete event-designs" ON storage.objects
+    FOR DELETE USING (bucket_id = 'event-designs');
 
 -- =====================================================================
 -- REALTIME (para que las notificaciones lleguen sin recargar la app)

@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>FestivalYa - Mapa del Evento</title>
+  <link rel="icon" type="image/png" href="../icons/icon-32.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-search@2.9.7/dist/leaflet-search.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+  <!-- Botón Menú Móvil -->
+  <button id="mobile-menu-btn">☰ MENÚ</button>
+
+  <div id="panel">
+    <div class="header">
+      <img src="../logo.png" alt="FestivalYa" class="logo-img">
+      <div class="save-load-controls">
+        <button class="btn" id="save-cloud-btn" title="Guardar mapa del evento">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button class="btn btn-secondary" id="export-img-btn" title="Descargar Imagen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        </button>
+        <button class="btn btn-secondary" id="measure-btn" title="Regla de Medición">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="2" y1="12" x2="22" y2="12"/><line x1="7" y1="7" x2="7" y2="17"/><line x1="12" y1="9" x2="12" y2="15"/><line x1="17" y1="7" x2="17" y2="17"/></svg>
+        </button>
+        <button class="btn btn-secondary" id="save-pc-btn" title="Guardar en PC">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        </button>
+        <button class="btn btn-secondary" id="load-btn-panel" title="Cargar Proyecto desde archivo">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 15 12 10 7 15"/><line x1="12" y1="10" x2="12" y2="22"/></svg>
+        </button>
+      </div>
+    </div>
+    <div id="event-map-title" style="font-size:12px; color:var(--text-muted); margin: -10px 0 15px; text-transform:uppercase; letter-spacing:0.5px;"></div>
+
+    <div class="view-selector">
+        <button class="view-btn active" data-view="map-2d">2D</button>
+        <button class="view-btn" data-view="3d-minimal">3D</button>
+        <button class="view-btn" id="festival-mode-btn">MODO FESTIVAL</button>
+        <button class="view-btn" id="hide-labels-btn">OCULTAR TEXTOS</button>
+        <button class="view-btn" id="illustrated-map-btn">MAPA ILUSTRADO</button>
+    </div>
+
+    <div id="editor-controls">
+            <div class="card">
+                <div class="card-title">Añadir elemento</div>
+                <div class="form-group">
+                  <select class="form-control" id="element-type">
+                    <option value="main-stage">Escenario</option>
+                    <option value="bar">Barra</option>
+                    <option value="food-truck">Food Truck</option>
+                    <option value="generator">Generador</option>
+                    <option value="wc">Baños</option>
+                    <option value="fence">Valla</option>
+                    <option value="signal-parking">Señal Parking</option>
+                    <option value="signal-disabled">Señal Minusválidos</option>
+                    <option value="signal-no-parking">Prohibido Aparcar</option>
+                    <option value="signal-exit">Salida Emergencia</option>
+                    <option value="signal-wc">Señal WC</option>
+                    <option value="zone-vip">Zona VIP</option>
+                    <option value="zone-camping">Zona Acampada</option>
+                    <option value="zone-parking">Zona Parking</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <input type="text" class="form-control" id="element-name" placeholder="Nombre (opcional)">
+                </div>
+                
+                <div id="fence-controls" class="form-group" style="display:none;">
+                  <label class="form-label">Modo de valla</label>
+                  <select class="form-control" id="fence-mode">
+                    <option value="draw">Dibujar en mapa</option>
+                    <option value="fixed">Medida fija</option>
+                  </select>
+                  <div id="fence-fixed-length-group" style="display:none; margin-top:10px;">
+                    <label class="form-label">Metros valla</label>
+                    <input type="number" class="form-control" id="fence-fixed-length" value="10">
+                  </div>
+                </div>
+
+                <div id="dimension-controls" class="form-group">
+                  <label class="form-label">Largo x Ancho (m)</label>
+                  <div style="display:flex; gap:5px;">
+                    <input type="number" class="form-control" id="element-length" value="22">
+                    <input type="number" class="form-control" id="element-width" value="10">
+                  </div>
+                </div>
+
+                <div class="icon-grid" id="icon-selector">
+                    <div class="icon-option selected" data-icon="stage" title="Escenario">S</div>
+                    <div class="icon-option" data-icon="bar" title="Barra">B</div>
+                    <div class="icon-option" data-icon="food" title="Food">F</div>
+                    <div class="icon-option" data-icon="custom" title="Gen">G</div>
+                    <div class="icon-option" data-icon="wc" title="WC">W</div>
+                    <div class="icon-option" data-icon="fence" title="Valla">V</div>
+                    <div class="icon-option" data-icon="parking" title="Parking">P</div>
+                    <div class="icon-option" data-icon="disabled" title="Minusválidos">M</div>
+                    <div class="icon-option" data-icon="noparking" title="Prohibido">∅</div>
+                    <div class="icon-option" data-icon="exit" title="Salida">E</div>
+                </div>
+
+                <button class="btn" id="add-element" style="width:100%">Añadir al mapa</button>
+            </div>
+
+            <div id="edit-panel" class="card" style="display:none;">
+                <div class="card-title">Editar seleccionado</div>
+                <div class="form-group" id="edit-rotation-group">
+                    <label class="form-label">Rotación (°)</label>
+                    <input type="range" class="form-control" id="element-rotation" min="0" max="360" value="0">
+                </div>
+                <div class="form-group">
+                    <input type="text" class="form-control" id="edit-element-name" placeholder="Editar nombre">
+                </div>
+                <div id="edit-dimension-controls" class="form-group">
+                    <label class="form-label">Largo (m)</label>
+                    <input type="number" class="form-control" id="edit-element-length">
+                    <div id="edit-width-group">
+                        <label class="form-label">Ancho (m)</label>
+                        <input type="number" class="form-control" id="edit-element-width">
+                    </div>
+                </div>
+                <button class="btn btn-secondary" id="delete-element-btn" style="width:100%">Eliminar</button>
+            </div>
+
+            <div class="card">
+                <div class="card-title">Elementos</div>
+                <div class="elements-list" id="elements-list"></div>
+            </div>
+    </div>
+  </div>
+
+  <div id="main-content">
+      <!-- Cuadro de Memoria (Estadísticas) -->
+      <div id="stats-box">
+          <h3>MEMORIA TÉCNICA</h3>
+          <p>Total Vallas: <span id="stat-vallas-m" class="stat-val">0</span>m</p>
+          <p>Secciones (2m): <span id="stat-vallas-n" class="stat-val">0</span></p>
+          <p>Total Baños: <span id="stat-wc" class="stat-val">0</span></p>
+          <p>Food Trucks: <span id="stat-food" class="stat-val">0</span></p>
+          <p>Barras: <span id="stat-bar" class="stat-val">0</span></p>
+      </div>
+
+      <div id="map-container" class="view-container active">
+          <div id="map"></div>
+          <div id="map-legend" class="map-legend">
+              <div class="legend-header" style="display:flex; justify-content:space-between; align-items:center; cursor:pointer;" id="legend-toggle">
+                <h4 style="margin:0;">LEYENDA</h4>
+                <span id="legend-arrow">▼</span>
+              </div>
+              <div id="legend-content">
+                <div id="legend-items"></div>
+              </div>
+          </div>
+      </div>
+      <div id="3d-container-full" class="view-container">
+          <canvas id="3d-canvas-full"></canvas>
+      </div>
+  </div>
+
+  <!-- Librerías JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.min.js"></script>
+  <script src="https://unpkg.com/leaflet-search@2.9.7/dist/leaflet-search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
+  <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
+  <script src="js/map.js?v=3.2"></script>
+  <script src="js/elements.js?v=3.2"></script>
+  <script src="js/view3d.js?v=3.2"></script>
+  <script src="js/save-load.js?v=3.2"></script>
+  <script src="js/main.js?v=3.2"></script>
+
+  <div id="startup-modal" class="modal-overlay">
+    <div class="modal-content">
+      <h2 class="modal-title">Mapa del Evento</h2>
+      <p>Diseño de plano a escala real</p>
+      <div class="modal-buttons" style="display: flex; flex-direction: column; gap: 10px;">
+        <button id="new-project-btn" class="btn">Nuevo Proyecto</button>
+        <button id="use-gps-btn" class="btn btn-secondary">📍 Usar mi ubicación</button>
+        <button id="load-project-btn" class="btn btn-secondary">Cargar desde archivo</button>
+      </div>
+    </div>
+  </div>
+  <input type="file" id="load-project-input" style="display: none;" accept=".json">
+</body>
+</html>

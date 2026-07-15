@@ -3004,6 +3004,8 @@
                 return;
             }
 
+            const isAdmin = usersCache[currentUser] && usersCache[currentUser].role === 'admin';
+
             container.innerHTML = talkieMessagesCache.map(m => {
                 const url = sb.storage.from('talkie-recordings').getPublicUrl(m.storage_path).data.publicUrl;
                 const dur = m.duration_seconds ? `${Math.round(m.duration_seconds)}s` : '';
@@ -3011,13 +3013,32 @@
                     <div class="file-item" style="flex-direction:column; align-items:stretch; gap:8px;">
                         <div style="display:flex; justify-content:space-between; align-items:center;">
                             <div class="file-item-name">${escapeHtml(m.username)}</div>
-                            <div class="file-item-meta">${dur} · ${timeAgo(m.created_at)}</div>
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <div class="file-item-meta">${dur} · ${timeAgo(m.created_at)}</div>
+                                ${isAdmin ? `<button type="button" class="btn-danger-sm" onclick="deleteTalkieMessage(${m.id}, '${m.storage_path}')">${ICON_TRASH}</button>` : ''}
+                            </div>
                         </div>
                         <audio controls preload="none" style="width:100%; height:36px;" src="${url}"></audio>
                         ${m.transcript ? `<div class="sr-snippet">${escapeHtml(m.transcript)}</div>` : ''}
                     </div>
                 `;
             }).join('');
+        }
+
+        async function deleteTalkieMessage(id, storagePath) {
+            if (!confirm("¿Eliminar esta transmisión?")) return;
+
+            await sb.storage.from('talkie-recordings').remove([storagePath]);
+
+            const { error } = await sb.from('talkie_messages').delete().eq('id', id);
+            if (error) {
+                alert("Error eliminando la transmisión: " + error.message);
+                return;
+            }
+
+            talkieMessagesCache = talkieMessagesCache.filter(m => m.id !== id);
+            renderTalkieHistory();
+            updateTalkieBadge();
         }
 
         function updateTalkieBadge() {

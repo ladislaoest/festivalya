@@ -1051,7 +1051,7 @@
 
             <p class="empty-hint" style="margin-top: 14px;">Con la pantalla bloqueada, usá los controles de Play/Pausa que aparecen en la pantalla de bloqueo (los mismos de música) para hablar y dejar de hablar — no hace falta desbloquear el teléfono.</p>
 
-            <audio id="talkie_bg_silence" loop style="display:none;" src="data:audio/wav;base64,UklGRiQAAABXQVZFRm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="></audio>
+            <audio id="talkie_bg_silence" loop playsinline style="display:none;" src="talkie-silence.wav"></audio>
         </div>
 
         <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px;">
@@ -2661,6 +2661,8 @@
         let talkieMessagesCache = [];
         let talkieMessagesSubscribed = false;
         let talkieBgSilenceInterval = null;
+        let talkieKeepAliveCtx = null;
+        let talkieKeepAliveOscillator = null;
 
         function updateTalkieToggleButton(isActive) {
             const btn = document.getElementById('talkie_toggle_btn');
@@ -2687,9 +2689,11 @@
             // cualquier await) para que el navegador lo cuente como reproducción de
             // audio activa: desbloquea el autoplay del audio en vivo del Talkie y
             // (en iOS) evita que la página se suspenda al bloquear la pantalla,
-            // igual que Spotify. Es un tono de 20Hz, inaudible para humanos.
+            // igual que Spotify. Es un tono de 20Hz, casi inaudible, con datos
+            // reales (un WAV vacío no cuenta como reproducción real para iOS).
             const bgSilence = document.getElementById('talkie_bg_silence');
             if (bgSilence) bgSilence.play().catch(() => {});
+            startTalkieAudioContextKeepAlive();
 
             try {
                 talkieLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -2738,6 +2742,8 @@
 
             const bgSilence = document.getElementById('talkie_bg_silence');
             if (bgSilence) { bgSilence.pause(); bgSilence.currentTime = 0; }
+
+            stopTalkieAudioContextKeepAlive();
 
             if ('mediaSession' in navigator) {
                 navigator.mediaSession.metadata = null;
@@ -3037,6 +3043,50 @@
             if ('mediaSession' in navigator && !navigator.mediaSession.metadata) {
                 setupTalkieMediaSession();
             }
+            if (talkieKeepAliveCtx && talkieKeepAliveCtx.state === 'suspended') {
+                talkieKeepAliveCtx.resume().catch(() => {});
+            } else if (!talkieKeepAliveCtx) {
+                startTalkieAudioContextKeepAlive();
+            }
+        }
+
+        // Segunda técnica de "mantener viva" la sesión de audio, en paralelo al
+        // <audio> en loop: un AudioContext con un tono casi inaudible sonando de
+        // forma continua. Algunos WebKit tratan esto de forma más confiable que
+        // un simple <audio loop> a la hora de decidir si suspenden la pestaña.
+        function startTalkieAudioContextKeepAlive() {
+            if (talkieKeepAliveCtx) return;
+
+            try {
+                const Ctx = window.AudioContext || window.webkitAudioContext;
+                if (!Ctx) return;
+
+                talkieKeepAliveCtx = new Ctx();
+                const oscillator = talkieKeepAliveCtx.createOscillator();
+                const gain = talkieKeepAliveCtx.createGain();
+
+                oscillator.frequency.value = 20; // 20Hz, casi inaudible
+                gain.gain.value = 0.01; // muy bajo volumen, no silencio total
+
+                oscillator.connect(gain);
+                gain.connect(talkieKeepAliveCtx.destination);
+                oscillator.start();
+
+                talkieKeepAliveOscillator = oscillator;
+            } catch (err) {
+                console.error('No se pudo iniciar el AudioContext de refuerzo del Talkie:', err);
+            }
+        }
+
+        function stopTalkieAudioContextKeepAlive() {
+            if (talkieKeepAliveOscillator) {
+                try { talkieKeepAliveOscillator.stop(); } catch (e) { /* ya detenido */ }
+                talkieKeepAliveOscillator = null;
+            }
+            if (talkieKeepAliveCtx) {
+                talkieKeepAliveCtx.close().catch(() => {});
+                talkieKeepAliveCtx = null;
+            }
         }
 
         let talkiePendingAudioEls = [];
@@ -3270,6 +3320,12 @@
                 if (document.visibilityState === 'visible' && talkieActive) {
                     resumeTalkieBgSilence();
                 }
+            });
+            window.addEventListener('pageshow', () => {
+                if (talkieActive) resumeTalkieBgSilence();
+            });
+            window.addEventListener('focus', () => {
+                if (talkieActive) resumeTalkieBgSilence();
             });
         }
 

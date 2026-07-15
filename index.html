@@ -1028,10 +1028,7 @@
         <h2>Talkie</h2>
         <div class="form-card">
             <label>Activar Talkie</label>
-            <select id="talkie_toggle" onchange="onTalkieToggle()">
-                <option value="no">Desactivado</option>
-                <option value="si">Activado</option>
-            </select>
+            <button type="button" id="talkie_toggle_btn" class="view-toggle-btn" style="width:100%; padding:12px;" onclick="onTalkieToggleClick()">Desactivado</button>
         </div>
 
         <div id="talkie_panel" style="display:none;">
@@ -2657,26 +2654,32 @@
         let talkieMessagesSubscribed = false;
         let talkieBgSilenceInterval = null;
 
-        async function onTalkieToggle() {
-            const enabled = document.getElementById('talkie_toggle').value === 'si';
-            if (enabled) {
-                await activateTalkie();
-            } else {
+        function updateTalkieToggleButton(isActive) {
+            const btn = document.getElementById('talkie_toggle_btn');
+            if (!btn) return;
+            btn.textContent = isActive ? 'Activado' : 'Desactivado';
+            btn.classList.toggle('active', isActive);
+        }
+
+        async function onTalkieToggleClick() {
+            if (talkieActive) {
                 deactivateTalkie();
+            } else {
+                await activateTalkie();
             }
         }
 
         async function activateTalkie() {
             if (!currentEvent) {
                 alert("Seleccioná un evento primero.");
-                document.getElementById('talkie_toggle').value = 'no';
                 return;
             }
 
             // Debe llamarse lo antes posible dentro del gesto del usuario (antes de
-            // cualquier await) para que iOS lo cuente como reproducción de audio
-            // activa y no suspenda la página al bloquear la pantalla — igual que
-            // Spotify. Es un tono de 20Hz, inaudible para humanos.
+            // cualquier await) para que el navegador lo cuente como reproducción de
+            // audio activa: desbloquea el autoplay del audio en vivo del Talkie y
+            // (en iOS) evita que la página se suspenda al bloquear la pantalla,
+            // igual que Spotify. Es un tono de 20Hz, inaudible para humanos.
             const bgSilence = document.getElementById('talkie_bg_silence');
             if (bgSilence) bgSilence.play().catch(() => {});
 
@@ -2684,13 +2687,13 @@
                 talkieLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } catch (err) {
                 alert("No se pudo acceder al micrófono: " + err.message);
-                document.getElementById('talkie_toggle').value = 'no';
                 return;
             }
 
             talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = false; });
 
             talkieActive = true;
+            updateTalkieToggleButton(true);
             document.getElementById('talkie_panel').style.display = 'block';
 
             setupTalkieMediaSession();
@@ -2703,6 +2706,7 @@
 
         function deactivateTalkie() {
             talkieActive = false;
+            updateTalkieToggleButton(false);
             document.getElementById('talkie_panel').style.display = 'none';
 
             if (talkieLocalStream) {
@@ -2910,7 +2914,6 @@
 
         function stopTransmitting() {
             if (!talkieActive || !talkieLocalStream) return;
-            talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = false; });
 
             const btn = document.getElementById('talkie_ptt_btn');
             if (btn) btn.classList.remove('transmitting');
@@ -2922,6 +2925,9 @@
                 talkieChannel.send({ type: 'broadcast', event: 'speaking', payload: { username: currentUser, state: 'end' } });
             }
 
+            // Importante: detener la grabadora ANTES de silenciar el track. Si se
+            // muteaba primero, MediaRecorder cerraba el contenedor a mitad de la
+            // captura y el archivo quedaba corrupto (unos pocos bytes, ilegible).
             if (talkieRecorder && talkieRecorder.state !== 'inactive') {
                 const durationSeconds = (Date.now() - talkieRecordStartTime) / 1000;
                 const mimeType = talkieRecorder.mimeType;
@@ -2930,8 +2936,11 @@
                         uploadTalkieRecording(new Blob(talkieRecordedChunks, { type: mimeType }), durationSeconds, mimeType);
                     }
                     talkieRecordedChunks = [];
+                    talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = false; });
                 };
                 talkieRecorder.stop();
+            } else {
+                talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = false; });
             }
         }
 

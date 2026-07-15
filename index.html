@@ -2628,6 +2628,7 @@
         let talkieRecordStartTime = 0;
         let talkieMessagesCache = [];
         let talkieMessagesSubscribed = false;
+        let talkieBgSilenceInterval = null;
 
         async function onTalkieToggle() {
             const enabled = document.getElementById('talkie_toggle').value === 'si';
@@ -2668,6 +2669,9 @@
             setupTalkieMediaSession();
             await setupTalkiePushSubscription();
             joinTalkieChannel(currentEvent);
+
+            if (talkieBgSilenceInterval) clearInterval(talkieBgSilenceInterval);
+            talkieBgSilenceInterval = setInterval(resumeTalkieBgSilence, 15000);
         }
 
         function deactivateTalkie() {
@@ -2687,6 +2691,11 @@
             }
 
             talkiePresenceState = {};
+
+            if (talkieBgSilenceInterval) {
+                clearInterval(talkieBgSilenceInterval);
+                talkieBgSilenceInterval = null;
+            }
 
             const bgSilence = document.getElementById('talkie_bg_silence');
             if (bgSilence) { bgSilence.pause(); bgSilence.currentTime = 0; }
@@ -2937,9 +2946,24 @@
             navigator.mediaSession.metadata = new MediaMetadata({
                 title: isTalking ? '🔴 Transmitiendo...' : 'Talkie FestivalYa',
                 artist: currentUser || '',
-                album: eventsCache[currentEvent] ? eventsCache[currentEvent].name : ''
+                album: eventsCache[currentEvent] ? eventsCache[currentEvent].name : '',
+                artwork: [
+                    { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+                    { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }
+                ]
             });
             navigator.mediaSession.playbackState = isTalking ? 'playing' : 'paused';
+        }
+
+        function resumeTalkieBgSilence() {
+            if (!talkieActive) return;
+            const bgSilence = document.getElementById('talkie_bg_silence');
+            if (bgSilence && bgSilence.paused) {
+                bgSilence.play().catch(() => {});
+            }
+            if ('mediaSession' in navigator && !navigator.mediaSession.metadata) {
+                setupTalkieMediaSession();
+            }
         }
 
         function urlBase64ToUint8Array(base64String) {
@@ -3116,6 +3140,21 @@
             });
             ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(evt => {
                 btn.addEventListener(evt, (e) => { e.preventDefault(); stopTransmitting(); });
+            });
+
+            // iOS a veces corta el audio silencioso de fondo por su cuenta; lo
+            // reintentamos apenas se detiene y cada vez que la app vuelve a
+            // primer plano (por ejemplo, al desbloquear el teléfono).
+            const bgSilence = document.getElementById('talkie_bg_silence');
+            if (bgSilence) {
+                bgSilence.addEventListener('pause', () => {
+                    if (talkieActive) setTimeout(resumeTalkieBgSilence, 300);
+                });
+            }
+            document.addEventListener('visibilitychange', () => {
+                if (document.visibilityState === 'visible' && talkieActive) {
+                    resumeTalkieBgSilence();
+                }
             });
         }
 

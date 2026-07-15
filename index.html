@@ -777,6 +777,39 @@
             background: var(--bg-primary);
         }
 
+        /* --- TALKIE (push-to-talk) --- */
+        .ptt-button {
+            width: 100%;
+            max-width: 220px;
+            aspect-ratio: 1;
+            border-radius: 50%;
+            margin: 10px auto;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
+            color: #14120a;
+            border: none;
+            font-weight: 800;
+            font-size: 15px;
+            letter-spacing: 1px;
+            cursor: pointer;
+            -webkit-user-select: none;
+            user-select: none;
+            touch-action: none;
+            box-shadow: 0 8px 24px -6px rgba(217, 169, 53, 0.5);
+            transition: transform 0.1s ease, background 0.1s ease;
+        }
+
+        .ptt-button.transmitting {
+            background: linear-gradient(135deg, #ff6b6b, var(--danger));
+            color: white;
+            transform: scale(0.96);
+            box-shadow: 0 8px 24px -6px rgba(229, 72, 77, 0.6);
+        }
+
         /* --- AUTOCOMPLETADO DE MENCIONES (@usuario) --- */
         #mention-dropdown {
             display: none;
@@ -984,6 +1017,33 @@
             Nuevo Mensaje
         </button>
         <div id="messages_list" class="card-group"></div>
+    </div>
+
+    <div id="tab_talkie" class="app-page">
+        <h2>Talkie</h2>
+        <div class="form-card">
+            <label>Activar Talkie</label>
+            <select id="talkie_toggle" onchange="onTalkieToggle()">
+                <option value="no">Desactivado</option>
+                <option value="si">Activado</option>
+            </select>
+        </div>
+
+        <div id="talkie_panel" style="display:none;">
+            <div class="form-card">
+                <label>Conectados en este evento</label>
+                <div id="talkie_online_list" style="font-size:13px; color:var(--text-muted);">Nadie más conectado todavía.</div>
+            </div>
+
+            <div id="talkie_status" style="text-align:center; margin: 20px 0 10px; font-size:13px; color:var(--text-muted);">Mantené presionado para hablar</div>
+
+            <button id="talkie_ptt_btn" class="ptt-button">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:34px; height:34px;"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="23"></line><line x1="8" y1="23" x2="16" y2="23"></line></svg>
+                HABLAR
+            </button>
+
+            <p class="empty-hint" style="margin-top: 14px;">Funciona con la app abierta. Con el teléfono bloqueado no podés iniciar una transmisión, pero si tenés las notificaciones activadas te va a avisar cuando alguien te hable.</p>
+        </div>
     </div>
 
     <form id="festivalForm" onsubmit="saveAllFestivalData(event)">
@@ -1267,6 +1327,9 @@
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
             <span id="messages_nav_badge" class="nav-badge"></span>
         </button>
+        <button class="nav-item" data-tab="tab_talkie" onclick="switchTab('tab_talkie')" title="Talkie" aria-label="Talkie">
+            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"></circle><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path></svg>
+        </button>
         <button class="nav-item" data-tab="tab_perfil" onclick="switchTab('tab_perfil')" title="Perfil" aria-label="Perfil">
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
         </button>
@@ -1457,6 +1520,7 @@
         }
 
         function logout() {
+            if (talkieActive) deactivateTalkie();
             currentUser = null;
             localStorage.removeItem('festivalya_user');
             location.reload();
@@ -2532,6 +2596,319 @@
             });
         }
 
+        // --- TALKIE (push-to-talk vía WebRTC + Supabase Realtime) ---
+        const TALKIE_VAPID_PUBLIC_KEY = 'BMICLHP6md4pQmpq9VFeQXGUl1JGH6W_xl1NYsHzmhki0-mjPBYHthOy1ccgim2kGmMbJPl3HVegdChif_kaZ8o';
+        const TALKIE_ICE_SERVERS = { iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] };
+
+        let talkieActive = false;
+        let talkieChannel = null;
+        let talkiePeers = {};
+        let talkieLocalStream = null;
+        let talkiePresenceState = {};
+
+        async function onTalkieToggle() {
+            const enabled = document.getElementById('talkie_toggle').value === 'si';
+            if (enabled) {
+                await activateTalkie();
+            } else {
+                deactivateTalkie();
+            }
+        }
+
+        async function activateTalkie() {
+            if (!currentEvent) {
+                alert("Seleccioná un evento primero.");
+                document.getElementById('talkie_toggle').value = 'no';
+                return;
+            }
+
+            try {
+                talkieLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+            } catch (err) {
+                alert("No se pudo acceder al micrófono: " + err.message);
+                document.getElementById('talkie_toggle').value = 'no';
+                return;
+            }
+
+            talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = false; });
+
+            talkieActive = true;
+            document.getElementById('talkie_panel').style.display = 'block';
+
+            setupTalkieMediaSession();
+            await setupTalkiePushSubscription();
+            joinTalkieChannel(currentEvent);
+        }
+
+        function deactivateTalkie() {
+            talkieActive = false;
+            document.getElementById('talkie_panel').style.display = 'none';
+
+            if (talkieLocalStream) {
+                talkieLocalStream.getTracks().forEach(t => t.stop());
+                talkieLocalStream = null;
+            }
+
+            Object.keys(talkiePeers).forEach(closeTalkiePeer);
+
+            if (talkieChannel) {
+                sb.removeChannel(talkieChannel);
+                talkieChannel = null;
+            }
+
+            talkiePresenceState = {};
+        }
+
+        function joinTalkieChannel(eventId) {
+            talkieChannel = sb.channel(`talkie:${eventId}`, {
+                config: { presence: { key: currentUser } }
+            });
+
+            talkieChannel
+                .on('presence', { event: 'sync' }, () => {
+                    talkiePresenceState = talkieChannel.presenceState();
+                    renderTalkieOnlineList();
+                    reconcileTalkiePeers();
+                })
+                .on('broadcast', { event: 'signal' }, ({ payload }) => {
+                    handleTalkieSignal(payload);
+                })
+                .on('broadcast', { event: 'speaking' }, ({ payload }) => {
+                    if (payload.username === currentUser) return;
+                    const statusEl = document.getElementById('talkie_status');
+                    if (statusEl) {
+                        statusEl.textContent = payload.state === 'start'
+                            ? `🔊 ${payload.username} está hablando...`
+                            : 'Mantené presionado para hablar';
+                    }
+                })
+                .subscribe(async (status) => {
+                    if (status === 'SUBSCRIBED') {
+                        await talkieChannel.track({ username: currentUser, online_at: new Date().toISOString() });
+                    }
+                });
+        }
+
+        function renderTalkieOnlineList() {
+            const container = document.getElementById('talkie_online_list');
+            if (!container) return;
+            const usernames = Object.keys(talkiePresenceState).filter(u => u !== currentUser);
+            container.textContent = usernames.length > 0 ? usernames.join(', ') : 'Nadie más conectado todavía.';
+        }
+
+        function reconcileTalkiePeers() {
+            const onlineUsers = Object.keys(talkiePresenceState).filter(u => u !== currentUser);
+
+            onlineUsers.forEach(peerUsername => {
+                if (!talkiePeers[peerUsername]) {
+                    const shouldInitiate = currentUser < peerUsername;
+                    createTalkiePeerConnection(peerUsername, shouldInitiate);
+                }
+            });
+
+            Object.keys(talkiePeers).forEach(peerUsername => {
+                if (!onlineUsers.includes(peerUsername)) {
+                    closeTalkiePeer(peerUsername);
+                }
+            });
+        }
+
+        function closeTalkiePeer(peerUsername) {
+            const pc = talkiePeers[peerUsername];
+            if (pc) pc.close();
+            delete talkiePeers[peerUsername];
+
+            const audioEl = document.getElementById(`talkie_audio_${peerUsername}`);
+            if (audioEl) audioEl.remove();
+        }
+
+        function createTalkiePeerConnection(peerUsername, shouldInitiate) {
+            const pc = new RTCPeerConnection(TALKIE_ICE_SERVERS);
+            talkiePeers[peerUsername] = pc;
+
+            talkieLocalStream.getTracks().forEach(track => pc.addTrack(track, talkieLocalStream));
+
+            pc.onicecandidate = (event) => {
+                if (event.candidate) {
+                    sendTalkieSignal(peerUsername, { type: 'ice-candidate', candidate: event.candidate });
+                }
+            };
+
+            pc.ontrack = (event) => {
+                let audioEl = document.getElementById(`talkie_audio_${peerUsername}`);
+                if (!audioEl) {
+                    audioEl = document.createElement('audio');
+                    audioEl.id = `talkie_audio_${peerUsername}`;
+                    audioEl.autoplay = true;
+                    audioEl.playsInline = true;
+                    document.body.appendChild(audioEl);
+                }
+                audioEl.srcObject = event.streams[0];
+            };
+
+            if (shouldInitiate) {
+                pc.onnegotiationneeded = async () => {
+                    try {
+                        const offer = await pc.createOffer();
+                        await pc.setLocalDescription(offer);
+                        sendTalkieSignal(peerUsername, { type: 'offer', sdp: pc.localDescription });
+                    } catch (err) {
+                        console.error('Error creando oferta WebRTC:', err);
+                    }
+                };
+            }
+
+            return pc;
+        }
+
+        function sendTalkieSignal(toUsername, data) {
+            if (!talkieChannel) return;
+            talkieChannel.send({
+                type: 'broadcast',
+                event: 'signal',
+                payload: { from: currentUser, to: toUsername, ...data }
+            });
+        }
+
+        async function handleTalkieSignal(payload) {
+            if (payload.to !== currentUser) return;
+            const peerUsername = payload.from;
+
+            let pc = talkiePeers[peerUsername];
+            if (!pc) {
+                pc = createTalkiePeerConnection(peerUsername, false);
+            }
+
+            try {
+                if (payload.type === 'offer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                    const answer = await pc.createAnswer();
+                    await pc.setLocalDescription(answer);
+                    sendTalkieSignal(peerUsername, { type: 'answer', sdp: pc.localDescription });
+                } else if (payload.type === 'answer') {
+                    await pc.setRemoteDescription(new RTCSessionDescription(payload.sdp));
+                } else if (payload.type === 'ice-candidate') {
+                    await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+                }
+            } catch (err) {
+                console.error('Error en señalización Talkie:', err);
+            }
+        }
+
+        function startTransmitting() {
+            if (!talkieActive || !talkieLocalStream) return;
+            talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = true; });
+
+            const btn = document.getElementById('talkie_ptt_btn');
+            if (btn) btn.classList.add('transmitting');
+            const statusEl = document.getElementById('talkie_status');
+            if (statusEl) statusEl.textContent = '🎙️ Transmitiendo...';
+
+            if (talkieChannel) {
+                talkieChannel.send({ type: 'broadcast', event: 'speaking', payload: { username: currentUser, state: 'start' } });
+            }
+            notifyTalkiePush();
+        }
+
+        function stopTransmitting() {
+            if (!talkieActive || !talkieLocalStream) return;
+            talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = false; });
+
+            const btn = document.getElementById('talkie_ptt_btn');
+            if (btn) btn.classList.remove('transmitting');
+            const statusEl = document.getElementById('talkie_status');
+            if (statusEl) statusEl.textContent = 'Mantené presionado para hablar';
+
+            if (talkieChannel) {
+                talkieChannel.send({ type: 'broadcast', event: 'speaking', payload: { username: currentUser, state: 'end' } });
+            }
+        }
+
+        function setupTalkieMediaSession() {
+            if (!('mediaSession' in navigator)) return;
+            navigator.mediaSession.metadata = new MediaMetadata({
+                title: 'Talkie FestivalYa',
+                artist: 'Radio del evento',
+                album: eventsCache[currentEvent] ? eventsCache[currentEvent].name : ''
+            });
+        }
+
+        function urlBase64ToUint8Array(base64String) {
+            const padding = '='.repeat((4 - base64String.length % 4) % 4);
+            const base64 = (base64String + padding).replace(/-/g, '+').replace(/_/g, '/');
+            const rawData = atob(base64);
+            return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
+        }
+
+        async function setupTalkiePushSubscription() {
+            if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
+                console.warn('Este navegador no soporta notificaciones push.');
+                return;
+            }
+
+            try {
+                const permission = await Notification.requestPermission();
+                if (permission !== 'granted') return;
+
+                const registration = await navigator.serviceWorker.ready;
+                let subscription = await registration.pushManager.getSubscription();
+
+                if (!subscription) {
+                    subscription = await registration.pushManager.subscribe({
+                        userVisibleOnly: true,
+                        applicationServerKey: urlBase64ToUint8Array(TALKIE_VAPID_PUBLIC_KEY)
+                    });
+                }
+
+                await sb.from('push_subscriptions').upsert({
+                    username: currentUser,
+                    event_id: currentEvent,
+                    subscription: subscription.toJSON()
+                }, { onConflict: 'username,event_id' });
+            } catch (err) {
+                console.error('Error configurando notificaciones push:', err);
+            }
+        }
+
+        async function notifyTalkiePush() {
+            if (!currentEvent) return;
+
+            const { data: subs, error } = await sb.from('push_subscriptions')
+                .select('subscription, username')
+                .eq('event_id', currentEvent);
+
+            if (error || !subs) return;
+
+            const targetSubs = subs.filter(s => s.username !== currentUser).map(s => s.subscription);
+            if (targetSubs.length === 0) return;
+
+            fetch('/api/send-push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    subscriptions: targetSubs,
+                    payload: {
+                        title: 'Talkie FestivalYa',
+                        body: `${currentUser} está hablando en ${eventsCache[currentEvent] ? eventsCache[currentEvent].name : 'un evento'}`,
+                        url: './index.html',
+                        tag: 'talkie'
+                    }
+                })
+            }).catch(err => console.error('Error enviando notificación push:', err));
+        }
+
+        function initTalkiePTTButton() {
+            const btn = document.getElementById('talkie_ptt_btn');
+            if (!btn) return;
+
+            ['mousedown', 'touchstart'].forEach(evt => {
+                btn.addEventListener(evt, (e) => { e.preventDefault(); startTransmitting(); });
+            });
+            ['mouseup', 'mouseleave', 'touchend', 'touchcancel'].forEach(evt => {
+                btn.addEventListener(evt, (e) => { e.preventDefault(); stopTransmitting(); });
+            });
+        }
+
         function switchTab(tabId) {
             const pages = document.querySelectorAll('.app-page');
             pages.forEach(p => p.classList.remove('active'));
@@ -2769,6 +3146,10 @@
 
         // Arranque Inicial
         initMentionSystem();
+        initTalkiePTTButton();
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('sw.js').catch(err => console.error('Error registrando el service worker:', err));
+        }
         checkAuth();
     </script>
 </body>

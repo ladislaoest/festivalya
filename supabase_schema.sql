@@ -114,6 +114,16 @@ CREATE TABLE IF NOT EXISTS public.event_design_status (
     PRIMARY KEY (event_id, category)
 );
 
+-- Suscripciones push para el Talkie (avisar cuando alguien transmite)
+CREATE TABLE IF NOT EXISTS public.push_subscriptions (
+    id BIGSERIAL PRIMARY KEY,
+    username TEXT NOT NULL,
+    event_id TEXT,
+    subscription JSONB NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (username, event_id)
+);
+
 -- Mensajería interna: mensajes directos entre usuarios + menciones @usuario
 -- Los campos target_* solo se usan en mensajes generados por una mención,
 -- para poder saltar directo al evento/pestaña/campo con un clic.
@@ -163,6 +173,7 @@ ALTER TABLE public.escenarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_design_status ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public access events" ON public.events;
@@ -185,6 +196,9 @@ CREATE POLICY "public access event_design_status" ON public.event_design_status 
 
 DROP POLICY IF EXISTS "public access messages" ON public.messages;
 CREATE POLICY "public access messages" ON public.messages FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access push_subscriptions" ON public.push_subscriptions;
+CREATE POLICY "public access push_subscriptions" ON public.push_subscriptions FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "public read event-designs" ON storage.objects;
 CREATE POLICY "public read event-designs" ON storage.objects

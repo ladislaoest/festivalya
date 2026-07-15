@@ -1054,10 +1054,15 @@
             <audio id="talkie_bg_silence" loop style="display:none;" src="data:audio/wav;base64,UklGRiQAAABXQVZFRm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="></audio>
         </div>
 
-        <h3 class="section-subhead" style="margin-top:24px;">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-            Últimos mensajes
-        </h3>
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-top:24px;">
+            <h3 class="section-subhead" style="margin-top:0;">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+                Últimos mensajes
+            </h3>
+            <button type="button" id="clear_talkie_history_btn" class="btn-danger-sm" style="display:none;" onclick="clearAllTalkieHistory()" title="Limpiar historial">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+        </div>
         <div id="talkie_history_list" class="card-group"></div>
     </div>
 
@@ -1559,6 +1564,9 @@
 
             const clearChatBtn = document.getElementById('clear_chat_btn');
             if (clearChatBtn) clearChatBtn.style.display = isAdmin ? 'inline-flex' : 'none';
+
+            const clearTalkieBtn = document.getElementById('clear_talkie_history_btn');
+            if (clearTalkieBtn) clearTalkieBtn.style.display = isAdmin ? 'inline-flex' : 'none';
 
             const perfilUsername = document.getElementById('perfil_username');
             if (perfilUsername) perfilUsername.value = currentUser;
@@ -2948,21 +2956,49 @@
             const ext = mimeType.includes('mp4') ? 'm4a' : (mimeType.includes('aac') ? 'aac' : 'webm');
             const storagePath = `${currentEvent}/${Date.now()}_${currentUser}.${ext}`;
 
-            const { error: uploadError } = await sb.storage.from('talkie-recordings').upload(storagePath, blob, { contentType: mimeType });
-            if (uploadError) {
-                console.error('Error subiendo la grabación del Talkie:', uploadError);
-                return;
-            }
+            // Se usa fetch directo con keepalive (en vez del cliente de Supabase)
+            // para que, si la app pasa a segundo plano justo al soltar el botón
+            // (algo típico al hablar con la pantalla bloqueada), el navegador
+            // intente completar la subida igual en vez de cortarla a mitad.
+            try {
+                const uploadRes = await fetch(`${SUPABASE_URL}/storage/v1/object/talkie-recordings/${storagePath}`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': mimeType
+                    },
+                    body: blob,
+                    keepalive: true
+                });
 
-            const { error: insertError } = await sb.from('talkie_messages').insert({
-                event_id: currentEvent,
-                username: currentUser,
-                storage_path: storagePath,
-                duration_seconds: Math.round(durationSeconds * 10) / 10
-            });
+                if (!uploadRes.ok) {
+                    console.error('Error subiendo la grabación del Talkie:', await uploadRes.text());
+                    return;
+                }
 
-            if (insertError) {
-                console.error('Error guardando la grabación del Talkie:', insertError);
+                const insertRes = await fetch(`${SUPABASE_URL}/rest/v1/talkie_messages`, {
+                    method: 'POST',
+                    headers: {
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Content-Type': 'application/json',
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({
+                        event_id: currentEvent,
+                        username: currentUser,
+                        storage_path: storagePath,
+                        duration_seconds: Math.round(durationSeconds * 10) / 10
+                    }),
+                    keepalive: true
+                });
+
+                if (!insertRes.ok) {
+                    console.error('Error guardando la grabación del Talkie:', await insertRes.text());
+                }
+            } catch (err) {
+                console.error('Error de red subiendo la grabación del Talkie:', err);
             }
         }
 
@@ -3153,6 +3189,26 @@
             }
 
             talkieMessagesCache = talkieMessagesCache.filter(m => m.id !== id);
+            renderTalkieHistory();
+            updateTalkieBadge();
+        }
+
+        async function clearAllTalkieHistory() {
+            if (!currentEvent) return;
+            if (!confirm("¿Borrar TODO el historial de Talkie de este evento? Esta acción no se puede deshacer.")) return;
+
+            const paths = talkieMessagesCache.map(m => m.storage_path);
+            if (paths.length > 0) {
+                await sb.storage.from('talkie-recordings').remove(paths);
+            }
+
+            const { error } = await sb.from('talkie_messages').delete().eq('event_id', currentEvent);
+            if (error) {
+                alert("Error limpiando el historial: " + error.message);
+                return;
+            }
+
+            talkieMessagesCache = [];
             renderTalkieHistory();
             updateTalkieBadge();
         }

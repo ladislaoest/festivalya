@@ -1012,10 +1012,15 @@
 
     <div id="tab_mensajes" class="app-page">
         <h2>Mensajes</h2>
-        <button type="button" class="btn-add-event" style="width:100%; margin-bottom:16px;" onclick="openComposeModal()">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-            Nuevo Mensaje
-        </button>
+        <div style="display:flex; gap:8px; margin-bottom:16px;">
+            <button type="button" class="btn-add-event" style="flex:1;" onclick="openComposeModal()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                Nuevo Mensaje
+            </button>
+            <button type="button" id="clear_chat_btn" class="btn-danger-sm" style="display:none; padding:0 14px;" onclick="clearAllMessages()" title="Limpiar chat">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+            </button>
+        </div>
         <div id="messages_list" class="card-group"></div>
     </div>
 
@@ -1034,6 +1039,11 @@
                 <label>Conectados en este evento</label>
                 <div id="talkie_online_list" style="font-size:13px; color:var(--text-muted);">Nadie más conectado todavía.</div>
             </div>
+
+            <button type="button" id="talkie_unlock_audio_btn" class="btn-save-all" style="display:none; margin-bottom: 14px;" onclick="unlockTalkieAudio()">
+                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+                Tocá para activar el audio
+            </button>
 
             <div id="talkie_status" style="text-align:center; margin: 20px 0 10px; font-size:13px; color:var(--text-muted);">Mantené presionado para hablar</div>
 
@@ -1549,6 +1559,9 @@
             document.getElementById('admin_add_event_btn').style.display = isAdmin ? 'inline-flex' : 'none';
             document.getElementById('admin_delete_btn').style.display = isAdmin ? 'inline-flex' : 'none';
             document.getElementById('admin_access_btn').style.display = isAdmin ? 'inline-flex' : 'none';
+
+            const clearChatBtn = document.getElementById('clear_chat_btn');
+            if (clearChatBtn) clearChatBtn.style.display = isAdmin ? 'inline-flex' : 'none';
 
             const perfilUsername = document.getElementById('perfil_username');
             if (perfilUsername) perfilUsername.value = currentUser;
@@ -2340,10 +2353,13 @@
                 return;
             }
 
+            const isAdmin = usersCache[currentUser] && usersCache[currentUser].role === 'admin';
+
             container.innerHTML = messagesCache.map(m => {
                 const isSentByMe = m.sender === currentUser;
                 const who = isSentByMe ? `Para: ${m.recipients.join(', ')}` : `De: ${m.sender}`;
                 const hasTarget = !!(m.event_id && m.target_tab);
+                const canDelete = isAdmin || isSentByMe;
                 return `
                     <div class="notif-item" style="cursor:${hasTarget ? 'pointer' : 'default'};" ${hasTarget ? `onclick="openMentionTarget(${m.id})"` : ''}>
                         <div class="sr-event">${escapeHtml(who)}</div>
@@ -2353,7 +2369,7 @@
                             <span>${timeAgo(m.created_at)}</span>
                             <span style="display:flex; gap:6px;" onclick="event.stopPropagation()">
                                 <button type="button" class="btn-add-event" style="padding:5px 9px;" onclick="replyToMessage(${m.id})">${ICON_REPLY}</button>
-                                <button type="button" class="btn-danger-sm" onclick="deleteMessage(${m.id})">${ICON_TRASH}</button>
+                                ${canDelete ? `<button type="button" class="btn-danger-sm" onclick="deleteMessage(${m.id})">${ICON_TRASH}</button>` : ''}
                             </span>
                         </div>
                     </div>
@@ -2420,6 +2436,17 @@
             if (error) { alert("Error eliminando el mensaje: " + error.message); return; }
 
             messagesCache = messagesCache.filter(m => m.id !== messageId);
+            renderMessagesList();
+            updateMessagesBadge();
+        }
+
+        async function clearAllMessages() {
+            if (!confirm("¿Borrar TODOS los mensajes del chat? Esta acción no se puede deshacer.")) return;
+
+            const { error } = await sb.from('messages').delete().gte('id', 0);
+            if (error) { alert("Error limpiando el chat: " + error.message); return; }
+
+            messagesCache = [];
             renderMessagesList();
             updateMessagesBadge();
         }
@@ -2792,6 +2819,7 @@
                     document.body.appendChild(audioEl);
                 }
                 audioEl.srcObject = event.streams[0];
+                attemptTalkieAudioPlay(audioEl);
             };
 
             if (shouldInitiate) {
@@ -2964,6 +2992,28 @@
             if ('mediaSession' in navigator && !navigator.mediaSession.metadata) {
                 setupTalkieMediaSession();
             }
+        }
+
+        let talkiePendingAudioEls = [];
+
+        function attemptTalkieAudioPlay(audioEl) {
+            const playPromise = audioEl.play();
+            if (playPromise && playPromise.catch) {
+                playPromise.catch(() => {
+                    if (!talkiePendingAudioEls.includes(audioEl)) {
+                        talkiePendingAudioEls.push(audioEl);
+                    }
+                    const unlockBtn = document.getElementById('talkie_unlock_audio_btn');
+                    if (unlockBtn) unlockBtn.style.display = 'block';
+                });
+            }
+        }
+
+        function unlockTalkieAudio() {
+            talkiePendingAudioEls.forEach(el => { el.play().catch(() => {}); });
+            talkiePendingAudioEls = [];
+            const unlockBtn = document.getElementById('talkie_unlock_audio_btn');
+            if (unlockBtn) unlockBtn.style.display = 'none';
         }
 
         function urlBase64ToUint8Array(base64String) {

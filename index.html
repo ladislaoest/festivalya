@@ -1044,6 +1044,12 @@
 
             <p class="empty-hint" style="margin-top: 14px;">Funciona con la app abierta. Con el teléfono bloqueado no podés iniciar una transmisión, pero si tenés las notificaciones activadas te va a avisar cuando alguien te hable.</p>
         </div>
+
+        <h3 class="section-subhead" style="margin-top:24px;">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+            Últimos mensajes
+        </h3>
+        <div id="talkie_history_list" class="card-group"></div>
     </div>
 
     <form id="festivalForm" onsubmit="saveAllFestivalData(event)">
@@ -1329,6 +1335,7 @@
         </button>
         <button class="nav-item" data-tab="tab_talkie" onclick="switchTab('tab_talkie')" title="Talkie" aria-label="Talkie">
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="2"></circle><path d="M16.24 7.76a6 6 0 0 1 0 8.49m-8.48-.01a6 6 0 0 1 0-8.49m11.31-2.82a10 10 0 0 1 0 14.14m-14.14 0a10 10 0 0 1 0-14.14"></path></svg>
+            <span id="talkie_nav_badge" class="nav-badge"></span>
         </button>
         <button class="nav-item" data-tab="tab_perfil" onclick="switchTab('tab_perfil')" title="Perfil" aria-label="Perfil">
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
@@ -1457,7 +1464,8 @@
                     role: u.role,
                     allowedEvents: u.allowed_events || [],
                     lastSeenNotifications: u.last_seen_notifications,
-                    lastSeenMessages: u.last_seen_messages
+                    lastSeenMessages: u.last_seen_messages,
+                    lastSeenTalkie: u.last_seen_talkie
                 };
             });
 
@@ -1496,6 +1504,11 @@
                 if (!messagesSubscribed) {
                     subscribeToMessages();
                     messagesSubscribed = true;
+                }
+                await loadTalkieHistory();
+                if (!talkieMessagesSubscribed) {
+                    subscribeToTalkieMessages();
+                    talkieMessagesSubscribed = true;
                 }
             } else {
                 overlay.style.display = 'flex';
@@ -1833,6 +1846,9 @@
             if (document.getElementById('tab_disenos').classList.contains('active')) {
                 loadDesignStatus();
                 loadDesignFiles();
+            }
+            if (document.getElementById('tab_talkie').classList.contains('active')) {
+                loadTalkieHistory().then(renderTalkieHistory);
             }
         }
 
@@ -2605,6 +2621,11 @@
         let talkiePeers = {};
         let talkieLocalStream = null;
         let talkiePresenceState = {};
+        let talkieRecorder = null;
+        let talkieRecordedChunks = [];
+        let talkieRecordStartTime = 0;
+        let talkieMessagesCache = [];
+        let talkieMessagesSubscribed = false;
 
         async function onTalkieToggle() {
             const enabled = document.getElementById('talkie_toggle').value === 'si';
@@ -2795,6 +2816,11 @@
             }
         }
 
+        function getTalkieSupportedMimeType() {
+            const candidates = ['audio/webm;codecs=opus', 'audio/webm', 'audio/mp4', 'audio/aac'];
+            return candidates.find(t => window.MediaRecorder && MediaRecorder.isTypeSupported(t)) || '';
+        }
+
         function startTransmitting() {
             if (!talkieActive || !talkieLocalStream) return;
             talkieLocalStream.getAudioTracks().forEach(t => { t.enabled = true; });
@@ -2808,6 +2834,22 @@
                 talkieChannel.send({ type: 'broadcast', event: 'speaking', payload: { username: currentUser, state: 'start' } });
             }
             notifyTalkiePush();
+
+            if (window.MediaRecorder) {
+                try {
+                    talkieRecordedChunks = [];
+                    const mimeType = getTalkieSupportedMimeType();
+                    talkieRecorder = mimeType ? new MediaRecorder(talkieLocalStream, { mimeType }) : new MediaRecorder(talkieLocalStream);
+                    talkieRecorder.ondataavailable = (e) => {
+                        if (e.data && e.data.size > 0) talkieRecordedChunks.push(e.data);
+                    };
+                    talkieRecordStartTime = Date.now();
+                    talkieRecorder.start();
+                } catch (err) {
+                    console.error('Error iniciando la grabación del Talkie:', err);
+                    talkieRecorder = null;
+                }
+            }
         }
 
         function stopTransmitting() {
@@ -2821,6 +2863,40 @@
 
             if (talkieChannel) {
                 talkieChannel.send({ type: 'broadcast', event: 'speaking', payload: { username: currentUser, state: 'end' } });
+            }
+
+            if (talkieRecorder && talkieRecorder.state !== 'inactive') {
+                const durationSeconds = (Date.now() - talkieRecordStartTime) / 1000;
+                const mimeType = talkieRecorder.mimeType;
+                talkieRecorder.onstop = () => {
+                    if (durationSeconds >= 0.6 && talkieRecordedChunks.length > 0) {
+                        uploadTalkieRecording(new Blob(talkieRecordedChunks, { type: mimeType }), durationSeconds, mimeType);
+                    }
+                    talkieRecordedChunks = [];
+                };
+                talkieRecorder.stop();
+            }
+        }
+
+        async function uploadTalkieRecording(blob, durationSeconds, mimeType) {
+            const ext = mimeType.includes('mp4') ? 'm4a' : (mimeType.includes('aac') ? 'aac' : 'webm');
+            const storagePath = `${currentEvent}/${Date.now()}_${currentUser}.${ext}`;
+
+            const { error: uploadError } = await sb.storage.from('talkie-recordings').upload(storagePath, blob, { contentType: mimeType });
+            if (uploadError) {
+                console.error('Error subiendo la grabación del Talkie:', uploadError);
+                return;
+            }
+
+            const { error: insertError } = await sb.from('talkie_messages').insert({
+                event_id: currentEvent,
+                username: currentUser,
+                storage_path: storagePath,
+                duration_seconds: Math.round(durationSeconds * 10) / 10
+            });
+
+            if (insertError) {
+                console.error('Error guardando la grabación del Talkie:', insertError);
             }
         }
 
@@ -2897,6 +2973,86 @@
             }).catch(err => console.error('Error enviando notificación push:', err));
         }
 
+        async function loadTalkieHistory() {
+            if (!currentEvent) {
+                talkieMessagesCache = [];
+                updateTalkieBadge();
+                return;
+            }
+
+            const { data, error } = await sb.from('talkie_messages')
+                .select('*')
+                .eq('event_id', currentEvent)
+                .order('created_at', { ascending: false })
+                .limit(50);
+
+            if (error) {
+                console.error(error);
+                return;
+            }
+
+            talkieMessagesCache = data || [];
+            updateTalkieBadge();
+        }
+
+        function renderTalkieHistory() {
+            const container = document.getElementById('talkie_history_list');
+            if (!container) return;
+
+            if (talkieMessagesCache.length === 0) {
+                container.innerHTML = '<p class="empty-hint">No hay transmisiones todavía para este evento.</p>';
+                return;
+            }
+
+            container.innerHTML = talkieMessagesCache.map(m => {
+                const url = sb.storage.from('talkie-recordings').getPublicUrl(m.storage_path).data.publicUrl;
+                const dur = m.duration_seconds ? `${Math.round(m.duration_seconds)}s` : '';
+                return `
+                    <div class="file-item" style="flex-direction:column; align-items:stretch; gap:8px;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div class="file-item-name">${escapeHtml(m.username)}</div>
+                            <div class="file-item-meta">${dur} · ${timeAgo(m.created_at)}</div>
+                        </div>
+                        <audio controls preload="none" style="width:100%; height:36px;" src="${url}"></audio>
+                        ${m.transcript ? `<div class="sr-snippet">${escapeHtml(m.transcript)}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateTalkieBadge() {
+            const badge = document.getElementById('talkie_nav_badge');
+            if (!badge) return;
+
+            const user = usersCache[currentUser];
+            const lastSeen = user && user.lastSeenTalkie ? new Date(user.lastSeenTalkie) : new Date(0);
+            const unread = talkieMessagesCache.filter(m => m.username !== currentUser && new Date(m.created_at) > lastSeen).length;
+
+            badge.style.display = unread > 0 ? 'block' : 'none';
+        }
+
+        async function markTalkieSeen() {
+            const nowIso = new Date().toISOString();
+            if (usersCache[currentUser]) usersCache[currentUser].lastSeenTalkie = nowIso;
+            updateTalkieBadge();
+            await sb.from('app_users').update({ last_seen_talkie: nowIso }).eq('username', currentUser);
+        }
+
+        function subscribeToTalkieMessages() {
+            sb.channel('talkie_messages_changes')
+                .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'talkie_messages' }, (payload) => {
+                    const m = payload.new;
+                    if (m.event_id !== currentEvent) return;
+
+                    talkieMessagesCache.unshift(m);
+                    updateTalkieBadge();
+                    if (document.getElementById('tab_talkie').classList.contains('active')) {
+                        renderTalkieHistory();
+                    }
+                })
+                .subscribe();
+        }
+
         function initTalkiePTTButton() {
             const btn = document.getElementById('talkie_ptt_btn');
             if (!btn) return;
@@ -2928,6 +3084,9 @@
             } else if (tabId === 'tab_mensajes') {
                 renderMessagesList();
                 markMessagesSeen();
+            } else if (tabId === 'tab_talkie') {
+                renderTalkieHistory();
+                markTalkieSeen();
             } else {
                 window.scrollTo({top: 0, behavior: 'smooth'});
             }

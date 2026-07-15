@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS public.app_users (
 -- Por si la tabla ya existía de una instalación anterior sin estas columnas
 ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS last_seen_notifications TIMESTAMPTZ NOT NULL DEFAULT NOW();
 ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS last_seen_messages TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS last_seen_talkie TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS public.escenarios (
     id TEXT PRIMARY KEY,
@@ -145,6 +146,21 @@ ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS target_tab TEXT;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS target_field TEXT;
 ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS target_category TEXT;
 
+-- Historial de transmisiones del Talkie (audio grabado + bucket de Storage)
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('talkie-recordings', 'talkie-recordings', true)
+ON CONFLICT (id) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS public.talkie_messages (
+    id BIGSERIAL PRIMARY KEY,
+    event_id TEXT NOT NULL,
+    username TEXT NOT NULL,
+    storage_path TEXT NOT NULL,
+    duration_seconds NUMERIC,
+    transcript TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- =====================================================================
 -- DATOS INICIALES
 -- =====================================================================
@@ -175,6 +191,7 @@ ALTER TABLE public.event_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_design_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.talkie_messages ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public access events" ON public.events;
 CREATE POLICY "public access events" ON public.events FOR ALL USING (true) WITH CHECK (true);
@@ -199,6 +216,21 @@ CREATE POLICY "public access messages" ON public.messages FOR ALL USING (true) W
 
 DROP POLICY IF EXISTS "public access push_subscriptions" ON public.push_subscriptions;
 CREATE POLICY "public access push_subscriptions" ON public.push_subscriptions FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access talkie_messages" ON public.talkie_messages;
+CREATE POLICY "public access talkie_messages" ON public.talkie_messages FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public read talkie-recordings" ON storage.objects;
+CREATE POLICY "public read talkie-recordings" ON storage.objects
+    FOR SELECT USING (bucket_id = 'talkie-recordings');
+
+DROP POLICY IF EXISTS "public insert talkie-recordings" ON storage.objects;
+CREATE POLICY "public insert talkie-recordings" ON storage.objects
+    FOR INSERT WITH CHECK (bucket_id = 'talkie-recordings');
+
+DROP POLICY IF EXISTS "public delete talkie-recordings" ON storage.objects;
+CREATE POLICY "public delete talkie-recordings" ON storage.objects
+    FOR DELETE USING (bucket_id = 'talkie-recordings');
 
 DROP POLICY IF EXISTS "public read event-designs" ON storage.objects;
 CREATE POLICY "public read event-designs" ON storage.objects
@@ -226,6 +258,13 @@ END $$;
 DO $$
 BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
+EXCEPTION WHEN OTHERS THEN
+    NULL; -- ya estaba agregada
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.talkie_messages;
 EXCEPTION WHEN OTHERS THEN
     NULL; -- ya estaba agregada
 END $$;

@@ -1042,7 +1042,9 @@
                 HABLAR
             </button>
 
-            <p class="empty-hint" style="margin-top: 14px;">Funciona con la app abierta. Con el teléfono bloqueado no podés iniciar una transmisión, pero si tenés las notificaciones activadas te va a avisar cuando alguien te hable.</p>
+            <p class="empty-hint" style="margin-top: 14px;">Con la pantalla bloqueada, usá los controles de Play/Pausa que aparecen en la pantalla de bloqueo (los mismos de música) para hablar y dejar de hablar — no hace falta desbloquear el teléfono.</p>
+
+            <audio id="talkie_bg_silence" loop style="display:none;" src="data:audio/wav;base64,UklGRiQAAABXQVZFRm10IBAAAAABAAEAgD4AAAB9AAACABAAZGF0YQAAAAA="></audio>
         </div>
 
         <h3 class="section-subhead" style="margin-top:24px;">
@@ -2643,6 +2645,13 @@
                 return;
             }
 
+            // Debe llamarse lo antes posible dentro del gesto del usuario (antes de
+            // cualquier await) para que iOS lo cuente como reproducción de audio
+            // activa y no suspenda la página al bloquear la pantalla — igual que
+            // Spotify. Es un tono de 20Hz, inaudible para humanos.
+            const bgSilence = document.getElementById('talkie_bg_silence');
+            if (bgSilence) bgSilence.play().catch(() => {});
+
             try {
                 talkieLocalStream = await navigator.mediaDevices.getUserMedia({ audio: true });
             } catch (err) {
@@ -2678,6 +2687,15 @@
             }
 
             talkiePresenceState = {};
+
+            const bgSilence = document.getElementById('talkie_bg_silence');
+            if (bgSilence) { bgSilence.pause(); bgSilence.currentTime = 0; }
+
+            if ('mediaSession' in navigator) {
+                navigator.mediaSession.metadata = null;
+                navigator.mediaSession.setActionHandler('play', null);
+                navigator.mediaSession.setActionHandler('pause', null);
+            }
         }
 
         function joinTalkieChannel(eventId) {
@@ -2829,6 +2847,7 @@
             if (btn) btn.classList.add('transmitting');
             const statusEl = document.getElementById('talkie_status');
             if (statusEl) statusEl.textContent = '🎙️ Transmitiendo...';
+            updateTalkieMediaMetadata(true);
 
             if (talkieChannel) {
                 talkieChannel.send({ type: 'broadcast', event: 'speaking', payload: { username: currentUser, state: 'start' } });
@@ -2860,6 +2879,7 @@
             if (btn) btn.classList.remove('transmitting');
             const statusEl = document.getElementById('talkie_status');
             if (statusEl) statusEl.textContent = 'Mantené presionado para hablar';
+            updateTalkieMediaMetadata(false);
 
             if (talkieChannel) {
                 talkieChannel.send({ type: 'broadcast', event: 'speaking', payload: { username: currentUser, state: 'end' } });
@@ -2902,11 +2922,24 @@
 
         function setupTalkieMediaSession() {
             if (!('mediaSession' in navigator)) return;
+
+            updateTalkieMediaMetadata(false);
+
+            // iOS solo permite disparar Play/Pausa desde la pantalla de bloqueo
+            // (sin desbloquear), así que los usamos como "hablar" / "dejar de hablar".
+            navigator.mediaSession.setActionHandler('play', () => startTransmitting());
+            navigator.mediaSession.setActionHandler('pause', () => stopTransmitting());
+        }
+
+        function updateTalkieMediaMetadata(isTalking) {
+            if (!('mediaSession' in navigator)) return;
+
             navigator.mediaSession.metadata = new MediaMetadata({
-                title: 'Talkie FestivalYa',
-                artist: 'Radio del evento',
+                title: isTalking ? '🔴 Transmitiendo...' : 'Talkie FestivalYa',
+                artist: currentUser || '',
                 album: eventsCache[currentEvent] ? eventsCache[currentEvent].name : ''
             });
+            navigator.mediaSession.playbackState = isTalking ? 'playing' : 'paused';
         }
 
         function urlBase64ToUint8Array(base64String) {

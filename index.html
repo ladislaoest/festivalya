@@ -777,6 +777,33 @@
             background: var(--bg-primary);
         }
 
+        /* --- AUTOCOMPLETADO DE MENCIONES (@usuario) --- */
+        #mention-dropdown {
+            display: none;
+            position: absolute;
+            z-index: 4000;
+            background: var(--bg-card);
+            border: 1px solid var(--accent-gold);
+            border-radius: 8px;
+            max-height: 170px;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .mention-option {
+            padding: 10px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            cursor: pointer;
+        }
+
+        .mention-option.active,
+        .mention-option:hover {
+            background: var(--accent-gold-dim);
+            color: var(--accent-gold-bright);
+        }
+
         #mapa_no_event {
             display: none;
             height: 100%;
@@ -940,7 +967,7 @@
         <div id="design_needed_box" class="conditional-box" style="padding:0; background:transparent; border-left:none; display:none;">
             <div class="form-card" style="margin-bottom: 10px;">
                 <label>Comentarios</label>
-                <textarea id="design_comment_input" rows="3" placeholder="Notas, indicaciones, medidas..." onblur="saveDesignStatus()"></textarea>
+                <textarea id="design_comment_input" class="mention-field" rows="3" placeholder="Notas, indicaciones, medidas... (usá @ para mencionar a alguien)" onblur="saveDesignStatus()"></textarea>
             </div>
             <div class="form-card">
                 <label>Subir archivo</label>
@@ -987,18 +1014,18 @@
                     </select>
                     <div id="box_rider_empresa" class="conditional-box">
                         <label>Empresa de Sonido/Iluminación</label>
-                        <input type="text" id="prod_rider_empresa" placeholder="Nombre de la empresa proveedora">
+                        <input type="text" id="prod_rider_empresa" class="mention-field" placeholder="Nombre de la empresa proveedora">
                     </div>
                 </div>
 
                 <div class="form-card">
                     <label>Vallas Antipánico</label>
-                    <input type="text" id="prod_vallas_antipanico" placeholder="Ej: 15 metros lineales frente a escenario">
+                    <input type="text" id="prod_vallas_antipanico" class="mention-field" placeholder="Ej: 15 metros lineales frente a escenario">
                 </div>
 
                 <div class="form-card">
                     <label>Vallas Bajas (Ayuntamiento)</label>
-                    <input type="text" id="prod_vallas_bajas" placeholder="Ej: Ayuntamiento de Porriño - 60 unidades">
+                    <input type="text" id="prod_vallas_bajas" class="mention-field" placeholder="Ej: Ayuntamiento de Porriño - 60 unidades">
                 </div>
 
                 <div class="form-card">
@@ -1020,27 +1047,27 @@
 
                 <div class="form-card">
                     <label>Generadores / Energía</label>
-                    <input type="text" id="prod_generadores" placeholder="Ej: 2x Grupos Insonorizados 150KVA">
+                    <input type="text" id="prod_generadores" class="mention-field" placeholder="Ej: 2x Grupos Insonorizados 150KVA">
                 </div>
 
                 <div class="form-card">
                     <label>Baños</label>
-                    <input type="text" id="prod_banos" placeholder="Ej: 10 Cabinas estándar + 2 PMR">
+                    <input type="text" id="prod_banos" class="mention-field" placeholder="Ej: 10 Cabinas estándar + 2 PMR">
                 </div>
 
                 <div class="form-card">
                     <label>Ambulancia / Asistencia</label>
-                    <input type="text" id="prod_ambulancia" placeholder="Ej: 1 Soporte Vital Básico + 2 Técnicos">
+                    <input type="text" id="prod_ambulancia" class="mention-field" placeholder="Ej: 1 Soporte Vital Básico + 2 Técnicos">
                 </div>
 
                 <div class="form-card">
                     <label>Contenedores</label>
-                    <input type="text" id="prod_contenedores" placeholder="Ej: 8 unidades de 800L distribuidos">
+                    <input type="text" id="prod_contenedores" class="mention-field" placeholder="Ej: 8 unidades de 800L distribuidos">
                 </div>
 
                 <div class="form-card">
                     <label>Limpieza</label>
-                    <input type="text" id="prod_limpieza" placeholder="Ej: Equipo de 4 personas post-evento">
+                    <input type="text" id="prod_limpieza" class="mention-field" placeholder="Ej: Equipo de 4 personas post-evento">
                 </div>
 
             </div>
@@ -1055,19 +1082,19 @@
             <div class="card-group">
                 <div class="form-card">
                     <label>Vídeo</label>
-                    <input type="text" id="media_video" placeholder="Operadores, horarios de entrega de reels...">
+                    <input type="text" id="media_video" class="mention-field" placeholder="Operadores, horarios de entrega de reels...">
                 </div>
                 <div class="form-card">
                     <label>Foto</label>
-                    <input type="text" id="media_foto" placeholder="Fotógrafos asignados, enlaces rápidos...">
+                    <input type="text" id="media_foto" class="mention-field" placeholder="Fotógrafos asignados, enlaces rápidos...">
                 </div>
                 <div class="form-card">
                     <label>Drone</label>
-                    <input type="text" id="media_drone" placeholder="Piloto autorizado, plan de vuelo e id drone...">
+                    <input type="text" id="media_drone" class="mention-field" placeholder="Piloto autorizado, plan de vuelo e id drone...">
                 </div>
                 <div class="form-card">
                     <label>Speaker</label>
-                    <input type="text" id="media_speaker" placeholder="Presentadores o locutores del festival...">
+                    <input type="text" id="media_speaker" class="mention-field" placeholder="Presentadores o locutores del festival...">
                 </div>
             </div>
             <button type="submit" class="btn-save-all">
@@ -1081,11 +1108,11 @@
             <div class="card-group">
                 <div class="form-card">
                     <label>Barras</label>
-                    <textarea id="host_barras" rows="3" placeholder="Medidas de barras, número de tiradores, encargados..."></textarea>
+                    <textarea id="host_barras" class="mention-field" rows="3" placeholder="Medidas de barras, número de tiradores, encargados..."></textarea>
                 </div>
                 <div class="form-card">
                     <label>Food Trucks</label>
-                    <textarea id="host_foodtrucks" rows="3" placeholder="Listado de camiones de comida confirmados y potencia eléctrica requerida..."></textarea>
+                    <textarea id="host_foodtrucks" class="mention-field" rows="3" placeholder="Listado de camiones de comida confirmados y potencia eléctrica requerida..."></textarea>
                 </div>
             </div>
             <button type="submit" class="btn-save-all">
@@ -1099,11 +1126,11 @@
             <div class="card-group">
                 <div class="form-card">
                     <label>Control de Transfers / Choferes</label>
-                    <textarea id="log_transfers" rows="4" placeholder="Ej: Recogida en aeropuerto o estación de trenes, horarios de vehículos de producción..."></textarea>
+                    <textarea id="log_transfers" class="mention-field" rows="4" placeholder="Ej: Recogida en aeropuerto o estación de trenes, horarios de vehículos de producción..."></textarea>
                 </div>
                 <div class="form-card">
                     <label>Disponibilidad de Camerinos</label>
-                    <textarea id="log_camerinos" rows="3" placeholder="Asignación y estado de camerinos en el backstage..."></textarea>
+                    <textarea id="log_camerinos" class="mention-field" rows="3" placeholder="Asignación y estado de camerinos en el backstage..."></textarea>
                 </div>
             </div>
             <button type="submit" class="btn-save-all">
@@ -2301,6 +2328,125 @@
                 .subscribe();
         }
 
+        // --- AUTOCOMPLETADO DE MENCIONES (@usuario) ---
+        let mentionActiveField = null;
+        let mentionStartIndex = -1;
+        let mentionSelectedIndex = 0;
+
+        function initMentionSystem() {
+            document.addEventListener('input', handleMentionInput);
+            document.addEventListener('keydown', handleMentionKeydown);
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#mention-dropdown') && !e.target.classList.contains('mention-field')) {
+                    closeMentionDropdown();
+                }
+            });
+        }
+
+        function handleMentionInput(e) {
+            const el = e.target;
+            if (!el.classList || !el.classList.contains('mention-field')) return;
+
+            const value = el.value;
+            const caret = el.selectionStart;
+            const uptoCaret = value.slice(0, caret);
+            const match = uptoCaret.match(/@([^\s@]*)$/);
+
+            if (!match) {
+                closeMentionDropdown();
+                return;
+            }
+
+            mentionActiveField = el;
+            mentionStartIndex = match.index;
+            const query = match[1].toLowerCase();
+
+            const candidates = Object.keys(usersCache)
+                .filter(u => u !== currentUser)
+                .filter(u => u.toLowerCase().includes(query));
+
+            if (candidates.length === 0) {
+                closeMentionDropdown();
+                return;
+            }
+
+            mentionSelectedIndex = 0;
+            renderMentionDropdown(candidates, el);
+        }
+
+        function renderMentionDropdown(candidates, el) {
+            let dropdown = document.getElementById('mention-dropdown');
+            if (!dropdown) {
+                dropdown = document.createElement('div');
+                dropdown.id = 'mention-dropdown';
+                document.body.appendChild(dropdown);
+            }
+
+            dropdown.innerHTML = candidates.map((u, i) => `
+                <div class="mention-option ${i === mentionSelectedIndex ? 'active' : ''}" data-username="${escapeHtml(u)}">${escapeHtml(u)}</div>
+            `).join('');
+
+            const rect = el.getBoundingClientRect();
+            dropdown.style.left = `${rect.left + window.scrollX}px`;
+            dropdown.style.top = `${rect.bottom + window.scrollY + 4}px`;
+            dropdown.style.width = `${rect.width}px`;
+            dropdown.style.display = 'block';
+
+            dropdown.querySelectorAll('.mention-option').forEach(opt => {
+                opt.addEventListener('mousedown', (ev) => {
+                    ev.preventDefault();
+                    selectMention(opt.dataset.username);
+                });
+            });
+        }
+
+        function closeMentionDropdown() {
+            const dropdown = document.getElementById('mention-dropdown');
+            if (dropdown) dropdown.style.display = 'none';
+            mentionActiveField = null;
+            mentionStartIndex = -1;
+        }
+
+        function selectMention(username) {
+            if (!mentionActiveField) return;
+            const el = mentionActiveField;
+            const value = el.value;
+            const caret = el.selectionStart;
+            const before = value.slice(0, mentionStartIndex);
+            const after = value.slice(caret);
+            const insert = `@${username} `;
+
+            el.value = before + insert + after;
+            const newCaret = (before + insert).length;
+            el.focus();
+            el.setSelectionRange(newCaret, newCaret);
+            closeMentionDropdown();
+        }
+
+        function handleMentionKeydown(e) {
+            const dropdown = document.getElementById('mention-dropdown');
+            if (!dropdown || dropdown.style.display !== 'block') return;
+            if (!mentionActiveField || e.target !== mentionActiveField) return;
+
+            const options = dropdown.querySelectorAll('.mention-option');
+            if (options.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                mentionSelectedIndex = (mentionSelectedIndex + 1) % options.length;
+                options.forEach((opt, i) => opt.classList.toggle('active', i === mentionSelectedIndex));
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                mentionSelectedIndex = (mentionSelectedIndex - 1 + options.length) % options.length;
+                options.forEach((opt, i) => opt.classList.toggle('active', i === mentionSelectedIndex));
+            } else if (e.key === 'Enter' || e.key === 'Tab') {
+                e.preventDefault();
+                selectMention(options[mentionSelectedIndex].dataset.username);
+            } else if (e.key === 'Escape') {
+                closeMentionDropdown();
+            }
+        }
+
         function extractMentions(text) {
             if (!text) return [];
             const matches = text.match(/@([^\s@]+)/g) || [];
@@ -2562,6 +2708,7 @@
         }
 
         // Arranque Inicial
+        initMentionSystem();
         checkAuth();
     </script>
 </body>

@@ -115,14 +115,25 @@ CREATE TABLE IF NOT EXISTS public.event_design_status (
 );
 
 -- Mensajería interna: mensajes directos entre usuarios + menciones @usuario
+-- Los campos target_* solo se usan en mensajes generados por una mención,
+-- para poder saltar directo al evento/pestaña/campo con un clic.
 CREATE TABLE IF NOT EXISTS public.messages (
     id BIGSERIAL PRIMARY KEY,
     sender TEXT NOT NULL,
     recipients TEXT[] NOT NULL,
     body TEXT NOT NULL,
     context TEXT,
+    event_id TEXT,
+    target_tab TEXT,
+    target_field TEXT,
+    target_category TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS event_id TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS target_tab TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS target_field TEXT;
+ALTER TABLE public.messages ADD COLUMN IF NOT EXISTS target_category TEXT;
 
 -- =====================================================================
 -- DATOS INICIALES

@@ -61,11 +61,13 @@ CREATE TABLE IF NOT EXISTS public.app_users (
     role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin', 'user')),
     allowed_events TEXT[] NOT NULL DEFAULT '{}',
     last_seen_notifications TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    last_seen_messages TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- Por si la tabla ya existía de una instalación anterior sin esta columna
+-- Por si la tabla ya existía de una instalación anterior sin estas columnas
 ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS last_seen_notifications TIMESTAMPTZ NOT NULL DEFAULT NOW();
+ALTER TABLE public.app_users ADD COLUMN IF NOT EXISTS last_seen_messages TIMESTAMPTZ NOT NULL DEFAULT NOW();
 
 CREATE TABLE IF NOT EXISTS public.escenarios (
     id TEXT PRIMARY KEY,
@@ -112,6 +114,16 @@ CREATE TABLE IF NOT EXISTS public.event_design_status (
     PRIMARY KEY (event_id, category)
 );
 
+-- Mensajería interna: mensajes directos entre usuarios + menciones @usuario
+CREATE TABLE IF NOT EXISTS public.messages (
+    id BIGSERIAL PRIMARY KEY,
+    sender TEXT NOT NULL,
+    recipients TEXT[] NOT NULL,
+    body TEXT NOT NULL,
+    context TEXT,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 -- =====================================================================
 -- DATOS INICIALES
 -- =====================================================================
@@ -140,6 +152,7 @@ ALTER TABLE public.escenarios ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_design_status ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public access events" ON public.events;
 CREATE POLICY "public access events" ON public.events FOR ALL USING (true) WITH CHECK (true);
@@ -158,6 +171,9 @@ CREATE POLICY "public access event_files" ON public.event_files FOR ALL USING (t
 
 DROP POLICY IF EXISTS "public access event_design_status" ON public.event_design_status;
 CREATE POLICY "public access event_design_status" ON public.event_design_status FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access messages" ON public.messages;
+CREATE POLICY "public access messages" ON public.messages FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "public read event-designs" ON storage.objects;
 CREATE POLICY "public read event-designs" ON storage.objects
@@ -178,6 +194,13 @@ CREATE POLICY "public delete event-designs" ON storage.objects
 DO $$
 BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.activity_log;
+EXCEPTION WHEN OTHERS THEN
+    NULL; -- ya estaba agregada
+END $$;
+
+DO $$
+BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.messages;
 EXCEPTION WHEN OTHERS THEN
     NULL; -- ya estaba agregada
 END $$;

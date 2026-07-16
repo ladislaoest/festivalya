@@ -256,24 +256,21 @@ select.form-control option {
     border-top: 6px solid #fff;
     z-index: 1;
 }
-/* Pin con forma de gota (como un marcador de mapa clásico): un cuadrado
-   con 3 esquinas redondeadas rotado 45°, dejando la esquina recta como
-   punta hacia abajo. El contenido se rota al revés para quedar derecho. */
+/* Insignia cuadrada redondeada con un icono dibujado dentro (SVG). */
 .map-pin-badge {
-    width: 38px;
-    height: 38px;
-    border-radius: 50% 50% 50% 0;
-    transform: rotate(-45deg);
+    width: 40px;
+    height: 40px;
+    border-radius: 11px;
     display: flex;
     align-items: center;
     justify-content: center;
     border: 3px solid #fff;
     box-shadow: 0 4px 10px rgba(0,0,0,0.4);
 }
-.map-pin-badge-inner {
-    transform: rotate(45deg);
-    font-size: 19px;
-    line-height: 1;
+.map-pin-badge svg {
+    width: 22px;
+    height: 22px;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.35));
 }
 .map-pin-area-label {
     background: rgba(255,255,255,0.92);
@@ -402,15 +399,17 @@ select.form-control option {
 .legend-pin {
     width: 22px;
     height: 22px;
-    border-radius: 50%;
+    border-radius: 7px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 12px;
-    line-height: 1;
     border: 2px solid #fff;
     box-shadow: 0 2px 4px rgba(0,0,0,0.35);
     flex-shrink: 0;
+}
+.legend-pin svg {
+    width: 13px;
+    height: 13px;
 }
 
 /* Header del panel */

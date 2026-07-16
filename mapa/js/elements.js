@@ -167,7 +167,8 @@ function toggleIllustratedMode() {
         currentMapLayer = mapLayers['cartodb-voyager'];
         currentMapLayer.addTo(map);
         
-        // Desactivar navegación total absoluta
+        // Desactivar navegación total absoluta (pero dejamos rotar el mapa,
+        // así se puede orientar el diseño mejor en el Mapa Ilustrado)
         map.dragging.disable();
         map.touchZoom.disable();
         map.doubleClickZoom.disable();
@@ -175,13 +176,15 @@ function toggleIllustratedMode() {
         map.boxZoom.disable();
         map.keyboard.disable();
         if (map.tap) map.tap.disable();
-        if (map.rotate) map.rotate.disable();
-        if (map.touchRotate) map.touchRotate.disable(); // Específico de leaflet-rotate
-        
-        // Ocultar controles visuales
+        if (map.rotate) map.rotate.enable();
+        if (map.touchRotate) map.touchRotate.enable();
+
+        // Ocultar controles visuales, salvo el de rotación
         if (map.zoomControl) map.zoomControl.remove();
-        document.querySelectorAll('.leaflet-control').forEach(c => c.style.display = 'none');
-        
+        document.querySelectorAll('.leaflet-control').forEach(c => {
+            if (!c.classList.contains('leaflet-control-rotate')) c.style.display = 'none';
+        });
+
     } else {
         mapContainer.classList.remove('illustrated-style');
         map.removeLayer(currentMapLayer);
@@ -356,20 +359,18 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx]
                 }));
             } else {
-                // Elementos puntuales: pin con forma de gota (tamaño fijo, sin
-                // nombre; con muchos elementos juntos las burbujas tapaban todo).
-                const badgeSize = 38;
-                const pinHeight = 50; // alto del contenedor hasta la punta de la gota
+                // Elementos puntuales: insignia cuadrada redondeada de tamaño
+                // fijo con un icono dibujado (sin nombre; con muchos elementos
+                // juntos las burbujas de texto tapaban todo el mapa).
+                const badgeSize = 40;
                 const bg = element.color || '#7f8c8d';
-                const emoji = getPinEmoji(iconKey);
+                const iconSvg = getPinIconSVG(iconKey);
 
-                const iconHTML = `<div style="width:${badgeSize + 6}px; height:${pinHeight}px; display:flex; justify-content:center; padding-top:2px;" title="${displayName}">
-                    <div class="map-pin-badge" style="background:${bg};"><span class="map-pin-badge-inner">${emoji}</span></div>
-                </div>`;
+                const iconHTML = `<div class="map-pin-badge" style="background:${bg};" title="${displayName}">${iconSvg}</div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
-                    iconSize: [badgeSize + 6, pinHeight], iconAnchor: [(badgeSize + 6) / 2, pinHeight]
+                    iconSize: [badgeSize, badgeSize], iconAnchor: [badgeSize / 2, badgeSize / 2]
                 }));
             }
         } else {
@@ -421,7 +422,7 @@ function updateStats() {
                     const item = document.createElement('div');
                     item.className = 'legend-item';
                     const iconHTML = isIllustratedMode
-                        ? `<div class="legend-pin" style="background:${config.color};">${getPinEmoji(config.icon)}</div>`
+                        ? `<div class="legend-pin" style="background:${config.color};">${getPinIconSVG(config.icon)}</div>`
                         : `<img src="${getGenericIconUrl(config.icon)}" class="legend-icon">`;
                     item.innerHTML = `
                         ${iconHTML}
@@ -906,24 +907,27 @@ function bindMarkerEvents(element) {
         });
     }
 }
-// Emoji para las insignias circulares del Mapa Ilustrado (por config.icon)
-function getPinEmoji(iconKey) {
-    const pinEmojis = {
-        'stage': '🎪',
-        'bar': '🍹',
-        'food': '🚚',
-        'custom': '⚡',
-        'wc': '🚻',
-        'parking': '🅿️',
-        'disabled': '♿',
-        'noparking': '🚫',
-        'exit': '🚪',
-        'star': '⭐',
-        'tent': '⛺',
-        'rest': '⛱️',
-        'first-aid': '➕'
+// Iconos dibujados (SVG en línea, no emoji) para las insignias del Mapa
+// Ilustrado. Trazo blanco simple sobre el color propio de cada tipo.
+function getPinIconSVG(iconKey) {
+    const S = 'fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+    const icons = {
+        'stage': `<svg viewBox="0 0 24 24" ${S}><path d="M12 2v3"/><path d="M12 5 4 13h16L12 5Z" fill="white" fill-opacity="0.85" stroke="white"/><path d="M4 13v7h16v-7"/><path d="M12 13v7"/></svg>`,
+        'bar': `<svg viewBox="0 0 24 24" ${S}><path d="M5 4h14l-7 8v6"/><path d="M9 20h6"/></svg>`,
+        'food': `<svg viewBox="0 0 24 24" ${S}><path d="M2 8h11v8H2z"/><path d="M13 11h4l3 3v2h-7z"/><circle cx="6" cy="18" r="1.5" fill="white"/><circle cx="17" cy="18" r="1.5" fill="white"/></svg>`,
+        'custom': `<svg viewBox="0 0 24 24" fill="white" stroke="none"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>`,
+        'wc': `<svg viewBox="0 0 24 24" ${S}><circle cx="8" cy="5" r="1.8"/><path d="M8 8v5m-3 8 3-8m0 0 3 8"/><circle cx="16" cy="5" r="1.8"/><path d="M13 21v-8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v8"/></svg>`,
+        'parking': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M10 16V8h3.2a2.4 2.4 0 0 1 0 4.8H10"/></svg>`,
+        'disabled': `<svg viewBox="0 0 24 24" ${S}><circle cx="12" cy="4.5" r="1.6" fill="white"/><path d="M12 7.5v4l4 2.5"/><path d="M8.5 11.5h7"/><circle cx="10" cy="17" r="4"/></svg>`,
+        'noparking': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/></svg>`,
+        'exit': `<svg viewBox="0 0 24 24" ${S}><path d="M10 3H5v18h5"/><path d="M14 12h7m0 0-3-3m3 3-3 3"/></svg>`,
+        'star': `<svg viewBox="0 0 24 24" fill="white" stroke="none"><path d="M12 2l2.9 6.9L22 9.6l-5.5 4.8L18 22l-6-3.9L6 22l1.5-7.6L2 9.6l7.1-.7L12 2z"/></svg>`,
+        'tent': `<svg viewBox="0 0 24 24" ${S}><path d="M2 20 12 4l10 16"/><path d="M8.5 20 12 13l3.5 7"/></svg>`,
+        'rest': `<svg viewBox="0 0 24 24" ${S}><path d="M12 3v18"/><path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 21c-1.5 0-2-1-2-2"/></svg>`,
+        'first-aid': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`,
+        'fence': `<svg viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round"><path d="M4 4v16M9 4v16M15 4v16M20 4v16"/><path d="M2 9h20M2 15h20"/></svg>`
     };
-    return pinEmojis[iconKey] || '📍';
+    return icons[iconKey] || `<svg viewBox="0 0 24 24" fill="white" stroke="#333" stroke-width="1"><circle cx="12" cy="12" r="5"/></svg>`;
 }
 function getGenericIconUrl(type) {
     const genericIcons = { 

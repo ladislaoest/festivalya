@@ -356,7 +356,11 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
-                    iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx]
+                    // El punto de anclaje tiene que coincidir con el
+                    // transform-origin (centro) del div que rota; si no,
+                    // la valla "orbita" alrededor de otro punto al girar
+                    // el mapa y parece que cambia de sitio.
+                    iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
                 }));
             } else {
                 // Elementos puntuales: insignia cuadrada redondeada de tamaño

@@ -81,11 +81,13 @@ function generate3DView(style) {
 	directionalLight.position.set(1, 1, 1);
 	threeScene.add(directionalLight);
 
-	const slider = document.getElementById('map3d-size-slider');
-	map3dPlaneSize = slider ? parseInt(slider.value) : 100;
-
 	const center = map.getCenter();
 	const zoom = map.getZoom();
+
+	// El plano del suelo debe medir, en unidades, lo mismo que mide en metros
+	// reales el tile mostrado (a esta lat/zoom), para que coincida con la
+	// escala en metros de los elementos (vallas, escenarios, etc.).
+	map3dPlaneSize = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, zoom);
 	
 	let tileTemplate = '';
 	let subdomain = 'a';

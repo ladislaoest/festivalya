@@ -15,7 +15,7 @@ const GLTFLoader = window.THREE.GLTFLoader;
 //    en un grupo que sí queda exactamente en "position".
 // Así el modelo siempre queda a escala real y en su sitio, sin importar
 // cómo esté exportado el archivo.
-function placeLoadedModel(model, desiredLength, position, scene) {
+function placeLoadedModel(model, desiredLength, position, rotationDeg, scene) {
 	model.updateMatrixWorld(true);
 	const naturalBox = new THREE.Box3().setFromObject(model);
 	let scale = 1;
@@ -39,10 +39,13 @@ function placeLoadedModel(model, desiredLength, position, scene) {
 	const wrapper = new THREE.Group();
 	wrapper.add(model);
 	wrapper.position.copy(position);
+	// Mismo signo invertido que el resto de los elementos (ver drawElements),
+	// para que la orientación coincida con la que se ve en el mapa 2D.
+	wrapper.rotation.y = -((rotationDeg || 0) * Math.PI) / 180;
 	scene.add(wrapper);
 }
 
-function load3DIcon(modelPath, position, scene, desiredLength = 1) {
+function load3DIcon(modelPath, position, scene, desiredLength = 1, rotationDeg = 0) {
 	const isGLB = modelPath.endsWith('.glb') || modelPath.endsWith('.gltf');
 	const isOBJ = modelPath.endsWith('.obj');
 
@@ -55,7 +58,7 @@ function load3DIcon(modelPath, position, scene, desiredLength = 1) {
 		if (!GLTFLoader) return;
 		const loader = new GLTFLoader();
 		loader.load(modelPath, function(gltf) {
-			placeLoadedModel(gltf.scene, desiredLength, position, scene);
+			placeLoadedModel(gltf.scene, desiredLength, position, rotationDeg, scene);
 		}, undefined, function(error) {
 			console.error('Error cargando modelo GLB:', modelPath, error);
 		});
@@ -66,7 +69,7 @@ function load3DIcon(modelPath, position, scene, desiredLength = 1) {
 		}
 		const loader = new window.THREE.OBJLoader();
 		loader.load(modelPath, function(object) {
-			placeLoadedModel(object, desiredLength, position, scene);
+			placeLoadedModel(object, desiredLength, position, rotationDeg, scene);
 		}, undefined, function(error) {
 			console.error('Error cargando modelo OBJ:', modelPath, error);
 		});
@@ -249,9 +252,9 @@ function drawElements(elements, threeScene) {
 		const pos = latLngToPlane(latLng.lat, latLng.lng, bbox);
 		
 		if (element.type === 'main-stage') {
-            load3DIcon('assets/3d-icons/escenario.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, element.length);
+            load3DIcon('assets/3d-icons/escenario.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, element.length, element.rotation);
         } else if (element.type === 'food-truck') {
-            load3DIcon('assets/3d-icons/Truck.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, 6);
+            load3DIcon('assets/3d-icons/Truck.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, 6, element.rotation);
         } else if (element.type === 'fence') {
             // Caja fina a escala real en vez de estirar el modelo 3D (que
             // deformaba también su alto/ancho y generaba postes gigantes).
@@ -261,7 +264,10 @@ function drawElements(elements, threeScene) {
             const material = new THREE.MeshStandardMaterial({ color: element.color || '#e5e5e5' });
             const mesh = new THREE.Mesh(geometry, material);
             mesh.position.set(pos.x, fenceHeight / 2, pos.z);
-            mesh.rotation.y = (element.rotation * Math.PI) / 180;
+            // El ángulo de Leaflet crece en sentido contrario al rotation.y
+            // de Three.js sobre este mismo plano XZ; sin el signo negativo
+            // los elementos rotados quedaban en espejo respecto al 2D.
+            mesh.rotation.y = -(element.rotation * Math.PI) / 180;
             threeScene.add(mesh);
         } else if (element.type === 'bar' || element.type === 'wc' || element.type.startsWith('signal')) {
             createGeometricElement(element, pos, threeScene);
@@ -270,7 +276,7 @@ function drawElements(elements, threeScene) {
 			const material = new THREE.MeshStandardMaterial({ color: element.color });
 			const mesh = new THREE.Mesh(geometry, material);
 			mesh.position.set(pos.x, geometry.parameters.height / 2, pos.z);
-			mesh.rotation.y = (element.rotation * Math.PI) / 180;
+			mesh.rotation.y = -(element.rotation * Math.PI) / 180;
 			threeScene.add(mesh);
 		} else {
 			createGeometricElement(element, pos, threeScene);
@@ -323,14 +329,14 @@ function createGeometricElement(element, pos, scene) {
         const baseMat = new THREE.MeshStandardMaterial({ color: color });
         const base = new THREE.Mesh(baseGeom, baseMat);
         base.position.set(pos.x, 1, pos.z);
-        base.rotation.y = (element.rotation * Math.PI) / 180;
+        base.rotation.y = -(element.rotation * Math.PI) / 180;
         scene.add(base);
 
         const topGeom = new THREE.BoxGeometry(element.length + 0.5, 0.2, element.width + 0.5);
         const topMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
         const top = new THREE.Mesh(topGeom, topMat);
         top.position.set(pos.x, 2.1, pos.z);
-        top.rotation.y = (element.rotation * Math.PI) / 180;
+        top.rotation.y = -(element.rotation * Math.PI) / 180;
         scene.add(top);
     } else if (element.type === 'wc') {
         // Modelo de cabina de baño
@@ -338,7 +344,7 @@ function createGeometricElement(element, pos, scene) {
         const material = new THREE.MeshStandardMaterial({ color: color });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.set(pos.x, 1.25, pos.z);
-        mesh.rotation.y = (element.rotation * Math.PI) / 180;
+        mesh.rotation.y = -(element.rotation * Math.PI) / 180;
         scene.add(mesh);
 
         // Techo inclinado para el baño
@@ -346,7 +352,7 @@ function createGeometricElement(element, pos, scene) {
         const roofMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
         const roof = new THREE.Mesh(roofGeom, roofMat);
         roof.position.set(pos.x, 2.5, pos.z);
-        roof.rotation.y = (element.rotation * Math.PI) / 180;
+        roof.rotation.y = -(element.rotation * Math.PI) / 180;
         scene.add(roof);
     } else {
         const isZone = element.type.startsWith('zone');
@@ -358,7 +364,7 @@ function createGeometricElement(element, pos, scene) {
         });
         const mesh = new THREE.Mesh(geometry, material);
         mesh.position.set(pos.x, isZone ? 0.05 : 1, pos.z);
-        mesh.rotation.y = (element.rotation * Math.PI) / 180;
+        mesh.rotation.y = -(element.rotation * Math.PI) / 180;
         scene.add(mesh);
     }
 
@@ -367,7 +373,7 @@ function createGeometricElement(element, pos, scene) {
 		const iconMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
 		const iconPlane = new THREE.Mesh(iconGeom, iconMat);
 		iconPlane.position.set(pos.x, 5, pos.z);
-        iconPlane.rotation.y = (element.rotation * Math.PI) / 180;
+        iconPlane.rotation.y = -(element.rotation * Math.PI) / 180;
 		scene.add(iconPlane);
 	});
 }

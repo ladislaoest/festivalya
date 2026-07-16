@@ -57,6 +57,7 @@ function getProjectData() {
             type: el.type,
             name: el.name,
             coords: el.moveMarker.getLatLng(),
+            labelCoords: el.labelMarker.getLatLng(),
             rotation: el.rotation,
             iconUrl: el.iconUrl,
             isRectangle: el.isRectangle,
@@ -173,6 +174,7 @@ function loadProjectData(data) {
         }
         element.rotation = el.rotation || 0;
         element.illustratedHidden = el.illustratedHidden || false;
+        if (el.labelCoords) element.labelMarker.setLatLng(el.labelCoords);
         updateElementShape(element, true);
         elements.push(element);
         updateElementCard(element);

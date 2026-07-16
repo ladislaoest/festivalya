@@ -2,7 +2,7 @@
 // --- CONFIGURACIÓN DE ELEMENTOS ---
 const festivalConfig = {
     'main-stage': { label: 'ESCENARIO', color: '#27ae60', icon: 'stage', defaultLen: 22, defaultWid: 10 },
-    'bar': { label: 'BARRA', color: '#f1c40f', icon: 'bar', defaultLen: 15, defaultWid: 10 },
+    'bar': { label: 'BARRA', color: '#f1c40f', icon: 'bar', defaultLen: 6, defaultWid: 2 },
     'food-truck': { label: 'FOOD TRUCK', color: '#e67e22', icon: 'food', defaultLen: 4, defaultWid: 2 },
     'generator': { label: 'GENERADOR', color: '#9b59b6', icon: 'custom', defaultLen: 4, defaultWid: 2 },
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
@@ -307,7 +307,9 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
         const distText = element.isLine ? `${element.length.toFixed(1)}m` : `${element.length}x${element.width}m`;
         const sectionsText = element.isLine ? `<br>${element.numVallas} vallas` : '';
 		
-        if (isIllustratedMode) {
+        if (isIllustratedMode && element.illustratedHidden) {
+            element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
+        } else if (isIllustratedMode) {
             const mapBearing = (map.getBearing ? map.getBearing() : 0);
             const totalRotation = element.rotation - mapBearing;
             const displayName = element.name !== config.label ? element.name : config.label;
@@ -716,6 +718,7 @@ function updateElementCard(element) {
             <span style="font-size: 9px; opacity: 0.5; font-style: italic;">Doble clic para editar</span>
         </div>
         <div class="element-actions">
+            <div class="action-btn visibility-btn" title="${element.illustratedHidden ? 'Mostrar en Mapa Ilustrado' : 'Ocultar en Mapa Ilustrado'}" style="${element.illustratedHidden ? 'opacity:0.4;' : ''}">${element.illustratedHidden ? '◌' : '◉'}</div>
             <div class="action-btn focus-btn">⦿</div>
             <div class="action-btn delete-btn">✕</div>
         </div>
@@ -723,6 +726,13 @@ function updateElementCard(element) {
 	card.onclick = () => selectElement(element);
 	card.querySelector('.focus-btn').onclick = (e) => { e.stopPropagation(); map.setView(element.moveMarker.getLatLng(), 18); };
 	card.querySelector('.delete-btn').onclick = (e) => { e.stopPropagation(); deleteElement(element); };
+	card.querySelector('.visibility-btn').onclick = (e) => {
+		e.stopPropagation();
+		element.illustratedHidden = !element.illustratedHidden;
+		updateElementCard(element);
+		updateElementShape(element, true);
+		saveHistory();
+	};
 }
 
 function selectElement(element) {

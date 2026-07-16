@@ -62,7 +62,8 @@ function getProjectData() {
             isRectangle: el.isRectangle,
             length: el.length,
             width: el.width,
-            color: el.color
+            color: el.color,
+            illustratedHidden: el.illustratedHidden || false
         }))
     };
 }
@@ -171,6 +172,7 @@ function loadProjectData(data) {
             group.addLayer(element.line);
         }
         element.rotation = el.rotation || 0;
+        element.illustratedHidden = el.illustratedHidden || false;
         updateElementShape(element, true);
         elements.push(element);
         updateElementCard(element);

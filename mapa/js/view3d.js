@@ -5,7 +5,44 @@ let map3dPlaneSize = 100;
 
 const GLTFLoader = window.THREE.GLTFLoader;
 
-function load3DIcon(modelPath, position, scene, scale = 1) {
+// Los modelos descargados (Sketchfab, etc.) no vienen en una escala ni
+// un pivote conocidos: sus unidades y proporciones son propias de cada
+// archivo, sin relación con los metros reales del festival. Por eso:
+// 1) medimos el modelo a escala 1 para saber su tamaño natural,
+// 2) lo escalamos para que su lado horizontal más largo mida
+//    "desiredLength" metros (el largo real del elemento en el mapa),
+// 3) lo re-centramos (X/Z) apoyándolo sobre el suelo (Y), envolviéndolo
+//    en un grupo que sí queda exactamente en "position".
+// Así el modelo siempre queda a escala real y en su sitio, sin importar
+// cómo esté exportado el archivo.
+function placeLoadedModel(model, desiredLength, position, scene) {
+	model.updateMatrixWorld(true);
+	const naturalBox = new THREE.Box3().setFromObject(model);
+	let scale = 1;
+	if (!naturalBox.isEmpty() && desiredLength > 0) {
+		const naturalSize = new THREE.Vector3();
+		naturalBox.getSize(naturalSize);
+		const horizontalExtent = Math.max(naturalSize.x, naturalSize.z);
+		if (horizontalExtent > 0) scale = desiredLength / horizontalExtent;
+	}
+	model.scale.set(scale, scale, scale);
+	model.updateMatrixWorld(true);
+
+	const box = new THREE.Box3().setFromObject(model);
+	if (!box.isEmpty()) {
+		const center = new THREE.Vector3();
+		box.getCenter(center);
+		model.position.x -= center.x;
+		model.position.z -= center.z;
+		model.position.y -= box.min.y;
+	}
+	const wrapper = new THREE.Group();
+	wrapper.add(model);
+	wrapper.position.copy(position);
+	scene.add(wrapper);
+}
+
+function load3DIcon(modelPath, position, scene, desiredLength = 1) {
 	const isGLB = modelPath.endsWith('.glb') || modelPath.endsWith('.gltf');
 	const isOBJ = modelPath.endsWith('.obj');
 
@@ -18,10 +55,7 @@ function load3DIcon(modelPath, position, scene, scale = 1) {
 		if (!GLTFLoader) return;
 		const loader = new GLTFLoader();
 		loader.load(modelPath, function(gltf) {
-			const model = gltf.scene;
-			model.position.copy(position);
-			model.scale.set(scale, scale, scale);
-			scene.add(model);
+			placeLoadedModel(gltf.scene, desiredLength, position, scene);
 		}, undefined, function(error) {
 			console.error('Error cargando modelo GLB:', modelPath, error);
 		});
@@ -32,9 +66,7 @@ function load3DIcon(modelPath, position, scene, scale = 1) {
 		}
 		const loader = new window.THREE.OBJLoader();
 		loader.load(modelPath, function(object) {
-			object.position.copy(position);
-			object.scale.set(scale, scale, scale);
-			scene.add(object);
+			placeLoadedModel(object, desiredLength, position, scene);
 		}, undefined, function(error) {
 			console.error('Error cargando modelo OBJ:', modelPath, error);
 		});
@@ -144,10 +176,19 @@ function generate3DView(style) {
 		.replace('{x}', tileX)
 		.replace('{y}', tileY);
 
-	const minLng = tile2lng(tileX, zoom);
-	const maxLng = tile2lng(tileX + 1, zoom);
-	const maxLat = tile2lat(tileY, zoom);
-	const minLat = tile2lat(tileY + 1, zoom);
+	// El tile de textura es una casilla fija de la cuadrícula de mapas y casi
+	// nunca queda centrado en el punto que se está mirando. Si usáramos su
+	// bbox para ubicar los elementos, cualquiera que cayera fuera de esa
+	// casilla aparecía fuera del plano (o directamente invisible). En cambio
+	// centramos el bbox en el centro real del mapa, con el tamaño real en
+	// metros del suelo, para que los elementos queden donde corresponde.
+	const metersToLat = 1 / 111320;
+	const metersToLng = 1 / (111320 * Math.cos(center.lat * Math.PI / 180));
+	const halfSize = map3dPlaneSize / 2;
+	const minLng = center.lng - halfSize * metersToLng;
+	const maxLng = center.lng + halfSize * metersToLng;
+	const minLat = center.lat - halfSize * metersToLat;
+	const maxLat = center.lat + halfSize * metersToLat;
 
 	const groundGeometry = new THREE.PlaneGeometry(map3dPlaneSize, map3dPlaneSize);
 	const groundMaterial = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide });
@@ -194,9 +235,9 @@ function drawElements(elements, threeScene) {
 		const pos = latLngToPlane(latLng.lat, latLng.lng, bbox);
 		
 		if (element.type === 'main-stage') {
-            load3DIcon('assets/3d-icons/escenario.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, element.length / 10);
+            load3DIcon('assets/3d-icons/escenario.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, element.length);
         } else if (element.type === 'food-truck') {
-            load3DIcon('assets/3d-icons/Truck.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, 2);
+            load3DIcon('assets/3d-icons/Truck.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, 6);
         } else if (element.type === 'fence') {
             // Caja fina a escala real en vez de estirar el modelo 3D (que
             // deformaba también su alto/ancho y generaba postes gigantes).

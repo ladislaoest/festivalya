@@ -185,10 +185,14 @@ select.form-control option {
     pointer-events: none !important;
     cursor: default !important;
     user-select: none !important;
+    background:
+        radial-gradient(circle at 20% 25%, rgba(255,255,255,0.10), transparent 40%),
+        radial-gradient(circle at 75% 70%, rgba(0,0,0,0.08), transparent 45%),
+        linear-gradient(135deg, #9ccc65, #7cb342 60%, #689f38) !important;
 }
 
 .illustrated-style .leaflet-tile-pane {
-    filter: saturate(1.4) contrast(1.1) brightness(1.05);
+    display: none;
 }
 
 .label-bubble {
@@ -209,6 +213,75 @@ select.form-control option {
 .label-bubble.hidden-label, .rectangle-label div.hidden-label {
     opacity: 0;
     pointer-events: none;
+}
+
+/* Pines de icono del Mapa Ilustrado (burbuja + insignia circular) */
+.map-pin {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: opacity 0.3s;
+}
+.map-pin.hidden-label {
+    opacity: 0;
+    pointer-events: none;
+}
+.map-pin-bubble {
+    position: relative;
+    background: #fff;
+    color: #262626;
+    font-weight: 800;
+    font-size: 10.5px;
+    letter-spacing: 0.2px;
+    padding: 4px 10px;
+    border-radius: 14px;
+    border: 2px solid #262626;
+    white-space: nowrap;
+    box-shadow: 0 3px 6px rgba(0,0,0,0.35);
+    margin-bottom: 9px;
+}
+.map-pin-bubble::after,
+.map-pin-bubble::before {
+    content: '';
+    position: absolute;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 0;
+    height: 0;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+}
+.map-pin-bubble::after {
+    bottom: -8px;
+    border-top: 8px solid #262626;
+}
+.map-pin-bubble::before {
+    bottom: -5px;
+    border-top: 6px solid #fff;
+    z-index: 1;
+}
+.map-pin-badge {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 21px;
+    line-height: 1;
+    border: 3px solid #fff;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+.map-pin-area-label {
+    background: rgba(255,255,255,0.92);
+    color: #262626;
+    font-weight: 800;
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 12px;
+    border: 2px solid #262626;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    white-space: nowrap;
 }
 
 /* Mejora del Popup de Edición */
@@ -322,6 +395,19 @@ select.form-control option {
     width: 24px;
     height: 24px;
     object-fit: contain;
+}
+.legend-pin {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    line-height: 1;
+    border: 2px solid #fff;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.35);
+    flex-shrink: 0;
 }
 
 /* Header del panel */

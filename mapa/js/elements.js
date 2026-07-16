@@ -310,60 +310,72 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
         if (isIllustratedMode && element.illustratedHidden) {
             element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
         } else if (isIllustratedMode) {
-            const mapBearing = (map.getBearing ? map.getBearing() : 0);
-            const totalRotation = element.rotation - mapBearing;
             const displayName = element.name !== config.label ? element.name : config.label;
-
-            // Calcular escala real exacta
-            const pCenter = map.latLngToLayerPoint(center);
-            const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
-            const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
-            
-            const wPx = length * pxPerMeter;
-            const hPx = (element.isRectangle ? width * pxPerMeter : Math.min(25, (wPx / element.numVallas) * 0.8));
-            
-            let iconHTML = '';
             const iconKey = config.icon;
-            
-            // Estilo base para todos los iconos (centrados en su propio contenedor)
-            const baseIconStyle = `width:${wPx}px; height:${hPx}px; display:flex; align-items:center; justify-content:center; position:relative; transform:rotate(${totalRotation}deg); transform-origin:center center;`;
+            const isZone = element.type.startsWith('zone');
+            const hiddenClass = showLabels ? '' : 'hidden-label';
 
-            if (iconKey === 'bar') {
-                iconHTML = `<div style="${baseIconStyle} background:#f1c40f; border:2px solid #000; border-radius:4px; font-weight:bold; color:black; font-size:${Math.max(7, wPx/6)}px; box-shadow:0 4px 8px rgba(0,0,0,0.5); text-align:center;">
-                    <div class="label-bubble ${showLabels ? '' : 'hidden-label'}" style="position:absolute; bottom:110%; left:50%; transform:translateX(-50%) rotate(${-totalRotation}deg); font-size:10px; padding:2px 6px; white-space:nowrap;">${displayName}</div>
-                    BAR
+            if (isZone) {
+                // Área traslúcida a escala real, con una etiqueta centrada (sin pin).
+                const mapBearing = (map.getBearing ? map.getBearing() : 0);
+                const totalRotation = element.rotation - mapBearing;
+                const pCenter = map.latLngToLayerPoint(center);
+                const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
+                const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
+                const wPx = length * pxPerMeter;
+                const hPx = width * pxPerMeter;
+
+                element.rectangle.setStyle({ fillOpacity: 0.35, weight: 2, color: element.color });
+
+                const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; display:flex; align-items:center; justify-content:center; transform:rotate(${totalRotation}deg);">
+                    <div class="map-pin-area-label ${hiddenClass}">${displayName}</div>
                 </div>`;
-            } else if (iconKey === 'noparking') {
-                const s = Math.min(wPx, hPx);
-                iconHTML = `<div style="width:${s}px; height:${s}px; background:#3498db; border:${s/8}px solid #e74c3c; border-radius:50%; position:relative; overflow:visible; box-shadow:0 4px 8px rgba(0,0,0,0.5); transform:rotate(${totalRotation}deg);">
-                    <div class="label-bubble ${showLabels ? '' : 'hidden-label'}" style="position:absolute; bottom:110%; left:50%; transform:translateX(-50%) rotate(${-totalRotation}deg); font-size:10px; padding:2px 6px; white-space:nowrap;">${displayName}</div>
-                    <div style="position:absolute; width:140%; height:${s/8}px; background:#e74c3c; top:50%; left:-20%; transform:rotate(45deg);"></div>
-                </div>`;
-            } else if (iconKey === 'exit') {
-                iconHTML = `<div style="${baseIconStyle} background:#27ae60; border:2px solid #fff; border-radius:4px; color:white; font-weight:bold; font-size:${Math.max(7, wPx/7)}px; box-shadow:0 4px 8px rgba(0,0,0,0.5); text-align:center;">
-                    <div class="label-bubble ${showLabels ? '' : 'hidden-label'}" style="position:absolute; bottom:110%; left:50%; transform:translateX(-50%) rotate(${-totalRotation}deg); font-size:10px; padding:2px 6px; white-space:nowrap;">${displayName}</div>
-                    EXIT ➔
-                </div>`;
+                element.labelMarker.setIcon(L.divIcon({
+                    className: 'illustrated-label',
+                    html: iconHTML,
+                    iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
+                }));
             } else if (element.isLine) {
+                // Vallas: fila de icono a escala real, sin pin (son lineales, no puntuales).
+                const pCenter = map.latLngToLayerPoint(center);
+                const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
+                const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
+                const wPx = length * pxPerMeter;
+                const hPx = Math.min(25, (wPx / element.numVallas) * 0.8);
+                const mapBearing = (map.getBearing ? map.getBearing() : 0);
+                const totalRotation = element.rotation - mapBearing;
                 const vW = wPx / element.numVallas;
-                iconHTML = `<div style="${baseIconStyle}">
-                    <div class="label-bubble ${showLabels ? '' : 'hidden-label'}" style="position:absolute; bottom:110%; left:50%; transform:translateX(-50%) rotate(${-totalRotation}deg); font-size:10px; padding:2px 6px; white-space:nowrap;">${displayName}</div>
-                    <div style="display:flex; width:100%; height:100%;">
+
+                const iconHTML = `<div style="width:${wPx}px; height:${hPx + 24}px; display:flex; flex-direction:column; align-items:center; transform:rotate(${totalRotation}deg); transform-origin:center center;">
+                    <div class="map-pin-bubble ${hiddenClass}">${displayName}</div>
+                    <div style="display:flex; width:100%; height:${hPx}px;">
                         ${Array(element.numVallas).fill(`<img src="${getGenericIconUrl(iconKey)}" style="width:${vW}px; height:100%;">`).join('')}
                     </div>
                 </div>`;
+                element.labelMarker.setIcon(L.divIcon({
+                    className: 'illustrated-label',
+                    html: iconHTML,
+                    iconSize: [wPx, hPx + 24], iconAnchor: [wPx / 2, hPx + 24]
+                }));
             } else {
-                iconHTML = `<div style="${baseIconStyle}">
-                    <div class="label-bubble ${showLabels ? '' : 'hidden-label'}" style="position:absolute; bottom:110%; left:50%; transform:translateX(-50%) rotate(${-totalRotation}deg); font-size:10px; padding:2px 6px; white-space:nowrap;">${displayName}</div>
-                    <img src="${getGenericIconUrl(iconKey)}" style="width:100%; height:100%; filter:drop-shadow(0 4px 8px rgba(0,0,0,0.6));">
-                </div>`;
-            }
+                // Elementos puntuales: insignia circular de tamaño fijo + burbuja con colita
+                // (no se escalan al tamaño real ni rotan, como los pines de un mapa de verdad).
+                const badgeSize = 44;
+                const bubbleBlockHeight = 34; // burbuja + margen, medido a ojo con el CSS de .map-pin-bubble
+                const totalHeight = badgeSize + bubbleBlockHeight;
+                const bg = element.color || '#7f8c8d';
+                const emoji = getPinEmoji(iconKey);
 
-            element.labelMarker.setIcon(L.divIcon({
-                className: 'illustrated-label',
-                html: iconHTML,
-                iconSize: [wPx, hPx], iconAnchor: [wPx/2, hPx/2]
-            }));
+                const iconHTML = `<div class="map-pin">
+                    <div class="map-pin-bubble ${hiddenClass}">${displayName}</div>
+                    <div class="map-pin-badge" style="background:${bg};">${emoji}</div>
+                </div>`;
+                element.labelMarker.setIcon(L.divIcon({
+                    className: 'illustrated-label',
+                    html: iconHTML,
+                    iconSize: [80, totalHeight], iconAnchor: [40, bubbleBlockHeight + badgeSize / 2]
+                }));
+            }
         } else {
             // Modo normal: Solo texto (sin icono) que se oculta según preferencia
             element.labelMarker.setIcon(L.divIcon({
@@ -412,8 +424,11 @@ function updateStats() {
                 if (config) {
                     const item = document.createElement('div');
                     item.className = 'legend-item';
+                    const iconHTML = isIllustratedMode
+                        ? `<div class="legend-pin" style="background:${config.color};">${getPinEmoji(config.icon)}</div>`
+                        : `<img src="${getGenericIconUrl(config.icon)}" class="legend-icon">`;
                     item.innerHTML = `
-                        <img src="${getGenericIconUrl(config.icon)}" class="legend-icon">
+                        ${iconHTML}
                         <span>${config.label}</span>
                     `;
                     legendItems.appendChild(item);
@@ -895,7 +910,26 @@ function bindMarkerEvents(element) {
         });
     }
 }
-function getGenericIconUrl(type) { 
+// Emoji para las insignias circulares del Mapa Ilustrado (por config.icon)
+function getPinEmoji(iconKey) {
+    const pinEmojis = {
+        'stage': '🎪',
+        'bar': '🍹',
+        'food': '🚚',
+        'custom': '⚡',
+        'wc': '🚻',
+        'parking': '🅿️',
+        'disabled': '♿',
+        'noparking': '🚫',
+        'exit': '🚪',
+        'star': '⭐',
+        'tent': '⛺',
+        'rest': '⛱️',
+        'first-aid': '➕'
+    };
+    return pinEmojis[iconKey] || '📍';
+}
+function getGenericIconUrl(type) {
     const genericIcons = { 
         'stage': 'assets/icons/stage.svg', 
         'food': 'assets/icons/food.svg', 

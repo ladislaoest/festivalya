@@ -321,7 +321,7 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
             if (isZone) {
                 // Área traslúcida a escala real, con una etiqueta centrada (sin pin).
                 const mapBearing = (map.getBearing ? map.getBearing() : 0);
-                const totalRotation = element.rotation - mapBearing;
+                const totalRotation = element.rotation + mapBearing;
                 const pCenter = map.latLngToLayerPoint(center);
                 const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
                 const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
@@ -347,7 +347,7 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 const wPx = length * pxPerMeter;
                 const hPx = Math.min(25, (wPx / element.numVallas) * 0.8);
                 const mapBearing = (map.getBearing ? map.getBearing() : 0);
-                const totalRotation = element.rotation - mapBearing;
+                const totalRotation = element.rotation + mapBearing;
                 const vW = wPx / element.numVallas;
 
                 const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; display:flex; transform:rotate(${totalRotation}deg); transform-origin:center center;">

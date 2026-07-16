@@ -1416,7 +1416,7 @@
         let usersCache = {};
         let eventsCache = {};
         let currentUser = localStorage.getItem('festivalya_user') || null;
-        let currentEvent = null;
+        let currentEvent = localStorage.getItem('festivalya_last_event') || null;
 
         let activityLog = [];
         let realtimeSubscribed = false;
@@ -1873,6 +1873,7 @@
             const select = document.getElementById('eventSelect');
             if(!select.value) return;
             currentEvent = select.value;
+            localStorage.setItem('festivalya_last_event', currentEvent);
 
             const event = eventsCache[currentEvent];
 

@@ -133,6 +133,7 @@ async function loadMapForEvent() {
     initMap();
     setupElementEvents();
     setupSaveLoadEvents();
+    setupViewSwitcher();
     loadProjectData(data.map_data);
     return true;
 }

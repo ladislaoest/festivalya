@@ -54,9 +54,20 @@ function generate3DView(style) {
 	if (threeRenderer) threeRenderer.dispose();
 	if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
+	const center = map.getCenter();
+	const zoom = map.getZoom();
+
+	// El plano del suelo debe medir, en unidades, lo mismo que mide en metros
+	// reales el tile mostrado (a esta lat/zoom), para que coincida con la
+	// escala en metros de los elementos (vallas, escenarios, etc.).
+	map3dPlaneSize = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, zoom);
+	const farPlane = Math.max(1000, map3dPlaneSize * 4);
+
 	threeScene = new THREE.Scene();
-	threeCamera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, 1000);
-	threeCamera.position.set(0, 40, 50);
+	threeCamera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, farPlane);
+	// Cámara a distancia proporcional al tamaño real del suelo, para que
+	// siempre quede bien encuadrado sin importar el zoom del mapa.
+	threeCamera.position.set(0, map3dPlaneSize * 0.4, map3dPlaneSize * 0.5);
 	threeCamera.lookAt(0, 0, 0);
 
 	threeRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
@@ -80,14 +91,6 @@ function generate3DView(style) {
 	const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 	directionalLight.position.set(1, 1, 1);
 	threeScene.add(directionalLight);
-
-	const center = map.getCenter();
-	const zoom = map.getZoom();
-
-	// El plano del suelo debe medir, en unidades, lo mismo que mide en metros
-	// reales el tile mostrado (a esta lat/zoom), para que coincida con la
-	// escala en metros de los elementos (vallas, escenarios, etc.).
-	map3dPlaneSize = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, zoom);
 	
 	let tileTemplate = '';
 	let subdomain = 'a';
@@ -195,7 +198,16 @@ function drawElements(elements, threeScene) {
         } else if (element.type === 'food-truck') {
             load3DIcon('assets/3d-icons/Truck.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, 2);
         } else if (element.type === 'fence') {
-            load3DIcon('assets/3d-icons/valla.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, element.length / 2);
+            // Caja fina a escala real en vez de estirar el modelo 3D (que
+            // deformaba también su alto/ancho y generaba postes gigantes).
+            const fenceHeight = 1.2;
+            const fenceThickness = 0.15;
+            const geometry = new THREE.BoxGeometry(element.length, fenceHeight, fenceThickness);
+            const material = new THREE.MeshStandardMaterial({ color: element.color || '#e5e5e5' });
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.position.set(pos.x, fenceHeight / 2, pos.z);
+            mesh.rotation.y = (element.rotation * Math.PI) / 180;
+            threeScene.add(mesh);
         } else if (element.type === 'bar' || element.type === 'wc' || element.type.startsWith('signal')) {
             createGeometricElement(element, pos, threeScene);
         } else if (element.isRectangle) {

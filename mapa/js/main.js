@@ -38,12 +38,9 @@ function clearAllElements() {
 
 // --- INICIALIZACIÓN Y EVENTOS GLOBALES ---
 
-function startNewProject() {
-    initMap();
-    setupElementEvents();
-    setupSaveLoadEvents();
-
-    // Selector de vistas (2D/3D)
+// Selector de vistas (2D/3D). Debe engancharse sin importar cómo arrancó
+// el proyecto (nuevo, cargado desde Supabase o desde archivo local).
+function setupViewSwitcher() {
     document.querySelectorAll('.view-btn').forEach(btn => {
         btn.addEventListener('click', function() {
             const viewId = this.dataset.view;
@@ -51,10 +48,10 @@ function startNewProject() {
 
             document.querySelectorAll('.view-btn').forEach(b => b.classList.remove('active'));
             this.classList.add('active');
-            
+
             document.getElementById('map-container').classList.remove('active');
             document.getElementById('container-3d-full').classList.remove('active');
-            
+
             if (viewId === 'map-2d') {
                 document.getElementById('map-container').classList.add('active');
                 setTimeout(() => {
@@ -68,6 +65,13 @@ function startNewProject() {
             }
         });
     });
+}
+
+function startNewProject() {
+    initMap();
+    setupElementEvents();
+    setupSaveLoadEvents();
+    setupViewSwitcher();
 
     console.log('Proyecto nuevo iniciado en vista satelital.');
 }
@@ -107,7 +111,8 @@ document.addEventListener('DOMContentLoaded', async function() {
                 initMap();
                 setupElementEvents();
                 setupSaveLoadEvents();
-                loadProject(); 
+                setupViewSwitcher();
+                loadProject();
             });
         }
     }

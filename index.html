@@ -771,20 +771,22 @@
 
         #mapa_back_btn {
             position: fixed;
-            top: calc(14px + env(safe-area-inset-top));
-            left: 14px;
+            top: 50%;
+            left: calc(10px + env(safe-area-inset-left));
+            transform: translateY(-50%);
             z-index: 2600;
             background: rgba(10, 10, 11, 0.85);
             backdrop-filter: blur(10px);
             border: 1px solid var(--border-soft);
             color: var(--text-main);
             border-radius: 999px;
-            width: 40px;
-            height: 40px;
+            width: 44px;
+            height: 44px;
             display: none;
             align-items: center;
             justify-content: center;
             cursor: pointer;
+            box-shadow: var(--shadow-lg);
         }
 
         #tab_mapa.active #mapa_back_btn {

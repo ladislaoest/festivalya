@@ -43,10 +43,10 @@ function load3DIcon(modelPath, position, scene, scale = 1) {
 
 
 function generate3DView(style) {
-	const container = document.getElementById('3d-container-full');
-	const canvas = document.getElementById('3d-canvas-full');
+	const container = document.getElementById('container-3d-full');
+	const canvas = document.getElementById('canvas-3d-full');
 	if (!canvas) {
-		console.error('[3D] No se encontró el canvas #3d-canvas-full');
+		console.error('[3D] No se encontró el canvas #canvas-3d-full');
 		return;
 	}
 	const rect = canvas.getBoundingClientRect();
@@ -67,7 +67,7 @@ function generate3DView(style) {
 	threeControls.enableDamping = true;
 
 	window.addEventListener('resize', () => {
-		const container = document.getElementById('3d-container-full');
+		const container = document.getElementById('container-3d-full');
 		if (container.classList.contains('active')) {
 			threeCamera.aspect = container.offsetWidth / container.offsetHeight;
 			threeCamera.updateProjectionMatrix();

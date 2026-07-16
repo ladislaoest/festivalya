@@ -8,7 +8,7 @@ document.addEventListener('DOMContentLoaded', function() {
 			valueLabel.textContent = slider.value;
 		});
 		slider.addEventListener('change', function() {
-			const container3D = document.getElementById('3d-container-full');
+			const container3D = document.getElementById('container-3d-full');
 			if (container3D && container3D.classList.contains('active')) {
 				let style = 'minimalista';
 				const btn = document.querySelector('.view-btn.active');
@@ -53,7 +53,7 @@ function startNewProject() {
             this.classList.add('active');
             
             document.getElementById('map-container').classList.remove('active');
-            document.getElementById('3d-container-full').classList.remove('active');
+            document.getElementById('container-3d-full').classList.remove('active');
             
             if (viewId === 'map-2d') {
                 document.getElementById('map-container').classList.add('active');
@@ -61,7 +61,7 @@ function startNewProject() {
                     if (map) map.invalidateSize();
                 }, 50);
             } else if (viewId.startsWith('3d')) {
-                document.getElementById('3d-container-full').classList.add('active');
+                document.getElementById('container-3d-full').classList.add('active');
                 let style = 'minimalista';
                 if (viewId === '3d-illustrated') style = 'ilustrado';
                 generate3DView(style);

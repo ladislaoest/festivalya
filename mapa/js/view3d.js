@@ -92,7 +92,21 @@ function generate3DView(style) {
 	// El plano del suelo debe medir, en unidades, lo mismo que mide en metros
 	// reales el tile mostrado (a esta lat/zoom), para que coincida con la
 	// escala en metros de los elementos (vallas, escenarios, etc.).
-	map3dPlaneSize = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, zoom);
+	const tileBasedSize = 40075016.686 * Math.cos(center.lat * Math.PI / 180) / Math.pow(2, zoom);
+
+	// Si los elementos están más lejos del centro que ese tile, agrandamos
+	// el plano para que ninguno quede fuera (o directamente invisible).
+	let maxReachMeters = 0;
+	elements.forEach(el => {
+		const dist = map.distance(center, el.moveMarker.getLatLng());
+		const halfExtent = el.isRectangle
+			? Math.sqrt(Math.pow((el.length || 0) / 2, 2) + Math.pow((el.width || 0) / 2, 2))
+			: (el.length || 0) / 2;
+		maxReachMeters = Math.max(maxReachMeters, dist + halfExtent);
+	});
+	const fitAllSize = maxReachMeters > 0 ? maxReachMeters * 2 * 1.2 : 0;
+
+	map3dPlaneSize = Math.max(tileBasedSize, fitAllSize, 20);
 	const farPlane = Math.max(1000, map3dPlaneSize * 4);
 
 	threeScene = new THREE.Scene();

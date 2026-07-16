@@ -89,7 +89,25 @@ function generate3DView(style) {
 	if (threeRenderer) threeRenderer.dispose();
 	if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
-	const center = map.getCenter();
+	// Centramos la escena en el centro real de los elementos del festival,
+	// no en el centro de la vista 2D actual: si el mapa había quedado
+	// desplazado/paneado respecto a dónde está el festival, los elementos
+	// (sobre todo el escenario) terminaban cerca del borde de la cámara o
+	// directamente fuera, viéndose solo su etiqueta flotante.
+	let center;
+	if (elements.length > 0) {
+		let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+		elements.forEach(el => {
+			const ll = el.moveMarker.getLatLng();
+			minLat = Math.min(minLat, ll.lat);
+			maxLat = Math.max(maxLat, ll.lat);
+			minLng = Math.min(minLng, ll.lng);
+			maxLng = Math.max(maxLng, ll.lng);
+		});
+		center = L.latLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+	} else {
+		center = map.getCenter();
+	}
 	const zoom = map.getZoom();
 
 	// El plano del suelo debe medir, en unidades, lo mismo que mide en metros
@@ -114,9 +132,12 @@ function generate3DView(style) {
 
 	threeScene = new THREE.Scene();
 	threeCamera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, farPlane);
-	// Cámara a distancia proporcional al tamaño real del suelo, para que
-	// siempre quede bien encuadrado sin importar el zoom del mapa.
-	threeCamera.position.set(0, map3dPlaneSize * 0.4, map3dPlaneSize * 0.5);
+	// La cámara encuadra el radio real que ocupan los elementos (no el
+	// suelo completo, que suele tener margen de sobra), para que el
+	// escenario y compañía se vean grandes de entrada y no haya que
+	// acercar la cámara a mano para distinguirlos del fondo.
+	const cameraFitRadius = maxReachMeters > 0 ? maxReachMeters : map3dPlaneSize * 0.5;
+	threeCamera.position.set(0, cameraFitRadius * 0.96, cameraFitRadius * 1.2);
 	threeCamera.lookAt(0, 0, 0);
 
 	threeRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });

@@ -185,14 +185,10 @@ select.form-control option {
     pointer-events: none !important;
     cursor: default !important;
     user-select: none !important;
-    background:
-        radial-gradient(circle at 20% 25%, rgba(255,255,255,0.10), transparent 40%),
-        radial-gradient(circle at 75% 70%, rgba(0,0,0,0.08), transparent 45%),
-        linear-gradient(135deg, #9ccc65, #7cb342 60%, #689f38) !important;
 }
 
 .illustrated-style .leaflet-tile-pane {
-    display: none;
+    filter: saturate(1.6) contrast(1.08) brightness(1.08) hue-rotate(-2deg);
 }
 
 .label-bubble {
@@ -260,17 +256,24 @@ select.form-control option {
     border-top: 6px solid #fff;
     z-index: 1;
 }
+/* Pin con forma de gota (como un marcador de mapa clásico): un cuadrado
+   con 3 esquinas redondeadas rotado 45°, dejando la esquina recta como
+   punta hacia abajo. El contenido se rota al revés para quedar derecho. */
 .map-pin-badge {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
+    width: 38px;
+    height: 38px;
+    border-radius: 50% 50% 50% 0;
+    transform: rotate(-45deg);
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 21px;
-    line-height: 1;
     border: 3px solid #fff;
     box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+}
+.map-pin-badge-inner {
+    transform: rotate(45deg);
+    font-size: 19px;
+    line-height: 1;
 }
 .map-pin-area-label {
     background: rgba(255,255,255,0.92);

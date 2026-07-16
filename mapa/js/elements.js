@@ -356,17 +356,20 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx]
                 }));
             } else {
-                // Elementos puntuales: insignia circular de tamaño fijo, sin nombre
-                // (con muchos elementos juntos las burbujas de texto tapaban todo).
-                const badgeSize = 44;
+                // Elementos puntuales: pin con forma de gota (tamaño fijo, sin
+                // nombre; con muchos elementos juntos las burbujas tapaban todo).
+                const badgeSize = 38;
+                const pinHeight = 50; // alto del contenedor hasta la punta de la gota
                 const bg = element.color || '#7f8c8d';
                 const emoji = getPinEmoji(iconKey);
 
-                const iconHTML = `<div class="map-pin-badge" style="background:${bg};" title="${displayName}">${emoji}</div>`;
+                const iconHTML = `<div style="width:${badgeSize + 6}px; height:${pinHeight}px; display:flex; justify-content:center; padding-top:2px;" title="${displayName}">
+                    <div class="map-pin-badge" style="background:${bg};"><span class="map-pin-badge-inner">${emoji}</span></div>
+                </div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
-                    iconSize: [badgeSize, badgeSize], iconAnchor: [badgeSize / 2, badgeSize / 2]
+                    iconSize: [badgeSize + 6, pinHeight], iconAnchor: [(badgeSize + 6) / 2, pinHeight]
                 }));
             }
         } else {

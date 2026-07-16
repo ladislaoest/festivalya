@@ -336,7 +336,8 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
                 }));
             } else if (element.isLine) {
-                // Vallas: fila de icono a escala real, sin pin (son lineales, no puntuales).
+                // Vallas: fila de icono a escala real, sin pin ni nombre (son lineales,
+                // y con muchas vallas juntas los nombres tapan todo el mapa).
                 const pCenter = map.latLngToLayerPoint(center);
                 const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
                 const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
@@ -346,34 +347,26 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 const totalRotation = element.rotation - mapBearing;
                 const vW = wPx / element.numVallas;
 
-                const iconHTML = `<div style="width:${wPx}px; height:${hPx + 24}px; display:flex; flex-direction:column; align-items:center; transform:rotate(${totalRotation}deg); transform-origin:center center;">
-                    <div class="map-pin-bubble ${hiddenClass}">${displayName}</div>
-                    <div style="display:flex; width:100%; height:${hPx}px;">
-                        ${Array(element.numVallas).fill(`<img src="${getGenericIconUrl(iconKey)}" style="width:${vW}px; height:100%;">`).join('')}
-                    </div>
+                const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; display:flex; transform:rotate(${totalRotation}deg); transform-origin:center center;">
+                    ${Array(element.numVallas).fill(`<img src="${getGenericIconUrl(iconKey)}" style="width:${vW}px; height:100%;">`).join('')}
                 </div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
-                    iconSize: [wPx, hPx + 24], iconAnchor: [wPx / 2, hPx + 24]
+                    iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx]
                 }));
             } else {
-                // Elementos puntuales: insignia circular de tamaño fijo + burbuja con colita
-                // (no se escalan al tamaño real ni rotan, como los pines de un mapa de verdad).
+                // Elementos puntuales: insignia circular de tamaño fijo, sin nombre
+                // (con muchos elementos juntos las burbujas de texto tapaban todo).
                 const badgeSize = 44;
-                const bubbleBlockHeight = 34; // burbuja + margen, medido a ojo con el CSS de .map-pin-bubble
-                const totalHeight = badgeSize + bubbleBlockHeight;
                 const bg = element.color || '#7f8c8d';
                 const emoji = getPinEmoji(iconKey);
 
-                const iconHTML = `<div class="map-pin">
-                    <div class="map-pin-bubble ${hiddenClass}">${displayName}</div>
-                    <div class="map-pin-badge" style="background:${bg};">${emoji}</div>
-                </div>`;
+                const iconHTML = `<div class="map-pin-badge" style="background:${bg};" title="${displayName}">${emoji}</div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
-                    iconSize: [80, totalHeight], iconAnchor: [40, bubbleBlockHeight + badgeSize / 2]
+                    iconSize: [badgeSize, badgeSize], iconAnchor: [badgeSize / 2, badgeSize / 2]
                 }));
             }
         } else {

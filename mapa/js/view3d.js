@@ -126,8 +126,81 @@ function generate3DView(style) {
 		maxReachMeters = Math.max(maxReachMeters, dist + halfExtent);
 	});
 	const fitAllSize = maxReachMeters > 0 ? maxReachMeters * 2 * 1.2 : 0;
+	const desiredPlaneSize = Math.max(tileBasedSize, fitAllSize, 20);
 
-	map3dPlaneSize = Math.max(tileBasedSize, fitAllSize, 20);
+	let tileTemplate = '';
+	let subdomain = 'a';
+	let styleKey = 'cartodb-light';
+	for (const key in mapLayers) {
+		if (map.hasLayer(mapLayers[key])) {
+			styleKey = key;
+			break;
+		}
+	}
+
+	switch(styleKey) {
+		case 'osm-streets':
+			tileTemplate = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+			subdomain = 'a';
+			break;
+		case 'cartodb-light':
+			tileTemplate = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+			subdomain = 'a';
+			break;
+		case 'cartodb-dark':
+			tileTemplate = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
+			subdomain = 'a';
+			break;
+		case 'esri-satellite':
+			tileTemplate = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
+			subdomain = '';
+			break;
+		default:
+			tileTemplate = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
+			subdomain = 'a';
+	}
+	function lng2tile(lon, z) {
+		return Math.floor((lon + 180) / 360 * Math.pow(2, z));
+	}
+	function lat2tile(lat, z) {
+		return Math.floor((1 - Math.log(Math.tan(lat * Math.PI/180) + 1/Math.cos(lat * Math.PI/180)) / Math.PI) / 2 * Math.pow(2, z));
+	}
+	function tile2lng(x, z) {
+		return x / Math.pow(2, z) * 360 - 180;
+	}
+	function tile2lat(y, z) {
+		const n = Math.PI - 2 * Math.PI * y / Math.pow(2, z);
+		return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+	}
+	function tileUrlFor(x, y) {
+		return tileTemplate.replace('{s}', subdomain).replace('{z}', zoom).replace('{x}', x).replace('{y}', y);
+	}
+
+	// La textura de fondo es un mosaico de tiles reales, no un único tile
+	// estirado: si el suelo mide más que un tile (algo habitual, ya que su
+	// tamaño se ajusta a dónde están los elementos) y usáramos solo un
+	// tile, la imagen de fondo quedaba desalineada de las posiciones reales
+	// - lo que se veía como elementos "desplazados" varios metros respecto
+	// al mapa real. Elegimos el rango de tiles que cubre el suelo deseado
+	// y usamos su bbox EXACTO (no el estimado) tanto para la textura como
+	// para ubicar los elementos, así ambos quedan perfectamente alineados.
+	const metersToLat = 1 / 111320;
+	const metersToLng = 1 / (111320 * Math.cos(center.lat * Math.PI / 180));
+	const desiredHalf = desiredPlaneSize / 2;
+	const MAX_TILES_PER_AXIS = 6;
+	let tileXmin = lng2tile(center.lng - desiredHalf * metersToLng, zoom);
+	let tileXmax = lng2tile(center.lng + desiredHalf * metersToLng, zoom);
+	let tileYmin = lat2tile(center.lat + desiredHalf * metersToLat, zoom);
+	let tileYmax = lat2tile(center.lat - desiredHalf * metersToLat, zoom);
+	tileXmax = Math.min(tileXmax, tileXmin + MAX_TILES_PER_AXIS - 1);
+	tileYmax = Math.min(tileYmax, tileYmin + MAX_TILES_PER_AXIS - 1);
+
+	const minLng = tile2lng(tileXmin, zoom);
+	const maxLng = tile2lng(tileXmax + 1, zoom);
+	const maxLat = tile2lat(tileYmin, zoom);
+	const minLat = tile2lat(tileYmax + 1, zoom);
+
+	map3dPlaneSize = (maxLng - minLng) * 111320 * Math.cos(center.lat * Math.PI / 180);
 	const farPlane = Math.max(1000, map3dPlaneSize * 4);
 
 	threeScene = new THREE.Scene();
@@ -161,83 +234,42 @@ function generate3DView(style) {
 	const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
 	directionalLight.position.set(1, 1, 1);
 	threeScene.add(directionalLight);
-	
-	let tileTemplate = '';
-	let subdomain = 'a';
-	let styleKey = 'cartodb-light';
-	for (const key in mapLayers) {
-		if (map.hasLayer(mapLayers[key])) {
-			styleKey = key;
-			break;
-		}
-	}
-
-	switch(styleKey) {
-		case 'osm-streets':
-			tileTemplate = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
-			subdomain = 'a';
-			break;
-		case 'cartodb-light':
-			tileTemplate = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
-			subdomain = 'a';
-			break;
-		case 'cartodb-dark':
-			tileTemplate = 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png';
-			subdomain = 'a';
-			break;
-		case 'esri-satellite':
-			tileTemplate = 'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}';
-			subdomain = '';
-			break;
-		default:
-			tileTemplate = 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png';
-			subdomain = 'a';
-	}
-	function lng2tile(lon, zoom) {
-		return Math.floor((lon + 180) / 360 * Math.pow(2, zoom));
-	}
-	function lat2tile(lat, zoom) {
-		return Math.floor((1 - Math.log(Math.tan(lat * Math.PI/180) + 1/Math.cos(lat * Math.PI/180)) / Math.PI) / 2 * Math.pow(2, zoom));
-	}
-	function tile2lng(x, zoom) {
-		return x / Math.pow(2, zoom) * 360 - 180;
-	}
-	function tile2lat(y, zoom) {
-		const n = Math.PI - 2 * Math.PI * y / Math.pow(2, zoom);
-		return (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
-	}
-	const tileX = lng2tile(center.lng, zoom);
-	const tileY = lat2tile(center.lat, zoom);
-	const tileUrl = tileTemplate
-		.replace('{s}', subdomain)
-		.replace('{z}', zoom)
-		.replace('{x}', tileX)
-		.replace('{y}', tileY);
-
-	// El tile de textura es una casilla fija de la cuadrícula de mapas y casi
-	// nunca queda centrado en el punto que se está mirando. Si usáramos su
-	// bbox para ubicar los elementos, cualquiera que cayera fuera de esa
-	// casilla aparecía fuera del plano (o directamente invisible). En cambio
-	// centramos el bbox en el centro real del mapa, con el tamaño real en
-	// metros del suelo, para que los elementos queden donde corresponde.
-	const metersToLat = 1 / 111320;
-	const metersToLng = 1 / (111320 * Math.cos(center.lat * Math.PI / 180));
-	const halfSize = map3dPlaneSize / 2;
-	const minLng = center.lng - halfSize * metersToLng;
-	const maxLng = center.lng + halfSize * metersToLng;
-	const minLat = center.lat - halfSize * metersToLat;
-	const maxLat = center.lat + halfSize * metersToLat;
 
 	const groundGeometry = new THREE.PlaneGeometry(map3dPlaneSize, map3dPlaneSize);
 	const groundMaterial = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide });
 	const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 	ground.rotation.x = -Math.PI / 2;
 	threeScene.add(ground);
-	new THREE.TextureLoader().load(tileUrl, function(texture) {
+	ground.userData = { minLat, maxLat, minLng, maxLng };
+
+	// Descargamos y unimos en un solo lienzo todos los tiles del rango, en
+	// su posición correcta, y lo usamos como textura del suelo.
+	const numTX = tileXmax - tileXmin + 1;
+	const numTY = tileYmax - tileYmin + 1;
+	const stitchCanvas = document.createElement('canvas');
+	stitchCanvas.width = numTX * 256;
+	stitchCanvas.height = numTY * 256;
+	const stitchCtx = stitchCanvas.getContext('2d');
+	const tileLoads = [];
+	for (let ty = tileYmin; ty <= tileYmax; ty++) {
+		for (let tx = tileXmin; tx <= tileXmax; tx++) {
+			const px = (tx - tileXmin) * 256;
+			const py = (ty - tileYmin) * 256;
+			tileLoads.push(new Promise((resolve) => {
+				const img = new Image();
+				img.crossOrigin = 'anonymous';
+				img.onload = () => { stitchCtx.drawImage(img, px, py, 256, 256); resolve(); };
+				img.onerror = () => resolve();
+				img.src = tileUrlFor(tx, ty);
+			}));
+		}
+	}
+	Promise.all(tileLoads).then(() => {
+		const texture = new THREE.CanvasTexture(stitchCanvas);
+		texture.needsUpdate = true;
 		ground.material.map = texture;
 		ground.material.needsUpdate = true;
 	});
-	ground.userData = { minLat, maxLat, minLng, maxLng };
 
 	if (style === 'ilustrado') {
 		ground.material.color.set(0x3d4a53);

@@ -21,15 +21,11 @@ document.addEventListener('DOMContentLoaded', function() {
 
 function clearAllElements() {
     elements.forEach(el => {
-        if (el.isRectangle) {
-            map.removeLayer(el.rectangle);
-            map.removeLayer(el.labelMarker);
-        } else if (el.isLine) {
-            map.removeLayer(el.line);
-            map.removeLayer(el.labelMarker);
-        } else {
-            map.removeLayer(el.marker);
-        }
+        if (el.isRectangle) map.removeLayer(el.rectangle);
+        else if (el.isLine) map.removeLayer(el.line);
+        map.removeLayer(el.labelMarker);
+        map.removeLayer(el.moveMarker);
+        if (el.rotateMarker) map.removeLayer(el.rotateMarker);
     });
     elements = [];
     const list = document.getElementById('elements-list');

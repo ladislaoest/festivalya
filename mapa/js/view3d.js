@@ -3,6 +3,9 @@
 let threeScene, threeCamera, threeRenderer, threeControls, animationFrameId;
 let map3dPlaneSize = 100;
 
+const SECURITY_FIGURE_SCALE = 1.4;
+const SECURITY_FIGURE_HEIGHT = 1.77 * SECURITY_FIGURE_SCALE;
+
 const GLTFLoader = window.THREE.GLTFLoader;
 
 // Los modelos descargados (Sketchfab, etc.) no vienen en una escala ni
@@ -339,13 +342,17 @@ function drawElements(elements, threeScene) {
         
         // Etiqueta flotante 3D para todos, salvo las vallas: con muchos
         // tramos juntos, un "Valla" flotando sobre cada uno satura la vista.
-        if (element.type !== 'fence') {
+        if (element.type === 'security') {
+            // Pegada justo encima de la cabeza del muñeco, y bastante más
+            // pequeña que la de un elemento grande (escenario, zonas...).
+            create3DLabel(element.name, new THREE.Vector3(pos.x, SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
+        } else if (element.type !== 'fence') {
             create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
         }
 	});
 }
 
-function create3DLabel(text, position, scene) {
+function create3DLabel(text, position, scene, size = [10, 5]) {
 	const canvas = document.createElement('canvas');
 	const context = canvas.getContext('2d');
 	canvas.width = 256;
@@ -361,7 +368,7 @@ function create3DLabel(text, position, scene) {
 	const spriteMaterial = new THREE.SpriteMaterial({ map: texture });
 	const sprite = new THREE.Sprite(spriteMaterial);
 	sprite.position.copy(position);
-	sprite.scale.set(10, 5, 1);
+	sprite.scale.set(size[0], size[1], 1);
 	scene.add(sprite);
 }
 
@@ -493,6 +500,7 @@ function createSecurityFigure(pos, rotation, scene) {
 		group.add(limb);
 	});
 
+	group.scale.set(SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE);
 	group.position.copy(pos);
 	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
 	scene.add(group);

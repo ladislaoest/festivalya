@@ -275,10 +275,11 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
 
     if (!onlyLabel) {
         if (element.isRectangle) {
+            const hasBadgeIcon = isIllustratedMode || element.type === 'security';
             element.rectangle.setStyle({
-                fillOpacity: isIllustratedMode ? 0 : 0.6,
-                weight: isIllustratedMode ? (isFestivalMode ? 0 : 1) : 2,
-                color: isIllustratedMode ? 'transparent' : element.color
+                fillOpacity: hasBadgeIcon ? 0 : 0.6,
+                weight: hasBadgeIcon ? (isFestivalMode ? 0 : 1) : 2,
+                color: hasBadgeIcon ? 'transparent' : element.color
             });
             
             const halfL = length / 2;
@@ -311,9 +312,10 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
         const distText = element.isLine ? `${element.length.toFixed(1)}m` : `${element.length}x${element.width}m`;
         const sectionsText = element.isLine ? `<br>${element.numVallas} vallas` : '';
 		
+        const hasBadgeIcon = isIllustratedMode || element.type === 'security';
         if (isIllustratedMode && element.illustratedHidden) {
             element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
-        } else if (isIllustratedMode) {
+        } else if (hasBadgeIcon) {
             const displayName = element.name !== config.label ? element.name : config.label;
             const iconKey = config.icon;
             const isZone = element.type.startsWith('zone');
@@ -931,7 +933,7 @@ function getPinIconSVG(iconKey) {
         'rest': `<svg viewBox="0 0 24 24" ${S}><path d="M12 3v18"/><path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 21c-1.5 0-2-1-2-2"/></svg>`,
         'first-aid': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`,
         'fence': `<svg viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round"><path d="M4 4v16M9 4v16M15 4v16M20 4v16"/><path d="M2 9h20M2 15h20"/></svg>`,
-        'security': `<svg viewBox="0 0 24 24" ${S}><circle cx="12" cy="7" r="3.2"/><path d="M5 21v-2a7 7 0 0 1 14 0v2"/></svg>`
+        'security': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.2" fill="white" stroke="none"/><path d="M12 8v6"/><path d="M12 10 6 6"/><path d="M12 10l6-4"/><path d="M12 14l-5 7"/><path d="M12 14l5 7"/></svg>`
     };
     return icons[iconKey] || `<svg viewBox="0 0 24 24" fill="white" stroke="#333" stroke-width="1"><circle cx="12" cy="12" r="5"/></svg>`;
 }

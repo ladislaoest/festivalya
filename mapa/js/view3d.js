@@ -717,23 +717,26 @@ function createSecurityFigure(pos, rotation, scene) {
 function createDrunkFigure(pos, element, scene) {
 	const group = new THREE.Group();
 	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
-	const stubbleMat = new THREE.MeshStandardMaterial({ color: 0x5c4a3d });
 	const shirtMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5 });
 	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a });
 	const mugMat = new THREE.MeshStandardMaterial({ color: 0xd9a441 });
 	const foamMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0 });
 
-	// Cabeza grande y calva, look "cartoon de borracho" genérico (no un
-	// personaje con copyright): cabezón desproporcionado + sombra de
-	// barba de tres días en la mandíbula.
+	// Cabeza grande, cabezón desproporcionado estilo cartoon; la cara real
+	// va pegada delante como textura (ver más abajo).
 	const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 14), skinMat);
 	head.position.set(0, 1.55, 0);
 	group.add(head);
 
-	const stubble = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), stubbleMat);
-	stubble.scale.set(1, 0.55, 0.9);
-	stubble.position.set(0, 1.42, 0.16);
-	group.add(stubble);
+	// Cara real pegada al frente de la cabeza (foto del "borracho" oficial
+	// del pueblo), como una cartulina plana orientada hacia +Z.
+	const faceTexture = new THREE.TextureLoader().load('assets/faces/borracho.jpg');
+	const face = new THREE.Mesh(
+		new THREE.PlaneGeometry(0.34, 0.34),
+		new THREE.MeshStandardMaterial({ map: faceTexture, transparent: true })
+	);
+	face.position.set(0, 1.55, 0.235);
+	group.add(face);
 
 	// Torso panzón con camiseta de tirantes (los brazos, aparte, quedan al
 	// aire) y una barriga prominente asomando por debajo.

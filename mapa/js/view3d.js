@@ -6,6 +6,14 @@ let map3dPlaneSize = 100;
 const SECURITY_FIGURE_SCALE = 1.4;
 const SECURITY_FIGURE_HEIGHT = 1.77 * SECURITY_FIGURE_SCALE;
 
+const DRUNK_FIGURE_SCALE = 1.6;
+const DRUNK_FIGURE_HEIGHT = 1.7 * DRUNK_FIGURE_SCALE;
+const DRUNK_WANDER_RADIUS = 2.5;
+
+// Figuras "borracho" que deambulan solas cada frame (ver updateWanderingDrunks).
+// Se reconstruye entera cada vez que se regenera la escena 3D.
+let wanderingDrunks = [];
+
 // Ruido barato (senos superpuestos) para dar una sensación de terreno
 // ondulado sin depender de datos de elevación reales.
 function terrainHeight(x, y) {
@@ -303,6 +311,7 @@ function generate3DView(style) {
 	function animate() {
 		animationFrameId = requestAnimationFrame(animate);
 		threeControls.update();
+		updateWanderingDrunks();
 		try {
 			threeRenderer.render(threeScene, threeCamera);
 		} catch (err) {
@@ -327,6 +336,40 @@ function planeToLatLng(x, z, bbox) {
 	const lng = ((x + planeSize / 2) / planeSize) * (bbox.maxLng - bbox.minLng) + bbox.minLng;
 	const lat = bbox.maxLat - ((z + planeSize / 2) / planeSize) * (bbox.maxLat - bbox.minLat);
 	return L.latLng(lat, lng);
+}
+
+// Paseo/tambaleo de los "borrachos": en vez de moverlos por todo el
+// recinto (que exigiría evitar otros elementos y los límites del suelo),
+// dan vueltas en un círculo pequeño alrededor de donde se colocaron, con
+// balanceo de piernas/brazo y un ligero tambaleo lateral.
+function updateWanderingDrunks() {
+	if (!wanderingDrunks.length) return;
+	const t = performance.now() / 1000;
+	wanderingDrunks.forEach(entry => {
+		if (dragState && dragState.element === entry.element) return;
+
+		const angle = t * 0.25 + entry.phase;
+		const x = entry.centerX + Math.cos(angle) * DRUNK_WANDER_RADIUS;
+		const z = entry.centerZ + Math.sin(angle) * DRUNK_WANDER_RADIUS;
+		const heading = angle + Math.PI / 2;
+		const wobble = Math.sin(t * 3 + entry.phase) * 0.25;
+
+		entry.group.position.x = x;
+		entry.group.position.z = z;
+		entry.group.position.y = Math.abs(Math.sin(t * 7 + entry.phase)) * 0.04;
+		entry.group.rotation.y = heading + wobble;
+		entry.group.rotation.z = Math.sin(t * 5 + entry.phase) * 0.08;
+
+		const stride = Math.sin(t * 7 + entry.phase);
+		if (entry.group.userData.legL) entry.group.userData.legL.rotation.x = stride * 0.5;
+		if (entry.group.userData.legR) entry.group.userData.legR.rotation.x = -stride * 0.5;
+		if (entry.group.userData.armDown) entry.group.userData.armDown.rotation.x = -stride * 0.4;
+
+		if (entry.element._threeLabel) {
+			entry.element._threeLabel.position.x = x;
+			entry.element._threeLabel.position.z = z;
+		}
+	});
 }
 
 // --- Arrastrar elementos con el puntero en la vista 3D ---
@@ -423,6 +466,11 @@ function setupElementDragging(canvas) {
 		element.labelMarker.setLatLng([labelPos.lat + dLat, labelPos.lng + dLng]);
 		updateElementShape(element, true);
 		saveHistory();
+
+		// Si es un "borracho" que deambula solo, que retome el paseo
+		// centrado en el punto donde se soltó, no en el de antes de arrastrarlo.
+		const wanderEntry = wanderingDrunks.find(w => w.element === element);
+		if (wanderEntry) { wanderEntry.centerX = lastX; wanderEntry.centerZ = lastZ; }
 	}
 	canvas.addEventListener('pointerup', endDrag);
 	canvas.addEventListener('pointercancel', endDrag);
@@ -433,7 +481,8 @@ function drawElements(elements, threeScene) {
 	const ground = threeScene.children.find(obj => obj.type === 'Mesh' && obj.userData && obj.userData.minLat !== undefined);
 	if (!ground) return;
 	const bbox = ground.userData;
-	
+	wanderingDrunks = [];
+
 	elements.forEach(element => {
 		const latLng = element.moveMarker.getLatLng();
 		const pos = latLngToPlane(latLng.lat, latLng.lng, bbox);
@@ -447,6 +496,9 @@ function drawElements(elements, threeScene) {
             obj3d = createSecurityFigure(new THREE.Vector3(pos.x, 0, pos.z), element.rotation, threeScene);
         } else if (element.type === 'entrance') {
             obj3d = createEntranceArch(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+        } else if (element.type === 'drunk') {
+            obj3d = createDrunkFigure(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            wanderingDrunks.push({ element, group: obj3d, centerX: pos.x, centerZ: pos.z, phase: Math.random() * Math.PI * 2 });
         } else if (element.type === 'fence') {
             // Caja fina a escala real en vez de estirar el modelo 3D (que
             // deformaba también su alto/ancho y generaba postes gigantes).
@@ -483,6 +535,8 @@ function drawElements(elements, threeScene) {
             // Pegada justo encima de la cabeza del muñeco, y bastante más
             // pequeña que la de un elemento grande (escenario, zonas...).
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
+        } else if (element.type === 'drunk') {
+            label = create3DLabel(element.name, new THREE.Vector3(pos.x, DRUNK_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
         } else if (element.type !== 'fence') {
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
         }
@@ -652,6 +706,87 @@ function createSecurityFigure(pos, rotation, scene) {
 	group.scale.set(SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE);
 	group.position.copy(pos);
 	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+	return group;
+}
+
+// "El borracho del pueblo": personaje genérico (no un personaje con
+// copyright) tambaleándose con una jarra en la mano. Deambula solo en un
+// pequeño círculo alrededor de donde se coloca (ver updateWanderingDrunks);
+// las piernas/brazo se animan igual, con oscilaciones en el mismo bucle.
+function createDrunkFigure(pos, element, scene) {
+	const group = new THREE.Group();
+	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
+	const shirtMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5 });
+	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a });
+	const mugMat = new THREE.MeshStandardMaterial({ color: 0xd9a441 });
+	const foamMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0 });
+
+	const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), skinMat);
+	head.position.set(0, 1.5, 0);
+	group.add(head);
+
+	// Torso panzón (más ancho abajo que arriba)
+	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, 0.6, 10), shirtMat);
+	torso.position.set(0, 1.1, 0);
+	group.add(torso);
+
+	const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.2, 8), pantsMat);
+	hips.position.set(0, 0.75, 0);
+	group.add(hips);
+
+	// Piernas: geometría trasladada para que el pivote quede en la cadera,
+	// así rotation.x las balancea como al caminar en vez de girar por el centro.
+	const legHeight = 0.55;
+	const legGeom = new THREE.CylinderGeometry(0.08, 0.09, legHeight, 8);
+	legGeom.translate(0, -legHeight / 2, 0);
+	const hipY = 0.65;
+
+	const legL = new THREE.Mesh(legGeom, pantsMat);
+	legL.position.set(0.1, hipY, 0);
+	group.add(legL);
+
+	const legR = new THREE.Mesh(legGeom.clone(), pantsMat);
+	legR.position.set(-0.1, hipY, 0);
+	group.add(legR);
+
+	// Brazo que cuelga y se balancea al caminar
+	const armHeight = 0.48;
+	const armGeom = new THREE.CylinderGeometry(0.06, 0.07, armHeight, 8);
+	armGeom.translate(0, -armHeight / 2, 0);
+	const shoulderY = 1.35;
+
+	const armDown = new THREE.Mesh(armGeom, skinMat);
+	armDown.position.set(-0.24, shoulderY, 0);
+	group.add(armDown);
+
+	// Brazo levantado con la jarra pegada a la mano: van en un grupo juntos
+	// para que al rotar el brazo la jarra se mueva con él, ya en su sitio.
+	const armUpGroup = new THREE.Group();
+	armUpGroup.position.set(0.24, shoulderY, 0);
+	armUpGroup.rotation.z = -2.0;
+
+	const armUp = new THREE.Mesh(armGeom.clone(), skinMat);
+	armUpGroup.add(armUp);
+
+	const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.045, 0.13, 10), mugMat);
+	mug.position.set(0, -armHeight - 0.05, 0);
+	armUpGroup.add(mug);
+
+	const foam = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), foamMat);
+	foam.position.set(0, -armHeight + 0.03, 0);
+	armUpGroup.add(foam);
+
+	group.add(armUpGroup);
+
+	// Referencias para animar piernas/brazo cada frame (updateWanderingDrunks)
+	group.userData.legL = legL;
+	group.userData.legR = legR;
+	group.userData.armDown = armDown;
+
+	group.scale.set(DRUNK_FIGURE_SCALE, DRUNK_FIGURE_SCALE, DRUNK_FIGURE_SCALE);
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
 	scene.add(group);
 	return group;
 }

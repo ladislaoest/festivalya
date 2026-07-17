@@ -13,6 +13,7 @@ const festivalConfig = {
     'signal-no-parking': { label: 'PROHIBIDO APARCAR', color: '#e74c3c', icon: 'noparking', defaultLen: 4, defaultWid: 4 },
     'signal-exit': { label: 'SALIDA EMERGENCIA', color: '#27ae60', icon: 'exit', defaultLen: 4, defaultWid: 4 },
     'signal-wc': { label: 'SEÑAL WC', color: '#3498db', icon: 'wc', defaultLen: 4, defaultWid: 4 },
+    'entrance': { label: 'ENTRADA', color: '#f1c40f', icon: 'entrance', defaultLen: 6, defaultWid: 2 },
     'zone-vip': { label: 'ZONA VIP', color: '#f1c40f', icon: 'star', defaultLen: 20, defaultWid: 20 },
     'zone-camping': { label: 'ZONA ACAMPADA', color: '#27ae60', icon: 'tent', defaultLen: 30, defaultWid: 30 },
     'zone-parking': { label: 'ZONA PARKING', color: '#3498db', icon: 'parking', defaultLen: 40, defaultWid: 40 }
@@ -501,7 +502,7 @@ function setupElementEvents() {
                 'stage': 'main-stage', 'food': 'food-truck', 'bar': 'bar',
                 'wc': 'signal-wc', 'fence': 'fence', 'custom': 'generator',
                 'parking': 'signal-parking', 'disabled': 'signal-disabled', 'noparking': 'signal-no-parking',
-                'exit': 'signal-exit', 'security': 'security'
+                'exit': 'signal-exit', 'security': 'security', 'entrance': 'entrance'
             };
 			if (elemType) { elemType.value = mapIconToType[this.dataset.icon]; elemType.dispatchEvent(new Event('change')); }
 		};
@@ -933,7 +934,8 @@ function getPinIconSVG(iconKey) {
         'rest': `<svg viewBox="0 0 24 24" ${S}><path d="M12 3v18"/><path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 21c-1.5 0-2-1-2-2"/></svg>`,
         'first-aid': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`,
         'fence': `<svg viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round"><path d="M4 4v16M9 4v16M15 4v16M20 4v16"/><path d="M2 9h20M2 15h20"/></svg>`,
-        'security': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.2" fill="white" stroke="none"/><path d="M12 8v6"/><path d="M12 10 6 6"/><path d="M12 10l6-4"/><path d="M12 14l-5 7"/><path d="M12 14l5 7"/></svg>`
+        'security': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.2" fill="white" stroke="none"/><path d="M12 8v6"/><path d="M12 10 6 6"/><path d="M12 10l6-4"/><path d="M12 14l-5 7"/><path d="M12 14l5 7"/></svg>`,
+        'entrance': `<svg viewBox="0 0 24 24" ${S}><path d="M4 21V11a8 8 0 0 1 16 0v10"/><path d="M4 21h4M16 21h4"/></svg>`
     };
     return icons[iconKey] || `<svg viewBox="0 0 24 24" fill="white" stroke="#333" stroke-width="1"><circle cx="12" cy="12" r="5"/></svg>`;
 }
@@ -949,6 +951,7 @@ function getGenericIconUrl(type) {
         'fence': 'assets/icons/fence.svg',
         'tent': 'assets/icons/tent.svg',
         'security': 'assets/icons/security.svg',
+        'entrance': 'assets/icons/entrance.svg',
         'disabled': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Wheelchair_symbol.svg',
         'noparking': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzM0OThkYiIgc3Ryb2tlPSIjZTc0YzNjIiBzdHJva2Utd2lkdGg9IjEwIi8+PGxpbmUgeDE9IjE4IiB5MT0iMTgiIHgyPSI4MiIgeTI9IjgyIiBzdHJva2U9IiNlNzRjM2MiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=',
         'exit': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMjdhZTYwIi8+PHBhdGggZD0iTTMwIDIwaDQwdjYwSDMwek03NSA1MGwtMTUgMTBNNzUgNTBsLTE1LTEwIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjgiLz48L3N2Zz4=',

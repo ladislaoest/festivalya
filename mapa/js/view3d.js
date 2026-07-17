@@ -301,7 +301,14 @@ function generate3DView(style) {
 	function animate() {
 		animationFrameId = requestAnimationFrame(animate);
 		threeControls.update();
-		threeRenderer.render(threeScene, threeCamera);
+		try {
+			threeRenderer.render(threeScene, threeCamera);
+		} catch (err) {
+			// Un fallo puntual (p.ej. una textura de tile bloqueada por CORS)
+			// no debe dejar la vista congelada en el color de fondo para
+			// siempre: lo dejamos en consola y seguimos con el siguiente frame.
+			console.error('[3D] Error de render:', err);
+		}
 	}
 	animate();
 }
@@ -329,6 +336,8 @@ function drawElements(elements, threeScene) {
             createFoodTruckModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
         } else if (element.type === 'security') {
             createSecurityFigure(new THREE.Vector3(pos.x, 0, pos.z), element.rotation, threeScene);
+        } else if (element.type === 'entrance') {
+            createEntranceArch(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
         } else if (element.type === 'fence') {
             // Caja fina a escala real en vez de estirar el modelo 3D (que
             // deformaba también su alto/ancho y generaba postes gigantes).
@@ -519,6 +528,32 @@ function createSecurityFigure(pos, rotation, scene) {
 	group.scale.set(SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE);
 	group.position.copy(pos);
 	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+}
+
+// Arco de entrada: un THREE.TorusGeometry con arc=PI ya dibuja medio anillo
+// con los dos extremos apoyados en el suelo (y=0) y la cresta en y=radius,
+// que es justo la silueta de un arco - sin necesitar pilares aparte.
+function createEntranceArch(pos, element, scene) {
+	const group = new THREE.Group();
+	const span = element.length || 6;
+	const radius = span / 2;
+	const tube = 0.22;
+
+	const archMat = new THREE.MeshStandardMaterial({ color: element.color || 0xf1c40f });
+	const arch = new THREE.Mesh(new THREE.TorusGeometry(radius, tube, 12, 32, Math.PI), archMat);
+	group.add(arch);
+
+	// Cartel apoyado sobre la cresta del arco
+	const sign = new THREE.Mesh(
+		new THREE.BoxGeometry(span * 0.5, radius * 0.22, 0.15),
+		new THREE.MeshStandardMaterial({ color: 0xffffff })
+	);
+	sign.position.set(0, radius + tube + 0.05, 0);
+	group.add(sign);
+
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
 	scene.add(group);
 }
 

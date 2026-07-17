@@ -7,7 +7,7 @@ const SECURITY_FIGURE_SCALE = 1.4;
 const SECURITY_FIGURE_HEIGHT = 1.77 * SECURITY_FIGURE_SCALE;
 
 const DRUNK_FIGURE_SCALE = 1.6;
-const DRUNK_FIGURE_HEIGHT = 1.7 * DRUNK_FIGURE_SCALE;
+const DRUNK_FIGURE_HEIGHT = 1.82 * DRUNK_FIGURE_SCALE;
 const DRUNK_WANDER_RADIUS = 2.5;
 
 // Figuras "borracho" que deambulan solas cada frame (ver updateWanderingDrunks).
@@ -717,21 +717,36 @@ function createSecurityFigure(pos, rotation, scene) {
 function createDrunkFigure(pos, element, scene) {
 	const group = new THREE.Group();
 	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
+	const stubbleMat = new THREE.MeshStandardMaterial({ color: 0x5c4a3d });
 	const shirtMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5 });
 	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a });
 	const mugMat = new THREE.MeshStandardMaterial({ color: 0xd9a441 });
 	const foamMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0 });
 
-	const head = new THREE.Mesh(new THREE.SphereGeometry(0.2, 12, 12), skinMat);
-	head.position.set(0, 1.5, 0);
+	// Cabeza grande y calva, look "cartoon de borracho" genérico (no un
+	// personaje con copyright): cabezón desproporcionado + sombra de
+	// barba de tres días en la mandíbula.
+	const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 14), skinMat);
+	head.position.set(0, 1.55, 0);
 	group.add(head);
 
-	// Torso panzón (más ancho abajo que arriba)
-	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.24, 0.6, 10), shirtMat);
-	torso.position.set(0, 1.1, 0);
+	const stubble = new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), stubbleMat);
+	stubble.scale.set(1, 0.55, 0.9);
+	stubble.position.set(0, 1.42, 0.16);
+	group.add(stubble);
+
+	// Torso panzón con camiseta de tirantes (los brazos, aparte, quedan al
+	// aire) y una barriga prominente asomando por debajo.
+	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 0.55, 10), shirtMat);
+	torso.position.set(0, 1.12, 0);
 	group.add(torso);
 
-	const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.14, 0.2, 8), pantsMat);
+	const belly = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), shirtMat);
+	belly.scale.set(1, 0.85, 0.95);
+	belly.position.set(0, 0.92, 0.06);
+	group.add(belly);
+
+	const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.2, 8), pantsMat);
 	hips.position.set(0, 0.75, 0);
 	group.add(hips);
 

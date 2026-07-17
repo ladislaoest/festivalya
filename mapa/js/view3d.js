@@ -305,9 +305,11 @@ function drawElements(elements, threeScene) {
 		const pos = latLngToPlane(latLng.lat, latLng.lng, bbox);
 		
 		if (element.type === 'main-stage') {
-            load3DIcon('assets/3d-icons/escenario.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, element.length, element.rotation);
+            createStageModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
         } else if (element.type === 'food-truck') {
-            load3DIcon('assets/3d-icons/Truck.glb', new THREE.Vector3(pos.x, 0, pos.z), threeScene, 6, element.rotation);
+            createFoodTruckModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+        } else if (element.type === 'security') {
+            createSecurityFigure(new THREE.Vector3(pos.x, 0, pos.z), element.rotation, threeScene);
         } else if (element.type === 'fence') {
             // Caja fina a escala real en vez de estirar el modelo 3D (que
             // deformaba también su alto/ancho y generaba postes gigantes).
@@ -335,8 +337,11 @@ function drawElements(elements, threeScene) {
 			createGeometricElement(element, pos, threeScene);
 		}
         
-        // Etiqueta flotante 3D para todos
-        create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
+        // Etiqueta flotante 3D para todos, salvo las vallas: con muchos
+        // tramos juntos, un "Valla" flotando sobre cada uno satura la vista.
+        if (element.type !== 'fence') {
+            create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
+        }
 	});
 }
 
@@ -360,6 +365,138 @@ function create3DLabel(text, position, scene) {
 	scene.add(sprite);
 }
 
+// Escenario principal construido con geometría propia (plataforma + torres
+// de truss + pantalla trasera). Antes usaba un modelo .glb descargado de
+// ~125MB que no cabe en el repo (límite de GitHub) y por tanto nunca
+// llegaba a cargar en producción: solo se veía la etiqueta flotante.
+function createStageModel(pos, element, scene) {
+	const group = new THREE.Group();
+	const length = element.length || 20;
+	const depth = element.width || 10;
+	const deckHeight = 1.1;
+
+	const deck = new THREE.Mesh(
+		new THREE.BoxGeometry(length, deckHeight, depth),
+		new THREE.MeshStandardMaterial({ color: 0x1c1c1c })
+	);
+	deck.position.set(0, deckHeight / 2, 0);
+	group.add(deck);
+
+	const backdropHeight = Math.max(4, depth * 0.6);
+	const backdrop = new THREE.Mesh(
+		new THREE.BoxGeometry(length * 0.92, backdropHeight, 0.3),
+		new THREE.MeshStandardMaterial({ color: element.color || 0x27ae60 })
+	);
+	backdrop.position.set(0, deckHeight + backdropHeight / 2, -depth / 2 + 0.3);
+	group.add(backdrop);
+
+	const trussMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
+	const towerHeight = backdropHeight + 3;
+	[-1, 1].forEach(side => {
+		const tower = new THREE.Mesh(new THREE.BoxGeometry(0.5, towerHeight, 0.5), trussMat);
+		tower.position.set(side * (length / 2 - 0.6), deckHeight + towerHeight / 2, -depth / 2 + 0.3);
+		group.add(tower);
+	});
+
+	const beam = new THREE.Mesh(new THREE.BoxGeometry(length - 0.6, 0.5, 0.5), trussMat);
+	beam.position.set(0, deckHeight + towerHeight, -depth / 2 + 0.3);
+	group.add(beam);
+
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+}
+
+// Food truck con cabina, franja de color, toldo y ventana de venta, en vez
+// de la caja lisa/camión genérico anterior.
+function createFoodTruckModel(pos, element, scene) {
+	const group = new THREE.Group();
+	const length = element.length || 5;
+	const width = element.width || 2.2;
+	const accentColor = element.color || 0xe67e22;
+	const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf5f0e6 });
+	const bodyHeight = 2.1;
+
+	const body = new THREE.Mesh(new THREE.BoxGeometry(length, bodyHeight, width), bodyMat);
+	body.position.set(0, bodyHeight / 2 + 0.35, 0);
+	group.add(body);
+
+	const cabLength = length * 0.28;
+	const cab = new THREE.Mesh(new THREE.BoxGeometry(cabLength, bodyHeight * 0.82, width * 0.98), bodyMat);
+	cab.position.set(length / 2 - cabLength / 2 + 0.05, (bodyHeight * 0.82) / 2 + 0.35, 0);
+	group.add(cab);
+
+	const stripe = new THREE.Mesh(
+		new THREE.BoxGeometry(length * 0.68, 0.5, width + 0.02),
+		new THREE.MeshStandardMaterial({ color: accentColor })
+	);
+	stripe.position.set(-length * 0.1, 0.9, 0);
+	group.add(stripe);
+
+	const win = new THREE.Mesh(
+		new THREE.BoxGeometry(length * 0.4, 0.9, 0.1),
+		new THREE.MeshStandardMaterial({ color: 0x333333 })
+	);
+	win.position.set(-length * 0.15, 1.55, width / 2 + 0.02);
+	group.add(win);
+
+	const awning = new THREE.Mesh(
+		new THREE.BoxGeometry(length * 0.45, 0.08, 1.1),
+		new THREE.MeshStandardMaterial({ color: accentColor, side: THREE.DoubleSide })
+	);
+	awning.position.set(-length * 0.15, 2.05, width / 2 + 0.6);
+	awning.rotation.x = -0.35;
+	group.add(awning);
+
+	const wheelMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+	const wheelGeom = new THREE.CylinderGeometry(0.35, 0.35, 0.3, 16);
+	[
+		[-length / 2 + 0.7, width / 2], [-length / 2 + 0.7, -width / 2],
+		[length / 2 - 0.9, width / 2], [length / 2 - 0.9, -width / 2]
+	].forEach(([x, z]) => {
+		const wheel = new THREE.Mesh(wheelGeom, wheelMat);
+		wheel.rotation.x = Math.PI / 2;
+		wheel.position.set(x, 0.35, z);
+		group.add(wheel);
+	});
+
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+}
+
+// Muñeco rojo tipo "pelele" (Santos Inocentes) para el personal de
+// seguridad, en vez de la caja genérica que salía antes.
+function createSecurityFigure(pos, rotation, scene) {
+	const group = new THREE.Group();
+	const mat = new THREE.MeshStandardMaterial({ color: 0xe74c3c });
+
+	const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), mat);
+	head.position.set(0, 1.55, 0);
+	group.add(head);
+
+	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.7, 8), mat);
+	torso.position.set(0, 1.15, 0);
+	group.add(torso);
+
+	const limbGeom = new THREE.CylinderGeometry(0.075, 0.09, 0.6, 8);
+	const limbs = [
+		{ pos: [0.22, 1.35, 0], rot: -0.95 },
+		{ pos: [-0.22, 1.35, 0], rot: 0.95 },
+		{ pos: [0.16, 0.5, 0], rot: 0.5 },
+		{ pos: [-0.16, 0.5, 0], rot: -0.5 }
+	];
+	limbs.forEach(({ pos: p, rot }) => {
+		const limb = new THREE.Mesh(limbGeom, mat);
+		limb.position.set(p[0], p[1], p[2]);
+		limb.rotation.z = rot;
+		group.add(limb);
+	});
+
+	group.position.copy(pos);
+	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+}
 
 function createGeometricElement(element, pos, scene) {
 	let geometry;

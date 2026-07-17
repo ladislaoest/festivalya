@@ -95,8 +95,10 @@ function generate3DView(style) {
 		return;
 	}
 	const rect = canvas.getBoundingClientRect();
-	
+	setupElementDragging(canvas);
+
 	if (threeRenderer) threeRenderer.dispose();
+	if (threeControls) threeControls.dispose();
 	if (animationFrameId) cancelAnimationFrame(animationFrameId);
 
 	// Centramos la escena en el centro real de los elementos del festival,
@@ -320,6 +322,112 @@ function latLngToPlane(lat, lng, bbox) {
 	return { x, z };
 }
 
+function planeToLatLng(x, z, bbox) {
+	const planeSize = map3dPlaneSize;
+	const lng = ((x + planeSize / 2) / planeSize) * (bbox.maxLng - bbox.minLng) + bbox.minLng;
+	const lat = bbox.maxLat - ((z + planeSize / 2) / planeSize) * (bbox.maxLat - bbox.minLat);
+	return L.latLng(lat, lng);
+}
+
+// --- Arrastrar elementos con el puntero en la vista 3D ---
+// Los listeners se enganchan una sola vez al canvas (guardado en su
+// dataset); threeScene/threeCamera/threeControls son "let" del módulo, así
+// que los handlers siempre ven la escena/cámara/controles vigentes aunque
+// generate3DView() los reemplace en cada cambio de vista.
+let dragState = null;
+const dragRaycaster = new THREE.Raycaster();
+const dragPointerNDC = new THREE.Vector2();
+
+function findElementIn3DObject(obj) {
+	let o = obj;
+	while (o) {
+		if (o.userData && o.userData.element) return o.userData.element;
+		o = o.parent;
+	}
+	return null;
+}
+
+function updatePointerNDC(ev) {
+	const rect = threeRenderer.domElement.getBoundingClientRect();
+	dragPointerNDC.x = ((ev.clientX - rect.left) / rect.width) * 2 - 1;
+	dragPointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
+}
+
+function setupElementDragging(canvas) {
+	if (canvas.dataset.dragHandlersBound) return;
+	canvas.dataset.dragHandlersBound = '1';
+
+	canvas.addEventListener('pointerdown', (ev) => {
+		if (!threeScene || !threeCamera) return;
+		updatePointerNDC(ev);
+		dragRaycaster.setFromCamera(dragPointerNDC, threeCamera);
+		const hits = dragRaycaster.intersectObjects(threeScene.children, true);
+		for (const hit of hits) {
+			const element = findElementIn3DObject(hit.object);
+			if (element) {
+				dragState = { element, lastX: null, lastZ: null };
+				if (typeof selectElement === 'function') selectElement(element);
+				if (threeControls) threeControls.enabled = false;
+				// Captura el puntero para que pointermove/pointerup sigan
+				// llegando aunque el cursor salga del lienzo a mitad de arrastre.
+				canvas.setPointerCapture(ev.pointerId);
+				ev.preventDefault();
+				break;
+			}
+		}
+	});
+
+	canvas.addEventListener('pointermove', (ev) => {
+		if (!dragState) return;
+		const ground = threeScene.children.find(o => o.userData && o.userData.minLat !== undefined);
+		if (!ground) return;
+		updatePointerNDC(ev);
+		dragRaycaster.setFromCamera(dragPointerNDC, threeCamera);
+		const hit = dragRaycaster.intersectObject(ground, false)[0];
+		if (!hit) return;
+
+		const { element } = dragState;
+		dragState.lastX = hit.point.x;
+		dragState.lastZ = hit.point.z;
+		// Reposicionar en vivo el objeto 3D y su etiqueta; el dato real
+		// (moveMarker/2D) solo se confirma al soltar, para no recalcular
+		// todo el mapa 2D en cada frame de arrastre.
+		if (element._threeObj) {
+			element._threeObj.position.x = hit.point.x;
+			element._threeObj.position.z = hit.point.z;
+		}
+		if (element._threeLabel) {
+			element._threeLabel.position.x = hit.point.x;
+			element._threeLabel.position.z = hit.point.z;
+		}
+	});
+
+	function endDrag() {
+		if (threeControls) threeControls.enabled = true;
+		if (!dragState) return;
+		const { element, lastX, lastZ } = dragState;
+		dragState = null;
+		if (lastX === null) return;
+
+		const ground = threeScene.children.find(o => o.userData && o.userData.minLat !== undefined);
+		if (!ground) return;
+		const newLatLng = planeToLatLng(lastX, lastZ, ground.userData);
+
+		// Mismo patrón delta que el arrastre en 2D (ver moveMarker.on('drag')
+		// en elements.js): así no se pierde un offset manual de la etiqueta.
+		const oldLatLng = element.moveMarker.getLatLng();
+		const dLat = newLatLng.lat - oldLatLng.lat;
+		const dLng = newLatLng.lng - oldLatLng.lng;
+		element.moveMarker.setLatLng(newLatLng);
+		const labelPos = element.labelMarker.getLatLng();
+		element.labelMarker.setLatLng([labelPos.lat + dLat, labelPos.lng + dLng]);
+		updateElementShape(element, true);
+		saveHistory();
+	}
+	canvas.addEventListener('pointerup', endDrag);
+	canvas.addEventListener('pointercancel', endDrag);
+}
+
 function drawElements(elements, threeScene) {
 	if (!elements.length) return;
 	const ground = threeScene.children.find(obj => obj.type === 'Mesh' && obj.userData && obj.userData.minLat !== undefined);
@@ -329,15 +437,16 @@ function drawElements(elements, threeScene) {
 	elements.forEach(element => {
 		const latLng = element.moveMarker.getLatLng();
 		const pos = latLngToPlane(latLng.lat, latLng.lng, bbox);
-		
+		let obj3d;
+
 		if (element.type === 'main-stage') {
-            createStageModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createStageModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
         } else if (element.type === 'food-truck') {
-            createFoodTruckModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createFoodTruckModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
         } else if (element.type === 'security') {
-            createSecurityFigure(new THREE.Vector3(pos.x, 0, pos.z), element.rotation, threeScene);
+            obj3d = createSecurityFigure(new THREE.Vector3(pos.x, 0, pos.z), element.rotation, threeScene);
         } else if (element.type === 'entrance') {
-            createEntranceArch(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createEntranceArch(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
         } else if (element.type === 'fence') {
             // Caja fina a escala real en vez de estirar el modelo 3D (que
             // deformaba también su alto/ancho y generaba postes gigantes).
@@ -352,8 +461,9 @@ function drawElements(elements, threeScene) {
             // los elementos rotados quedaban en espejo respecto al 2D.
             mesh.rotation.y = -(element.rotation * Math.PI) / 180;
             threeScene.add(mesh);
+            obj3d = mesh;
         } else if (element.type === 'bar' || element.type === 'wc' || element.type.startsWith('signal')) {
-            createGeometricElement(element, pos, threeScene);
+            obj3d = createGeometricElement(element, pos, threeScene);
         } else if (element.isRectangle) {
 			const geometry = new THREE.BoxGeometry(element.length, 2, element.width);
 			const material = new THREE.MeshStandardMaterial({ color: element.color });
@@ -361,19 +471,30 @@ function drawElements(elements, threeScene) {
 			mesh.position.set(pos.x, geometry.parameters.height / 2, pos.z);
 			mesh.rotation.y = -(element.rotation * Math.PI) / 180;
 			threeScene.add(mesh);
+			obj3d = mesh;
 		} else {
-			createGeometricElement(element, pos, threeScene);
+			obj3d = createGeometricElement(element, pos, threeScene);
 		}
-        
+
         // Etiqueta flotante 3D para todos, salvo las vallas: con muchos
         // tramos juntos, un "Valla" flotando sobre cada uno satura la vista.
+        let label;
         if (element.type === 'security') {
             // Pegada justo encima de la cabeza del muñeco, y bastante más
             // pequeña que la de un elemento grande (escenario, zonas...).
-            create3DLabel(element.name, new THREE.Vector3(pos.x, SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
+            label = create3DLabel(element.name, new THREE.Vector3(pos.x, SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
         } else if (element.type !== 'fence') {
-            create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
+            label = create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
         }
+
+        // Referencias para poder pinchar y arrastrar el elemento en 3D
+        // (ver setupElementDragging): el objeto 3D y su etiqueta guardan
+        // el elemento al que pertenecen, y el elemento guarda ambos para
+        // poder reposicionarlos en vivo mientras se arrastra.
+        if (obj3d) obj3d.userData.element = element;
+        if (label) label.userData.element = element;
+        element._threeObj = obj3d || null;
+        element._threeLabel = label || null;
 	});
 }
 
@@ -395,6 +516,7 @@ function create3DLabel(text, position, scene, size = [10, 5]) {
 	sprite.position.copy(position);
 	sprite.scale.set(size[0], size[1], 1);
 	scene.add(sprite);
+	return sprite;
 }
 
 // Escenario principal construido con geometría propia (plataforma + torres
@@ -437,6 +559,7 @@ function createStageModel(pos, element, scene) {
 	group.position.copy(pos);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
 	scene.add(group);
+	return group;
 }
 
 // Food truck con cabina, franja de color, toldo y ventana de venta, en vez
@@ -495,6 +618,7 @@ function createFoodTruckModel(pos, element, scene) {
 	group.position.copy(pos);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
 	scene.add(group);
+	return group;
 }
 
 // Muñeco rojo tipo "pelele" (Santos Inocentes) para el personal de
@@ -529,6 +653,7 @@ function createSecurityFigure(pos, rotation, scene) {
 	group.position.copy(pos);
 	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
 	scene.add(group);
+	return group;
 }
 
 // Arco de entrada: un THREE.TorusGeometry con arc=PI ya dibuja medio anillo
@@ -555,10 +680,11 @@ function createEntranceArch(pos, element, scene) {
 	group.position.copy(pos);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
 	scene.add(group);
+	return group;
 }
 
 function createGeometricElement(element, pos, scene) {
-	let geometry;
+	const group = new THREE.Group();
 	const colorMap = {
 		'bar': 0xf1c40f,
 		'wc': 0x3498db,
@@ -574,55 +700,46 @@ function createGeometricElement(element, pos, scene) {
 
 	if (element.type === 'bar') {
         // Modelo de barra compuesta: base + mostrador
-        const baseGeom = new THREE.BoxGeometry(element.length, 2, element.width);
-        const baseMat = new THREE.MeshStandardMaterial({ color: color });
-        const base = new THREE.Mesh(baseGeom, baseMat);
-        base.position.set(pos.x, 1, pos.z);
-        base.rotation.y = -(element.rotation * Math.PI) / 180;
-        scene.add(base);
+        const base = new THREE.Mesh(new THREE.BoxGeometry(element.length, 2, element.width), new THREE.MeshStandardMaterial({ color: color }));
+        base.position.set(0, 1, 0);
+        group.add(base);
 
-        const topGeom = new THREE.BoxGeometry(element.length + 0.5, 0.2, element.width + 0.5);
-        const topMat = new THREE.MeshStandardMaterial({ color: 0x333333 });
-        const top = new THREE.Mesh(topGeom, topMat);
-        top.position.set(pos.x, 2.1, pos.z);
-        top.rotation.y = -(element.rotation * Math.PI) / 180;
-        scene.add(top);
+        const top = new THREE.Mesh(new THREE.BoxGeometry(element.length + 0.5, 0.2, element.width + 0.5), new THREE.MeshStandardMaterial({ color: 0x333333 }));
+        top.position.set(0, 2.1, 0);
+        group.add(top);
     } else if (element.type === 'wc') {
         // Modelo de cabina de baño
-        geometry = new THREE.BoxGeometry(1.2, 2.5, 1.2);
-        const material = new THREE.MeshStandardMaterial({ color: color });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(pos.x, 1.25, pos.z);
-        mesh.rotation.y = -(element.rotation * Math.PI) / 180;
-        scene.add(mesh);
+        const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 1.2), new THREE.MeshStandardMaterial({ color: color }));
+        mesh.position.set(0, 1.25, 0);
+        group.add(mesh);
 
         // Techo inclinado para el baño
-        const roofGeom = new THREE.BoxGeometry(1.4, 0.1, 1.4);
-        const roofMat = new THREE.MeshStandardMaterial({ color: 0xeeeeee });
-        const roof = new THREE.Mesh(roofGeom, roofMat);
-        roof.position.set(pos.x, 2.5, pos.z);
-        roof.rotation.y = -(element.rotation * Math.PI) / 180;
-        scene.add(roof);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 1.4), new THREE.MeshStandardMaterial({ color: 0xeeeeee }));
+        roof.position.set(0, 2.5, 0);
+        group.add(roof);
     } else {
         const isZone = element.type.startsWith('zone');
-        geometry = new THREE.BoxGeometry(element.length || 4, isZone ? 0.1 : 2, element.width || 4);
-        const material = new THREE.MeshStandardMaterial({ 
-            color: color, 
-            transparent: isZone, 
-            opacity: isZone ? 0.4 : 1 
-        });
-        const mesh = new THREE.Mesh(geometry, material);
-        mesh.position.set(pos.x, isZone ? 0.05 : 1, pos.z);
-        mesh.rotation.y = -(element.rotation * Math.PI) / 180;
-        scene.add(mesh);
+        const mesh = new THREE.Mesh(
+            new THREE.BoxGeometry(element.length || 4, isZone ? 0.1 : 2, element.width || 4),
+            new THREE.MeshStandardMaterial({ color: color, transparent: isZone, opacity: isZone ? 0.4 : 1 })
+        );
+        mesh.position.set(0, isZone ? 0.05 : 1, 0);
+        group.add(mesh);
     }
 
-	const iconGeom = new THREE.PlaneGeometry(3, 3);
+	const iconPlane = new THREE.Mesh(
+		new THREE.PlaneGeometry(3, 3),
+		new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide })
+	);
+	iconPlane.position.set(0, 5, 0);
+	group.add(iconPlane);
 	new THREE.TextureLoader().load(element.iconUrl, (texture) => {
-		const iconMat = new THREE.MeshBasicMaterial({ map: texture, transparent: true, side: THREE.DoubleSide });
-		const iconPlane = new THREE.Mesh(iconGeom, iconMat);
-		iconPlane.position.set(pos.x, 5, pos.z);
-        iconPlane.rotation.y = -(element.rotation * Math.PI) / 180;
-		scene.add(iconPlane);
+		iconPlane.material.map = texture;
+		iconPlane.material.needsUpdate = true;
 	});
+
+	group.position.set(pos.x, 0, pos.z);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+	return group;
 }

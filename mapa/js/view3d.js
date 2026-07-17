@@ -6,6 +6,13 @@ let map3dPlaneSize = 100;
 const SECURITY_FIGURE_SCALE = 1.4;
 const SECURITY_FIGURE_HEIGHT = 1.77 * SECURITY_FIGURE_SCALE;
 
+// Ruido barato (senos superpuestos) para dar una sensación de terreno
+// ondulado sin depender de datos de elevación reales.
+function terrainHeight(x, y) {
+	return 0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
+		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7);
+}
+
 const GLTFLoader = window.THREE.GLTFLoader;
 
 // Los modelos descargados (Sketchfab, etc.) no vienen en una escala ni
@@ -238,7 +245,16 @@ function generate3DView(style) {
 	directionalLight.position.set(1, 1, 1);
 	threeScene.add(directionalLight);
 
-	const groundGeometry = new THREE.PlaneGeometry(map3dPlaneSize, map3dPlaneSize);
+	// Relieve "falso": ondulaciones suaves (sin datos de elevación reales)
+	// para que el suelo no se vea perfectamente plano. Amplitud pequeña a
+	// propósito, ya que los elementos se siguen colocando a altura 0.
+	const groundGeometry = new THREE.PlaneGeometry(map3dPlaneSize, map3dPlaneSize, 48, 48);
+	const groundPos = groundGeometry.attributes.position;
+	for (let i = 0; i < groundPos.count; i++) {
+		groundPos.setZ(i, terrainHeight(groundPos.getX(i), groundPos.getY(i)));
+	}
+	groundPos.needsUpdate = true;
+	groundGeometry.computeVertexNormals();
 	const groundMaterial = new THREE.MeshStandardMaterial({ side: THREE.DoubleSide });
 	const ground = new THREE.Mesh(groundGeometry, groundMaterial);
 	ground.rotation.x = -Math.PI / 2;

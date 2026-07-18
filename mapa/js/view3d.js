@@ -18,7 +18,7 @@ let wanderingDrunks = [];
 // todos los elementos, uno a uno (ver buildTourKeyframes/updateTour).
 let tourActive = false;
 let tourState = null;
-const TOUR_TRANSITION_MS = 1800;
+const TOUR_TRANSITION_MS = 1200;
 
 // Ruido barato (senos superpuestos) para dar una sensación de terreno
 // ondulado sin depender de datos de elevación reales.
@@ -419,16 +419,31 @@ function updateTourCaption(text) {
 // general inicial. La distancia/altura de cámara se adapta al tamaño de
 // cada elemento, y el ángulo varía con el índice para que no todos los
 // planos se vean desde el mismo lado.
-function buildTourKeyframes() {
-	const keyframes = [];
+const GOLDEN_ANGLE = 2.4;
+
+// Plano general del recinto entero, visto cada vez desde un punto distinto
+// (ángulo y altura varían con "idx") para que no se repita el mismo
+// encuadre cada vez que el tour vuelve a él entre elemento y elemento.
+function buildOverviewKeyframe(idx, hold) {
 	const overviewDist = Math.max(map3dPlaneSize * 0.55, 15);
-	keyframes.push({
+	const angle = idx * GOLDEN_ANGLE * 1.3;
+	const elevation = 0.65 + 0.25 * Math.sin(idx * 1.7);
+	return {
 		label: 'Vista general',
 		target: new THREE.Vector3(0, 0, 0),
-		pos: new THREE.Vector3(0, overviewDist * 0.8, overviewDist),
-		hold: 5500,
+		pos: new THREE.Vector3(
+			Math.sin(angle) * overviewDist,
+			overviewDist * elevation,
+			Math.cos(angle) * overviewDist
+		),
+		hold,
 		orbit: true
-	});
+	};
+}
+
+function buildTourKeyframes() {
+	const keyframes = [];
+	keyframes.push(buildOverviewKeyframe(0, 3000));
 
 	elements
 		.filter(el => el.type !== 'fence' && el._threeObj)
@@ -438,7 +453,7 @@ function buildTourKeyframes() {
 			const cfg = (typeof festivalConfig !== 'undefined' && festivalConfig[el.type]) || {};
 			const size = Math.max(el.length || 0, el.width || 0, 3);
 			const dist = Math.max(size * 1.5, 4.5);
-			const angle = idx * 2.4; // ángulo áureo aprox: variedad de encuadres
+			const angle = idx * GOLDEN_ANGLE; // variedad de encuadres por elemento
 			const targetHeight = 1.3;
 			const target = new THREE.Vector3(worldPos.x, targetHeight, worldPos.z);
 			const pos = new THREE.Vector3(
@@ -450,12 +465,16 @@ function buildTourKeyframes() {
 				label: el.name || cfg.label || el.type,
 				target,
 				pos,
-				hold: 2800,
+				hold: 1600,
 				// Las figuras que deambulan (ver updateWanderingDrunks) se mueven
 				// solas: durante el hold seguimos su posición real en vez de la
 				// congelada al construir el fotograma clave.
 				followElement: el.type === 'drunk' ? el : null
 			});
+
+			// Tras cada elemento, un respiro de plano general desde otro punto
+			// antes de enfocar el siguiente.
+			keyframes.push(buildOverviewKeyframe(idx + 1, 1700));
 		});
 
 	return keyframes;

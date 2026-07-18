@@ -519,6 +519,44 @@ body {
     z-index: 6;
 }
 
+.btn-3d-tour {
+    position: absolute;
+    bottom: 24px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
+    border: none;
+    padding: 11px 22px;
+    border-radius: 24px;
+    color: #14120a;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+.btn-3d-tour.active {
+    background: linear-gradient(135deg, #e74c3c, #c0392b);
+    color: #fff;
+}
+#tour-3d-caption {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 10;
+    background: rgba(0,0,0,0.65);
+    color: #fff;
+    padding: 8px 20px;
+    border-radius: 6px;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    text-align: center;
+    display: none;
+    pointer-events: none;
+    white-space: nowrap;
+}
+
 /* Iconos en el panel lateral */
 .icon-grid {
     display: grid;
@@ -599,7 +637,7 @@ body {
 #mobile-menu-btn {
     display: none;
     position: fixed;
-    top: 15px;
+    top: calc(env(safe-area-inset-top, 0px) + 50px);
     right: 15px;
     z-index: 2000;
     background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));

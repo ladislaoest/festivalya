@@ -14,6 +14,12 @@ const DRUNK_WANDER_RADIUS = 2.5;
 // Se reconstruye entera cada vez que se regenera la escena 3D.
 let wanderingDrunks = [];
 
+// "Tour automático": plano general del recinto y luego un recorrido por
+// todos los elementos, uno a uno (ver buildTourKeyframes/updateTour).
+let tourActive = false;
+let tourState = null;
+const TOUR_TRANSITION_MS = 1800;
+
 // Ruido barato (senos superpuestos) para dar una sensación de terreno
 // ondulado sin depender de datos de elevación reales.
 function terrainHeight(x, y) {
@@ -104,6 +110,13 @@ function generate3DView(style) {
 	}
 	const rect = canvas.getBoundingClientRect();
 	setupElementDragging(canvas);
+	setupTourButton();
+	// La escena/cámara/controles de un tour en marcha quedan obsoletos en
+	// cuanto se regenera la vista (p.ej. se editó el mapa): no seguir
+	// animando sobre referencias descartadas.
+	tourActive = false;
+	tourState = null;
+	updateTourUI();
 
 	if (threeRenderer) threeRenderer.dispose();
 	if (threeControls) threeControls.dispose();
@@ -310,7 +323,11 @@ function generate3DView(style) {
 
 	function animate() {
 		animationFrameId = requestAnimationFrame(animate);
-		threeControls.update();
+		if (tourActive) {
+			updateTour();
+		} else {
+			threeControls.update();
+		}
 		updateWanderingDrunks();
 		try {
 			threeRenderer.render(threeScene, threeCamera);
@@ -370,6 +387,166 @@ function updateWanderingDrunks() {
 			entry.element._threeLabel.position.z = z;
 		}
 	});
+}
+
+// --- Tour automático: plano general + recorrido por todos los elementos ---
+function setupTourButton() {
+	const btn = document.getElementById('tour-3d-btn');
+	if (!btn || btn.dataset.tourHandlerBound) return;
+	btn.dataset.tourHandlerBound = '1';
+	btn.addEventListener('click', () => {
+		if (tourActive) stopTour(); else startTour();
+	});
+}
+
+function updateTourUI() {
+	const btn = document.getElementById('tour-3d-btn');
+	const caption = document.getElementById('tour-3d-caption');
+	if (btn) {
+		btn.textContent = tourActive ? '⏹ Detener tour' : '🎬 Tour automático';
+		btn.classList.toggle('active', tourActive);
+	}
+	if (caption) caption.style.display = tourActive ? 'block' : 'none';
+}
+
+function updateTourCaption(text) {
+	const caption = document.getElementById('tour-3d-caption');
+	if (caption) caption.textContent = text || '';
+}
+
+// Un fotograma clave por elemento del festival (salvo las vallas, que son
+// muchos segmentos y no aportan nada mostrarlas una a una) más un plano
+// general inicial. La distancia/altura de cámara se adapta al tamaño de
+// cada elemento, y el ángulo varía con el índice para que no todos los
+// planos se vean desde el mismo lado.
+function buildTourKeyframes() {
+	const keyframes = [];
+	const overviewDist = Math.max(map3dPlaneSize * 0.55, 15);
+	keyframes.push({
+		label: 'Vista general',
+		target: new THREE.Vector3(0, 0, 0),
+		pos: new THREE.Vector3(0, overviewDist * 0.8, overviewDist),
+		hold: 5500,
+		orbit: true
+	});
+
+	elements
+		.filter(el => el.type !== 'fence' && el._threeObj)
+		.forEach((el, idx) => {
+			const worldPos = new THREE.Vector3();
+			el._threeObj.getWorldPosition(worldPos);
+			const cfg = (typeof festivalConfig !== 'undefined' && festivalConfig[el.type]) || {};
+			const size = Math.max(el.length || 0, el.width || 0, 3);
+			const dist = Math.max(size * 1.5, 4.5);
+			const angle = idx * 2.4; // ángulo áureo aprox: variedad de encuadres
+			const targetHeight = 1.3;
+			const target = new THREE.Vector3(worldPos.x, targetHeight, worldPos.z);
+			const pos = new THREE.Vector3(
+				worldPos.x + Math.sin(angle) * dist,
+				targetHeight + dist * 0.5,
+				worldPos.z + Math.cos(angle) * dist
+			);
+			keyframes.push({
+				label: el.name || cfg.label || el.type,
+				target,
+				pos,
+				hold: 2800,
+				// Las figuras que deambulan (ver updateWanderingDrunks) se mueven
+				// solas: durante el hold seguimos su posición real en vez de la
+				// congelada al construir el fotograma clave.
+				followElement: el.type === 'drunk' ? el : null
+			});
+		});
+
+	return keyframes;
+}
+
+function startTour() {
+	if (!threeScene || !threeCamera || !threeControls) return;
+	const keyframes = buildTourKeyframes();
+	if (!keyframes.length) return;
+	tourActive = true;
+	threeControls.enabled = false;
+	tourState = {
+		keyframes,
+		idx: -1,
+		current: null,
+		phase: 'transition',
+		segStart: performance.now(),
+		fromPos: threeCamera.position.clone(),
+		fromTarget: threeControls.target.clone()
+	};
+	advanceTourKeyframe();
+	updateTourUI();
+}
+
+function stopTour() {
+	tourActive = false;
+	tourState = null;
+	if (threeControls) threeControls.enabled = true;
+	updateTourUI();
+}
+
+function advanceTourKeyframe() {
+	tourState.idx++;
+	if (tourState.idx >= tourState.keyframes.length) {
+		stopTour();
+		return;
+	}
+	tourState.fromPos = threeCamera.position.clone();
+	tourState.fromTarget = threeControls.target.clone();
+	tourState.phase = 'transition';
+	tourState.segStart = performance.now();
+	tourState.current = tourState.keyframes[tourState.idx];
+	updateTourCaption(tourState.current.label);
+}
+
+function easeInOutQuad(t) {
+	return t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+}
+
+function updateTour() {
+	if (!tourState || !tourState.current) return;
+	const kf = tourState.current;
+	const now = performance.now();
+	const elapsed = now - tourState.segStart;
+
+	if (tourState.phase === 'transition') {
+		const t = Math.min(1, elapsed / TOUR_TRANSITION_MS);
+		const ease = easeInOutQuad(t);
+		const pos = tourState.fromPos.clone().lerp(kf.pos, ease);
+		const target = tourState.fromTarget.clone().lerp(kf.target, ease);
+		threeCamera.position.copy(pos);
+		threeCamera.lookAt(target);
+		threeControls.target.copy(target);
+		if (t >= 1) {
+			tourState.phase = 'hold';
+			tourState.segStart = now;
+		}
+		return;
+	}
+
+	// phase === 'hold'
+	let target = kf.target;
+	if (kf.followElement && kf.followElement._threeObj) {
+		const wp = new THREE.Vector3();
+		kf.followElement._threeObj.getWorldPosition(wp);
+		target = new THREE.Vector3(wp.x, kf.target.y, wp.z);
+	}
+	let pos;
+	if (kf.orbit) {
+		const angle = elapsed * 0.00025;
+		const r = kf.pos.clone().sub(kf.target).setY(0).length();
+		pos = new THREE.Vector3(target.x + Math.sin(angle) * r, kf.pos.y, target.z + Math.cos(angle) * r);
+	} else if (kf.followElement) {
+		pos = new THREE.Vector3(target.x + (kf.pos.x - kf.target.x), kf.pos.y, target.z + (kf.pos.z - kf.target.z));
+	} else {
+		pos = kf.pos;
+	}
+	threeCamera.position.copy(pos);
+	threeCamera.lookAt(target);
+	threeControls.target.copy(target);
+	if (elapsed >= kf.hold) advanceTourKeyframe();
 }
 
 // --- Arrastrar elementos con el puntero en la vista 3D ---
@@ -728,14 +905,35 @@ function createDrunkFigure(pos, element, scene) {
 	head.position.set(0, 1.55, 0);
 	group.add(head);
 
-	// Cara real pegada al frente de la cabeza (foto del "borracho" oficial
-	// del pueblo), como una cartulina plana orientada hacia +Z.
-	const faceTexture = new THREE.TextureLoader().load('assets/faces/borracho.jpg');
-	const face = new THREE.Mesh(
-		new THREE.PlaneGeometry(0.34, 0.34),
-		new THREE.MeshStandardMaterial({ map: faceTexture, transparent: true })
+	// Cara real del "borracho" tallada en la propia cabeza: en vez de una
+	// cartulina plana (se metía dentro de la esfera y dejaba un agujero
+	// donde la piel asomaba por encima), es un parche curvo concéntrico a
+	// la cabeza -radio ligeramente mayor, sin z-fighting- con un mapa de
+	// desplazamiento generado a partir del brillo de la foto para que la
+	// nariz sobresalga un poco (relieve 3D real, no solo la textura
+	// pintada). El desplazamiento SOLO empuja hacia afuera (bias 0, nunca
+	// negativo): si las zonas oscuras (ojos) se hundieran por debajo del
+	// radio de la cabeza, volvía a asomar la esfera pelada por debajo,
+	// el mismo "agujero" que con la cartulina plana.
+	const faceTextureLoader = new THREE.TextureLoader();
+	const faceColorMap = faceTextureLoader.load('assets/faces/borracho.jpg');
+	const faceDepthMap = faceTextureLoader.load('assets/faces/borracho_depth.jpg');
+	const facePatchAngle = Math.PI * 0.8;
+	const faceGeom = new THREE.SphereGeometry(
+		0.27 + 0.006, 48, 48,
+		Math.PI / 2 - facePatchAngle / 2, facePatchAngle,
+		Math.PI / 2 - facePatchAngle / 2, facePatchAngle
 	);
-	face.position.set(0, 1.55, 0.235);
+	const face = new THREE.Mesh(
+		faceGeom,
+		new THREE.MeshStandardMaterial({
+			map: faceColorMap,
+			displacementMap: faceDepthMap,
+			displacementScale: 0.02,
+			displacementBias: 0
+		})
+	);
+	face.position.set(0, 1.55, 0);
 	group.add(face);
 
 	// Torso panzón con camiseta de tirantes (los brazos, aparte, quedan al

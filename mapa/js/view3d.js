@@ -20,11 +20,86 @@ let tourActive = false;
 let tourState = null;
 const TOUR_TRANSITION_MS = 1200;
 
-// Ruido barato (senos superpuestos) para dar una sensación de terreno
-// ondulado sin depender de datos de elevación reales.
-function terrainHeight(x, y) {
+// Ruido barato (senos superpuestos), usado como micro-relieve incluso
+// cuando hay datos de elevación reales (para que el suelo no quede
+// perfectamente liso donde el terreno real es casi plano) y como único
+// relieve mientras esos datos no están disponibles o fallan.
+function fakeTerrainNoise(x, y) {
 	return 0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
 		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7);
+}
+
+// Relieve real del recinto (ver fetchTerrainElevation): una rejilla NxN de
+// alturas relativas ya en metros de mundo, interpolada bilinealmente. Se
+// reinicia a null en cada generate3DView() para no arrastrar la rejilla de
+// una ubicación/tamaño de plano distintos mientras llega la nueva.
+let terrainElevGrid = null;
+let terrainRequestId = 0;
+const TERRAIN_GRID_SIZE = 9;
+const TERRAIN_EXAGGERATION = 3.5;
+const TERRAIN_MAX_RELIEF_RATIO = 0.12; // tope de amplitud relativo al tamaño del plano
+
+function getTerrainHeight(x, y) {
+	if (!terrainElevGrid) return fakeTerrainNoise(x, y);
+	const { size, values, halfSize } = terrainElevGrid;
+	const u = Math.min(size - 1.001, Math.max(0, ((x + halfSize) / (halfSize * 2)) * (size - 1)));
+	const v = Math.min(size - 1.001, Math.max(0, ((y + halfSize) / (halfSize * 2)) * (size - 1)));
+	const i0 = Math.floor(u), j0 = Math.floor(v);
+	const i1 = Math.min(size - 1, i0 + 1), j1 = Math.min(size - 1, j0 + 1);
+	const fu = u - i0, fv = v - j0;
+	const h00 = values[j0 * size + i0];
+	const h10 = values[j0 * size + i1];
+	const h01 = values[j1 * size + i0];
+	const h11 = values[j1 * size + i1];
+	const h0 = h00 * (1 - fu) + h10 * fu;
+	const h1 = h01 * (1 - fu) + h11 * fu;
+	return h0 * (1 - fv) + h1 * fv + fakeTerrainNoise(x, y) * 0.3;
+}
+
+// Consulta elevación real (Open-Elevation, gratis y sin API key) en una
+// rejilla NxN sobre el recinto. "planeToLatLng" ya define cómo se
+// corresponden las coordenadas del plano con lat/lng (ver más abajo), así
+// que se reutiliza tal cual para que la rejilla quede perfectamente
+// alineada con el suelo y los elementos. Si falla (sin red, timeout,
+// servicio caído) devuelve null y el relieve se queda en el ruido falso.
+async function fetchTerrainElevation(bbox, planeSize) {
+	const size = TERRAIN_GRID_SIZE;
+	const half = planeSize / 2;
+	const locations = [];
+	for (let j = 0; j < size; j++) {
+		for (let i = 0; i < size; i++) {
+			const x = -half + (i / (size - 1)) * planeSize;
+			const y = -half + (j / (size - 1)) * planeSize;
+			const ll = planeToLatLng(x, -y, bbox); // -y: ver rotación del suelo en generate3DView
+			locations.push({ latitude: ll.lat, longitude: ll.lng });
+		}
+	}
+	try {
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 8000);
+		const res = await fetch('https://api.open-elevation.com/api/v1/lookup', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ locations }),
+			signal: controller.signal
+		});
+		clearTimeout(timeoutId);
+		if (!res.ok) return null;
+		const data = await res.json();
+		const raw = data.results.map(r => r.elevation);
+		if (raw.length !== size * size || raw.some(v => typeof v !== 'number')) return null;
+
+		const mean = raw.reduce((a, b) => a + b, 0) / raw.length;
+		const maxAmplitude = planeSize * TERRAIN_MAX_RELIEF_RATIO;
+		const values = raw.map(v => {
+			const h = (v - mean) * TERRAIN_EXAGGERATION;
+			return Math.max(-maxAmplitude, Math.min(maxAmplitude, h));
+		});
+		return { size, values, halfSize: half };
+	} catch (err) {
+		console.warn('[3D] No se pudo obtener elevación real, se usa relieve simulado.', err);
+		return null;
+	}
 }
 
 const GLTFLoader = window.THREE.GLTFLoader;
@@ -111,6 +186,11 @@ function generate3DView(style) {
 	const rect = canvas.getBoundingClientRect();
 	setupElementDragging(canvas);
 	setupTourButton();
+	// La rejilla de elevación real es de la ubicación/tamaño de plano
+	// anteriores: se descarta para no aplicar datos de otro sitio mientras
+	// llega la nueva (ver fetchTerrainElevation más abajo).
+	terrainElevGrid = null;
+	const myTerrainRequestId = ++terrainRequestId;
 	// La escena/cámara/controles de un tour en marcha quedan obsoletos en
 	// cuanto se regenera la vista (p.ej. se editó el mapa): no seguir
 	// animando sobre referencias descartadas.
@@ -268,13 +348,14 @@ function generate3DView(style) {
 	directionalLight.position.set(1, 1, 1);
 	threeScene.add(directionalLight);
 
-	// Relieve "falso": ondulaciones suaves (sin datos de elevación reales)
-	// para que el suelo no se vea perfectamente plano. Amplitud pequeña a
-	// propósito, ya que los elementos se siguen colocando a altura 0.
+	// Relieve del suelo: arranca con el ruido falso (ver getTerrainHeight)
+	// mientras se descarga la elevación real del recinto, para no dejar la
+	// vista bloqueada esperando red. En cuanto llega esa elevación (más
+	// abajo, tras drawElements) se reconstruye con datos reales.
 	const groundGeometry = new THREE.PlaneGeometry(map3dPlaneSize, map3dPlaneSize, 48, 48);
 	const groundPos = groundGeometry.attributes.position;
 	for (let i = 0; i < groundPos.count; i++) {
-		groundPos.setZ(i, terrainHeight(groundPos.getX(i), groundPos.getY(i)));
+		groundPos.setZ(i, getTerrainHeight(groundPos.getX(i), groundPos.getY(i)));
 	}
 	groundPos.needsUpdate = true;
 	groundGeometry.computeVertexNormals();
@@ -320,6 +401,31 @@ function generate3DView(style) {
 	}
 
 	drawElements(elements, threeScene);
+
+	// Elevación real del recinto (ver fetchTerrainElevation): al llegar,
+	// reconstruye el relieve del suelo y reacomoda cada elemento ya
+	// colocado -y su etiqueta- a la altura real del terreno en su
+	// posición, para que no queden flotando ni hundidos. "myTerrainRequestId"
+	// evita aplicar una respuesta tardía sobre una escena ya regenerada
+	// (p.ej. si el usuario cambió de vista antes de que llegara la red).
+	fetchTerrainElevation(ground.userData, map3dPlaneSize).then(grid => {
+		if (!grid || myTerrainRequestId !== terrainRequestId) return;
+		terrainElevGrid = grid;
+
+		const gPos = groundGeometry.attributes.position;
+		for (let i = 0; i < gPos.count; i++) {
+			gPos.setZ(i, getTerrainHeight(gPos.getX(i), gPos.getY(i)));
+		}
+		gPos.needsUpdate = true;
+		groundGeometry.computeVertexNormals();
+
+		elements.forEach(el => {
+			if (!el._threeObj || el.type === 'fence') return;
+			const h = getTerrainHeight(el._threeObj.position.x, -el._threeObj.position.z);
+			if (el._threeLabel) el._threeLabel.position.y += h;
+			el._threeObj.position.y = h;
+		});
+	});
 
 	function animate() {
 		animationFrameId = requestAnimationFrame(animate);
@@ -373,7 +479,10 @@ function updateWanderingDrunks() {
 
 		entry.group.position.x = x;
 		entry.group.position.z = z;
-		entry.group.position.y = Math.abs(Math.sin(t * 7 + entry.phase)) * 0.04;
+		// Altura del terreno en el punto donde está ahora (no donde se
+		// colocó): si no, al alejarse del centro de su paseo se lo tragaba
+		// o quedaba flotando sobre el relieve real (ver getTerrainHeight).
+		entry.group.position.y = getTerrainHeight(x, -z) + Math.abs(Math.sin(t * 7 + entry.phase)) * 0.04;
 		entry.group.rotation.y = heading + wobble;
 		entry.group.rotation.z = Math.sin(t * 5 + entry.phase) * 0.08;
 
@@ -385,6 +494,7 @@ function updateWanderingDrunks() {
 		if (entry.element._threeLabel) {
 			entry.element._threeLabel.position.x = x;
 			entry.element._threeLabel.position.z = z;
+			entry.element._threeLabel.position.y = getTerrainHeight(x, -z) + DRUNK_FIGURE_HEIGHT + 0.3;
 		}
 	});
 }
@@ -631,6 +741,23 @@ function updatePointerNDC(ev) {
 	dragPointerNDC.y = -((ev.clientY - rect.top) / rect.height) * 2 + 1;
 }
 
+// Recentra la órbita de la cámara en un elemento sin cambiar el ángulo ni
+// la distancia actuales (traslada cámara y objetivo por el mismo delta):
+// así el usuario puede "traer" a un elemento que quedó lejos del centro
+// -p.ej. en una esquina del recinto- y una vez centrado acercar el zoom
+// con el scroll/pellizco, en vez de tener que arrastrar con el botón
+// derecho para paneo (poco descubrible, y en móvil no existe).
+function focusCameraOnElement(element) {
+	if (!threeCamera || !threeControls || !element || !element._threeObj) return;
+	const newTarget = new THREE.Vector3();
+	element._threeObj.getWorldPosition(newTarget);
+	newTarget.y += 1;
+	const delta = newTarget.clone().sub(threeControls.target);
+	threeControls.target.copy(newTarget);
+	threeCamera.position.add(delta);
+	threeControls.update();
+}
+
 function setupElementDragging(canvas) {
 	if (canvas.dataset.dragHandlersBound) return;
 	canvas.dataset.dragHandlersBound = '1';
@@ -643,7 +770,11 @@ function setupElementDragging(canvas) {
 		for (const hit of hits) {
 			const element = findElementIn3DObject(hit.object);
 			if (element) {
-				dragState = { element, lastX: null, lastZ: null };
+				// "moved" distingue un toque/clic (sin arrastre real) de un
+				// arrastre: por debajo del umbral en píxeles se trata como
+				// clic y sirve para centrar la cámara en ese elemento (ver
+				// endDrag) en vez de intentar moverlo.
+				dragState = { element, lastX: null, lastZ: null, moved: false, startX: ev.clientX, startY: ev.clientY };
 				if (typeof selectElement === 'function') selectElement(element);
 				if (threeControls) threeControls.enabled = false;
 				// Captura el puntero para que pointermove/pointerup sigan
@@ -657,6 +788,12 @@ function setupElementDragging(canvas) {
 
 	canvas.addEventListener('pointermove', (ev) => {
 		if (!dragState) return;
+		if (!dragState.moved) {
+			const dx = ev.clientX - dragState.startX;
+			const dy = ev.clientY - dragState.startY;
+			if (Math.hypot(dx, dy) < 6) return; // aún dentro del umbral de "toque"
+			dragState.moved = true;
+		}
 		const ground = threeScene.children.find(o => o.userData && o.userData.minLat !== undefined);
 		if (!ground) return;
 		updatePointerNDC(ev);
@@ -683,9 +820,16 @@ function setupElementDragging(canvas) {
 	function endDrag() {
 		if (threeControls) threeControls.enabled = true;
 		if (!dragState) return;
-		const { element, lastX, lastZ } = dragState;
+		const { element, lastX, lastZ, moved } = dragState;
 		dragState = null;
-		if (lastX === null) return;
+		if (!moved || lastX === null) {
+			// Fue un toque, no un arrastre: en vez de no hacer nada, centra
+			// la cámara en ese elemento. Así se puede "traer al centro" un
+			// elemento que quedó en una esquina (p.ej. la entrada) sin
+			// depender de paneo manual, y luego acercar el zoom con calma.
+			focusCameraOnElement(element);
+			return;
+		}
 
 		const ground = threeScene.children.find(o => o.userData && o.userData.minLat !== undefined);
 		if (!ground) return;

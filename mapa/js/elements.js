@@ -745,7 +745,15 @@ function updateElementCard(element) {
         </div>
     `;
 	card.onclick = () => selectElement(element);
-	card.querySelector('.focus-btn').onclick = (e) => { e.stopPropagation(); map.setView(element.moveMarker.getLatLng(), 18); };
+	card.querySelector('.focus-btn').onclick = (e) => {
+		e.stopPropagation();
+		map.setView(element.moveMarker.getLatLng(), 18);
+		// Si la vista 3D está activa, recentra también su cámara (ver
+		// focusCameraOnElement en view3d.js): si no, el botón solo servía
+		// para el mapa 2D y en 3D no había forma de traer al centro un
+		// elemento que quedó lejos, p.ej. en una esquina.
+		if (typeof focusCameraOnElement === 'function') focusCameraOnElement(element);
+	};
 	card.querySelector('.delete-btn').onclick = (e) => { e.stopPropagation(); deleteElement(element); };
 	card.querySelector('.visibility-btn').onclick = (e) => {
 		e.stopPropagation();

@@ -214,6 +214,7 @@ function applyMapFeatures(data, bbox, scene) {
 			const shape = new THREE.Shape();
 			b.points.forEach((p, i) => {
 				const planePos = latLngToPlane(p.lat, p.lon, bbox);
+				if (!isFinite(planePos.x) || !isFinite(planePos.z)) throw new Error('coordenada no finita');
 				if (i === 0) shape.moveTo(planePos.x, -planePos.z);
 				else shape.lineTo(planePos.x, -planePos.z);
 			});
@@ -235,17 +236,22 @@ function applyMapFeatures(data, bbox, scene) {
 	const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a30 });
 	const canopyMat = new THREE.MeshStandardMaterial({ color: 0x3f7d3f });
 	data.trees.forEach(t => {
-		const planePos = latLngToPlane(t.lat, t.lng, bbox);
-		const h = getTerrainHeight(planePos.x, -planePos.z);
-		const treeHeight = 2.2 + Math.random() * 1.6;
+		try {
+			const planePos = latLngToPlane(t.lat, t.lng, bbox);
+			if (!isFinite(planePos.x) || !isFinite(planePos.z)) return;
+			const h = getTerrainHeight(planePos.x, -planePos.z);
+			const treeHeight = 2.2 + Math.random() * 1.6;
 
-		const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, treeHeight * 0.4, 6), trunkMat);
-		trunk.position.set(planePos.x, h + treeHeight * 0.2, planePos.z);
-		group.add(trunk);
+			const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, treeHeight * 0.4, 6), trunkMat);
+			trunk.position.set(planePos.x, h + treeHeight * 0.2, planePos.z);
+			group.add(trunk);
 
-		const canopy = new THREE.Mesh(new THREE.ConeGeometry(treeHeight * 0.38, treeHeight * 0.75, 8), canopyMat);
-		canopy.position.set(planePos.x, h + treeHeight * 0.4 + treeHeight * 0.375, planePos.z);
-		group.add(canopy);
+			const canopy = new THREE.Mesh(new THREE.ConeGeometry(treeHeight * 0.38, treeHeight * 0.75, 8), canopyMat);
+			canopy.position.set(planePos.x, h + treeHeight * 0.4 + treeHeight * 0.375, planePos.z);
+			group.add(canopy);
+		} catch (err) {
+			console.warn('[3D] Árbol omitido (coordenadas inválidas).', err);
+		}
 	});
 
 	scene.add(group);
@@ -629,21 +635,30 @@ function generate3DViewInner(style) {
 		applyMapFeatures(data, ground.userData, threeScene);
 	});
 
+	// Si el primer frame (o cualquier frame) falla y sigue fallando en los
+	// siguientes -algo en la escena que rompe el render, no solo un tile
+	// bloqueado por CORS-, antes solo se veía en consola: la pantalla se
+	// quedaba fija en el color de fondo para siempre y sin ningún aviso
+	// visible, aunque el aviso de errores ya existiera para otros casos.
+	// Se avisa una sola vez (no en cada frame, para no saturar) y se sigue
+	// intentando por si el fallo era puntual.
+	let animateErrorShown = false;
 	function animate() {
 		animationFrameId = requestAnimationFrame(animate);
-		if (tourActive) {
-			updateTour();
-		} else {
-			threeControls.update();
-		}
-		updateWanderingDrunks();
 		try {
+			if (tourActive) {
+				updateTour();
+			} else {
+				threeControls.update();
+			}
+			updateWanderingDrunks();
 			threeRenderer.render(threeScene, threeCamera);
 		} catch (err) {
-			// Un fallo puntual (p.ej. una textura de tile bloqueada por CORS)
-			// no debe dejar la vista congelada en el color de fondo para
-			// siempre: lo dejamos en consola y seguimos con el siguiente frame.
 			console.error('[3D] Error de render:', err);
+			if (!animateErrorShown) {
+				animateErrorShown = true;
+				show3DErrorBanner('Error al dibujar la vista 3D. ' + (err && err.message ? err.message : err));
+			}
 		}
 	}
 	animate();

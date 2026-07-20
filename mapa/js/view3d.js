@@ -20,18 +20,25 @@ let tourActive = false;
 let tourState = null;
 const TOUR_TRANSITION_MS = 1200;
 
-// Ruido barato (senos superpuestos), usado como micro-relieve incluso
-// cuando hay datos de elevación reales (para que el suelo no quede
-// perfectamente liso donde el terreno real es casi plano) y como único
-// relieve mientras esos datos no están disponibles o fallan. La amplitud
-// escala con el tamaño del plano -que puede ir de ~20 a varios cientos de
-// metros según el zoom- porque una amplitud fija (como antes) se notaba en
-// un recinto pequeño pero era invisible en uno grande: el suelo volvía a
-// parecer una foto plana.
+// Forma de ruido "pura" (sin amplitud aplicada, rango aprox. [-0.8, 0.8]):
+// separada de fakeTerrainNoise para poder reutilizar la misma forma con
+// amplitudes distintas (el respaldo sin datos reales, y el relleno cuando
+// el terreno real viene casi plano - ver fetchTerrainElevation).
+function terrainNoiseShape(x, y) {
+	return 0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
+		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7);
+}
+
+// Ruido barato, usado como micro-relieve incluso cuando hay datos de
+// elevación reales (para que el suelo no quede perfectamente liso donde el
+// terreno real es casi plano) y como único relieve mientras esos datos no
+// están disponibles o fallan. La amplitud escala con el tamaño del plano
+// -que puede ir de ~20 a varios cientos de metros según el zoom- porque una
+// amplitud fija (como antes) se notaba en un recinto pequeño pero era
+// invisible en uno grande: el suelo volvía a parecer una foto plana.
 function fakeTerrainNoise(x, y) {
 	const amp = Math.max(map3dPlaneSize * 0.02, 1.2);
-	return amp * (0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
-		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7));
+	return amp * terrainNoiseShape(x, y);
 }
 
 // Relieve real del recinto (ver fetchTerrainElevation): una rejilla NxN de
@@ -103,14 +110,22 @@ async function fetchTerrainElevation(bbox, planeSize) {
 		const minAmplitude = planeSize * TERRAIN_MIN_RELIEF_RATIO;
 		let scaled = raw.map(v => (v - mean) * TERRAIN_EXAGGERATION);
 		const scaledAmp = Math.max(...scaled) - Math.min(...scaled);
-		// Si el terreno real es casi plano, la variación exagerada puede
-		// seguir siendo minúscula (de ahí la queja de "sigue sin relieve"):
-		// se sube hasta una amplitud mínima visible, sin inventar relieve
-		// donde el servicio no devolvió ninguna variación real (scaledAmp
-		// ~0, típicamente mar o un fallo silencioso de la API).
-		if (scaledAmp > 0.01 && scaledAmp < minAmplitude) {
-			const boost = Math.min(minAmplitude / scaledAmp, 25);
-			scaled = scaled.map(v => v * boost);
+		// Un recinto de festival real suele ser justo el sitio más llano de
+		// la zona (aparcamientos, campos...), así que lo normal es que el
+		// servicio devuelva una variación real minúscula o directamente
+		// CERO -no solo "pequeña"-. Reescalar multiplicando una variación
+		// que ya es 0 seguía dando 0 (por eso "seguía sin relieve" incluso
+		// con este mínimo puesto): en vez de eso, se SUMA la misma forma de
+		// ruido que el respaldo, a la amplitud mínima que falte.
+		if (scaledAmp < minAmplitude) {
+			const fillAmplitude = minAmplitude - scaledAmp;
+			scaled = scaled.map((v, idx) => {
+				const i = idx % size;
+				const j = Math.floor(idx / size);
+				const x = -half + (i / (size - 1)) * planeSize;
+				const y = -half + (j / (size - 1)) * planeSize;
+				return v + terrainNoiseShape(x, y) * fillAmplitude;
+			});
 		}
 		const values = scaled.map(v => Math.max(-maxAmplitude, Math.min(maxAmplitude, v)));
 		return { size, values, halfSize: half };
@@ -1277,57 +1292,57 @@ function createDrunkFigure(pos, element, scene) {
 	return group;
 }
 
-// Textura de malla naranja de obra (rombos), generada una vez en canvas y
-// clonada por cada tramo para poder darle a cada uno su propio "repeat"
-// según su longitud, sin que se estiren igual los tramos cortos y los largos.
-let constructionMeshTextureBase = null;
-function getConstructionMeshTexture() {
-	if (constructionMeshTextureBase) return constructionMeshTextureBase;
-	const canvas = document.createElement('canvas');
-	canvas.width = 128;
-	canvas.height = 128;
-	const ctx = canvas.getContext('2d');
-	ctx.fillStyle = '#e8720c';
-	ctx.fillRect(0, 0, 128, 128);
-	ctx.strokeStyle = 'rgba(0,0,0,0.32)';
-	ctx.lineWidth = 4;
-	for (let i = -128; i < 256; i += 24) {
-		ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 128, 128); ctx.stroke();
-		ctx.beginPath(); ctx.moveTo(i, 128); ctx.lineTo(i - 128, 128); ctx.stroke();
-	}
-	constructionMeshTextureBase = new THREE.CanvasTexture(canvas);
-	constructionMeshTextureBase.wrapS = THREE.RepeatWrapping;
-	constructionMeshTextureBase.wrapT = THREE.RepeatWrapping;
-	return constructionMeshTextureBase;
-}
-
-// "Valla de obra": panel de malla naranja (la típica malla plástica de
-// construcción) sobre pies de plástico oscuro, en vez de la caja blanca lisa
-// de antes. Un pie cada ~2m (como los tramos reales) para que no parezca un
-// único panel gigante estirado.
+// "Valla de obra": marco metálico de barrotes verticales con un cartel
+// rectangular central -el modelo clásico de valla peatonal/de obra, con
+// remates rectos (sin la curva real de las esquinas, que a esta escala no
+// se notaría) y un pie que sobresale en cada extremo.
 function createConstructionFenceSegment(pos, element, scene) {
 	const group = new THREE.Group();
-	const panelLength = Math.max(element.length || 2, 0.5);
-	const height = 1.05;
+	const len = Math.max(element.length || 2, 0.5);
+	const height = 1.0;
+	const barRadius = 0.022;
+	const metalMat = new THREE.MeshStandardMaterial({ color: element.color || 0xf1c40f, metalness: 0.5, roughness: 0.5 });
 
-	const meshTex = getConstructionMeshTexture().clone();
-	meshTex.needsUpdate = true;
-	meshTex.repeat.set(Math.max(1, panelLength / 1.4), 1);
-	const panel = new THREE.Mesh(
-		new THREE.BoxGeometry(panelLength, height, 0.06),
-		new THREE.MeshStandardMaterial({ map: meshTex, roughness: 0.85 })
-	);
-	panel.position.set(0, height / 2 + 0.12, 0);
-	group.add(panel);
+	const halfLen = len / 2;
+	[-1, 1].forEach(side => {
+		const x = side * halfLen;
+		const post = new THREE.Mesh(new THREE.CylinderGeometry(barRadius * 1.3, barRadius * 1.3, height, 8), metalMat);
+		post.position.set(x, height / 2, 0);
+		group.add(post);
 
-	const footMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b });
-	const footCount = Math.max(2, Math.round(panelLength / 2) + 1);
-	for (let i = 0; i < footCount; i++) {
-		const t = footCount === 1 ? 0.5 : i / (footCount - 1);
-		const foot = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.32), footMat);
-		foot.position.set(-panelLength / 2 + t * panelLength, 0.06, 0);
+		// Pie de apoyo perpendicular, como en las vallas peatonales reales.
+		const foot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.04, 0.5), metalMat);
+		foot.position.set(x, 0.02, 0.15);
 		group.add(foot);
+	});
+
+	const topRail = new THREE.Mesh(new THREE.CylinderGeometry(barRadius, barRadius, len, 8), metalMat);
+	topRail.rotation.z = Math.PI / 2;
+	topRail.position.set(0, height, 0);
+	group.add(topRail);
+
+	const bottomRail = new THREE.Mesh(new THREE.CylinderGeometry(barRadius, barRadius, len, 8), metalMat);
+	bottomRail.rotation.z = Math.PI / 2;
+	bottomRail.position.set(0, 0.06, 0);
+	group.add(bottomRail);
+
+	// Barrotes verticales decorativos entre los dos raíles.
+	const barCount = Math.max(4, Math.round(len / 0.3));
+	for (let i = 0; i <= barCount; i++) {
+		const t = i / barCount;
+		const x = -halfLen + t * len;
+		const bar = new THREE.Mesh(new THREE.CylinderGeometry(barRadius * 0.7, barRadius * 0.7, height - 0.06, 8), metalMat);
+		bar.position.set(x, height / 2 + 0.03, 0);
+		group.add(bar);
 	}
+
+	// Cartel rectangular central, como el hueco de publicidad de las vallas reales.
+	const sign = new THREE.Mesh(
+		new THREE.BoxGeometry(Math.min(len * 0.35, 0.55), height * 0.32, 0.015),
+		metalMat
+	);
+	sign.position.set(0, height * 0.62, barRadius + 0.01);
+	group.add(sign);
 
 	group.position.copy(pos);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
@@ -1335,38 +1350,43 @@ function createConstructionFenceSegment(pos, element, scene) {
 	return group;
 }
 
-// "Valla antipánico": barrera metálica con postes cada ~2m (como los tramos
-// reales que se enganchan unos a otros) unidos por dos barras horizontales
-// continuas, sobre un pie de apoyo perpendicular en cada poste -la silueta
-// típica de las barreras de control de público en conciertos/eventos.
+// "Valla antipánico": barrera de escenario tipo "mojo" -panel vertical
+// sólido con un puntal diagonal trasero de apoyo y una placa en el suelo
+// hacia el lado del público-, en vez de la barrera de postes con barras
+// horizontales de antes (esa silueta es más de valla peatonal genérica).
 function createPanicFenceSegment(pos, element, scene) {
 	const group = new THREE.Group();
 	const len = Math.max(element.length || 2, 0.5);
-	const metalMat = new THREE.MeshStandardMaterial({ color: 0xb2b6b8, metalness: 0.7, roughness: 0.35 });
-	const postHeight = 1.0;
-	const barRadius = 0.022;
+	const panelHeight = 1.1;
+	const baseDepth = 0.85;
+	const metalMat = new THREE.MeshStandardMaterial({ color: 0xcfd2d4, metalness: 0.55, roughness: 0.4 });
+	const frameMat = new THREE.MeshStandardMaterial({ color: 0xaeb2b4, metalness: 0.65, roughness: 0.35 });
 
-	const postCount = Math.max(2, (element.numVallas || Math.ceil(len / 2)) + 1);
-	for (let i = 0; i < postCount; i++) {
-		const t = postCount === 1 ? 0.5 : i / (postCount - 1);
+	// Panel vertical (de cara al público, hacia +Z)
+	const panel = new THREE.Mesh(new THREE.BoxGeometry(len, panelHeight, 0.03), metalMat);
+	panel.position.set(0, panelHeight / 2, 0);
+	group.add(panel);
+
+	// Placa/rampa en el suelo hacia el lado del público, como el tope real
+	// que impide que la gente pase por debajo.
+	const basePlate = new THREE.Mesh(new THREE.BoxGeometry(len, 0.03, baseDepth), frameMat);
+	basePlate.position.set(0, 0.015, baseDepth / 2 + 0.02);
+	group.add(basePlate);
+
+	// Puntal diagonal trasero de apoyo, uno cada ~1.2m para que no parezca
+	// un único panel gigante sin refuerzos.
+	const braceDepth = 0.55;
+	const braceLen = Math.sqrt(panelHeight * panelHeight + braceDepth * braceDepth);
+	const braceAngle = Math.atan2(braceDepth, panelHeight);
+	const braceCount = Math.max(2, Math.round(len / 1.2) + 1);
+	for (let i = 0; i < braceCount; i++) {
+		const t = braceCount === 1 ? 0.5 : i / (braceCount - 1);
 		const x = -len / 2 + t * len;
-
-		const post = new THREE.Mesh(new THREE.CylinderGeometry(barRadius * 1.5, barRadius * 1.5, postHeight, 8), metalMat);
-		post.position.set(x, postHeight / 2, 0);
-		group.add(post);
-
-		// Pie de apoyo perpendicular a la valla, como en las barreras reales.
-		const foot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.5), metalMat);
-		foot.position.set(x, 0.03, 0.15);
-		group.add(foot);
+		const brace = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, braceLen, 6), frameMat);
+		brace.position.set(x, panelHeight / 2, -braceDepth / 2);
+		brace.rotation.x = -braceAngle;
+		group.add(brace);
 	}
-
-	[0.35, 0.82].forEach(barY => {
-		const bar = new THREE.Mesh(new THREE.CylinderGeometry(barRadius, barRadius, len, 8), metalMat);
-		bar.rotation.z = Math.PI / 2;
-		bar.position.set(0, barY, 0);
-		group.add(bar);
-	});
 
 	group.position.copy(pos);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;

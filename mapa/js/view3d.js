@@ -135,6 +135,122 @@ async function fetchTerrainElevation(bbox, planeSize) {
 	}
 }
 
+const MAP_FEATURES_MAX_BUILDINGS = 150;
+const MAP_FEATURES_MAX_TREES = 200;
+
+// Edificios y árboles reales alrededor del recinto (Overpass API sobre
+// datos de OpenStreetMap, gratis y sin API key): sin esto, por mucho
+// relieve que tenga el suelo, los edificios/árboles de verdad seguían
+// siendo solo la textura plana del satélite. Un "way" con building=* trae
+// su contorno completo con "out geom" (sin una segunda consulta), y los
+// nodos con natural=tree dan los árboles sueltos. Si falla (sin red,
+// timeout, servicio saturado -Overpass es compartido y a veces va lento)
+// se ignora en silencio: es una mejora visual, no algo crítico como el
+// propio recinto.
+// Overpass es un servicio compartido y gratuito: la instancia principal se
+// satura con facilidad (504) en horas punta. Se prueban un par de espejos
+// públicos conocidos antes de rendirse.
+const OVERPASS_ENDPOINTS = [
+	'https://overpass-api.de/api/interpreter',
+	'https://overpass.kumi.systems/api/interpreter'
+];
+
+async function fetchMapFeatures(bbox) {
+	const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+	const query = `[out:json][timeout:15];(way["building"](${bboxStr});node["natural"="tree"](${bboxStr}););out geom;`;
+
+	let data = null;
+	for (const endpoint of OVERPASS_ENDPOINTS) {
+		try {
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 15000);
+			const res = await fetch(endpoint, {
+				method: 'POST',
+				body: 'data=' + encodeURIComponent(query),
+				signal: controller.signal
+			});
+			clearTimeout(timeoutId);
+			if (!res.ok) continue;
+			data = await res.json();
+			break;
+		} catch (err) {
+			console.warn(`[3D] Fallo consultando ${endpoint}, se prueba el siguiente.`, err);
+		}
+	}
+	if (!data) {
+		console.warn('[3D] No se pudieron obtener edificios/árboles reales (todos los servidores de Overpass fallaron), se omiten.');
+		return null;
+	}
+
+	const buildings = [];
+	const trees = [];
+	for (const el of data.elements) {
+		if (el.type === 'way' && el.tags && el.tags.building && el.geometry && el.geometry.length >= 3) {
+			if (buildings.length >= MAP_FEATURES_MAX_BUILDINGS) continue;
+			let height = parseFloat(el.tags.height);
+			if (!isFinite(height) || height <= 0) {
+				const levels = parseFloat(el.tags['building:levels']);
+				height = isFinite(levels) && levels > 0 ? levels * 3 : 6;
+			}
+			buildings.push({ points: el.geometry, height: Math.min(height, 60) });
+		} else if (el.type === 'node' && el.tags && el.tags.natural === 'tree') {
+			if (trees.length >= MAP_FEATURES_MAX_TREES) continue;
+			trees.push({ lat: el.lat, lng: el.lon });
+		}
+	}
+	return { buildings, trees };
+}
+
+// Construye los edificios (extrusión del contorno real a su altura, o 6m
+// por defecto si OSM no la tiene) y árboles (tronco+copa genéricos, no hay
+// forma real de saber su forma exacta) y los añade a la escena.
+function applyMapFeatures(data, bbox, scene) {
+	const group = new THREE.Group();
+	group.name = 'realMapFeatures';
+
+	const buildingMat = new THREE.MeshStandardMaterial({ color: 0xcdc6b8, roughness: 0.9 });
+	data.buildings.forEach(b => {
+		try {
+			const shape = new THREE.Shape();
+			b.points.forEach((p, i) => {
+				const planePos = latLngToPlane(p.lat, p.lon, bbox);
+				if (i === 0) shape.moveTo(planePos.x, -planePos.z);
+				else shape.lineTo(planePos.x, -planePos.z);
+			});
+			const geometry = new THREE.ExtrudeGeometry(shape, { depth: b.height, bevelEnabled: false });
+			geometry.rotateX(-Math.PI / 2);
+			const mesh = new THREE.Mesh(geometry, buildingMat);
+			// El contorno ya se construyó en coordenadas absolutas del
+			// plano (no relativas a un centro local), así que el mesh no
+			// necesita más que apoyarse a la altura real del terreno bajo
+			// su primer punto.
+			const base = latLngToPlane(b.points[0].lat, b.points[0].lon, bbox);
+			mesh.position.y = getTerrainHeight(base.x, -base.z);
+			group.add(mesh);
+		} catch (err) {
+			console.warn('[3D] Edificio omitido (contorno inválido).', err);
+		}
+	});
+
+	const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a30 });
+	const canopyMat = new THREE.MeshStandardMaterial({ color: 0x3f7d3f });
+	data.trees.forEach(t => {
+		const planePos = latLngToPlane(t.lat, t.lng, bbox);
+		const h = getTerrainHeight(planePos.x, -planePos.z);
+		const treeHeight = 2.2 + Math.random() * 1.6;
+
+		const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, treeHeight * 0.4, 6), trunkMat);
+		trunk.position.set(planePos.x, h + treeHeight * 0.2, planePos.z);
+		group.add(trunk);
+
+		const canopy = new THREE.Mesh(new THREE.ConeGeometry(treeHeight * 0.38, treeHeight * 0.75, 8), canopyMat);
+		canopy.position.set(planePos.x, h + treeHeight * 0.4 + treeHeight * 0.375, planePos.z);
+		group.add(canopy);
+	});
+
+	scene.add(group);
+}
+
 const GLTFLoader = window.THREE.GLTFLoader;
 
 // Los modelos descargados (Sketchfab, etc.) no vienen en una escala ni
@@ -209,7 +325,36 @@ function load3DIcon(modelPath, position, scene, desiredLength = 1, rotationDeg =
 }
 
 
+// Envoltorio de generate3DView: cualquier excepción no atrapada en el
+// cuerpo de la función (todo lo síncrono antes de animate(), como medir el
+// contenedor, crear la cámara/plano del suelo, etc.) dejaba la pantalla
+// congelada en el color de fondo (lila) para siempre, sin ninguna pista de
+// qué había fallado. Ahora se atrapa, se registra en consola con detalle, y
+// se muestra un aviso visible en la propia vista en vez de quedar en
+// silencio -así se puede diagnosticar un caso real sin acceso a esos datos.
 function generate3DView(style) {
+	try {
+		generate3DViewInner(style);
+	} catch (err) {
+		console.error('[3D] Error generando la vista 3D:', err);
+		show3DErrorBanner('No se pudo generar la vista 3D. ' + (err && err.message ? err.message : err));
+	}
+}
+
+function show3DErrorBanner(message) {
+	const banner = document.getElementById('view3d-error-banner');
+	if (banner) {
+		banner.textContent = message;
+		banner.style.display = 'block';
+	}
+}
+
+function hide3DErrorBanner() {
+	const banner = document.getElementById('view3d-error-banner');
+	if (banner) banner.style.display = 'none';
+}
+
+function generate3DViewInner(style) {
 	const container = document.getElementById('container-3d-full');
 	const canvas = document.getElementById('canvas-3d-full');
 	if (!canvas) {
@@ -219,6 +364,7 @@ function generate3DView(style) {
 	const rect = canvas.getBoundingClientRect();
 	setupElementDragging(canvas);
 	setupTourButton();
+	hide3DErrorBanner();
 	// La rejilla de elevación real es de la ubicación/tamaño de plano
 	// anteriores: se descarta para no aplicar datos de otro sitio mientras
 	// llega la nueva (ver fetchTerrainElevation más abajo).
@@ -470,6 +616,17 @@ function generate3DView(style) {
 			if (el._threeLabel) el._threeLabel.position.y += h;
 			el._threeObj.position.y = h;
 		});
+	});
+
+	// Edificios y árboles reales del entorno (ver fetchMapFeatures): sin
+	// esto, el relieve del suelo ondula pero los edificios/árboles reales
+	// seguían siendo solo la foto plana del satélite -"se mira plano"
+	// aunque el terreno ya no lo fuera. Mismo guard de "myTerrainRequestId"
+	// que la elevación, para no aplicar una respuesta tardía sobre una
+	// escena ya descartada.
+	fetchMapFeatures(ground.userData).then(data => {
+		if (!data || myTerrainRequestId !== terrainRequestId) return;
+		applyMapFeatures(data, ground.userData, threeScene);
 	});
 
 	function animate() {
@@ -934,6 +1091,7 @@ function drawElements(elements, threeScene) {
 	if (!ground) return;
 	const bbox = ground.userData;
 	wanderingDrunks = [];
+	const skipped = [];
 
 	elements.forEach(element => {
 	  // Un elemento con datos corruptos/inesperados (p.ej. de una versión
@@ -999,8 +1157,14 @@ function drawElements(elements, threeScene) {
         element._threeLabel = label || null;
 	  } catch (err) {
 		console.error('[3D] No se pudo crear el elemento', element && element.type, element && element.id, err);
+		skipped.push(element);
 	  }
 	});
+
+	if (skipped.length) {
+		const names = skipped.map(e => (e && e.name) || (e && e.type) || '?').join(', ');
+		show3DErrorBanner(`${skipped.length} elemento(s) no se pudieron mostrar en 3D: ${names}. Revisa la consola para más detalle.`);
+	}
 }
 
 function create3DLabel(text, position, scene, size = [10, 5]) {
@@ -1327,7 +1491,11 @@ function createConstructionFenceSegment(pos, element, scene) {
 	group.add(bottomRail);
 
 	// Barrotes verticales decorativos entre los dos raíles.
-	const barCount = Math.max(4, Math.round(len / 0.3));
+	// Tope de barrotes: un tramo largo (decenas de metros en un único
+	// elemento) generaba cientos de barrotes individuales, suficiente para
+	// notarse en el rendimiento -por debajo de este tope simplemente se
+	// espacian más, sigue leyéndose como una valla de barrotes.
+	const barCount = Math.max(4, Math.min(40, Math.round(len / 0.3)));
 	for (let i = 0; i <= barCount; i++) {
 		const t = i / barCount;
 		const x = -halfLen + t * len;
@@ -1378,7 +1546,7 @@ function createPanicFenceSegment(pos, element, scene) {
 	const braceDepth = 0.55;
 	const braceLen = Math.sqrt(panelHeight * panelHeight + braceDepth * braceDepth);
 	const braceAngle = Math.atan2(braceDepth, panelHeight);
-	const braceCount = Math.max(2, Math.round(len / 1.2) + 1);
+	const braceCount = Math.max(2, Math.min(30, Math.round(len / 1.2) + 1));
 	for (let i = 0; i < braceCount; i++) {
 		const t = braceCount === 1 ? 0.5 : i / (braceCount - 1);
 		const x = -len / 2 + t * len;

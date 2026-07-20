@@ -557,6 +557,23 @@ body {
     white-space: nowrap;
 }
 
+#view3d-error-banner {
+    position: absolute;
+    top: 18px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    max-width: 90%;
+    background: rgba(192,57,43,0.92);
+    color: #fff;
+    padding: 10px 18px;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 13px;
+    text-align: center;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+
 /* Iconos en el panel lateral */
 .icon-grid {
     display: grid;

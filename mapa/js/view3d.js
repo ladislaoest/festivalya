@@ -415,18 +415,22 @@ function updateTourCaption(text) {
 }
 
 // Un fotograma clave por elemento del festival (salvo las vallas, que son
-// muchos segmentos y no aportan nada mostrarlas una a una) más un plano
-// general inicial. La distancia/altura de cámara se adapta al tamaño de
-// cada elemento, y el ángulo varía con el índice para que no todos los
+// muchos segmentos y no aportan nada mostrarlas una a una) más planos
+// generales del recinto. La distancia/altura de cámara se adapta al tamaño
+// de cada elemento, y el ángulo varía con el índice para que no todos los
 // planos se vean desde el mismo lado.
 const GOLDEN_ANGLE = 2.4;
 
 // Plano general del recinto entero, visto cada vez desde un punto distinto
-// (ángulo y altura varían con "idx") para que no se repita el mismo
-// encuadre cada vez que el tour vuelve a él entre elemento y elemento.
-function buildOverviewKeyframe(idx, hold) {
+// (ángulo y altura varían con "idx", más un desplazamiento aleatorio fijado
+// al arrancar el tour) para que no se repita el mismo encuadre cada vez que
+// el tour vuelve a él, ni tampoco entre una tanda del tour y la siguiente.
+// "orbitBaseAngle" queda guardado en el fotograma para que, durante el
+// hold, la órbita continúe desde ahí en vez de reiniciar en ángulo 0 -eso
+// producía un salto/corte justo al llegar al plano general (ver updateTour).
+function buildOverviewKeyframe(idx, hold, baseAngleOffset) {
 	const overviewDist = Math.max(map3dPlaneSize * 0.55, 15);
-	const angle = idx * GOLDEN_ANGLE * 1.3;
+	const angle = baseAngleOffset + idx * GOLDEN_ANGLE * 1.3;
 	const elevation = 0.65 + 0.25 * Math.sin(idx * 1.7);
 	return {
 		label: 'Vista general',
@@ -437,23 +441,47 @@ function buildOverviewKeyframe(idx, hold) {
 			Math.cos(angle) * overviewDist
 		),
 		hold,
-		orbit: true
+		orbit: true,
+		orbitBaseAngle: angle
 	};
+}
+
+// Agrupa los elementos por tipo (conservando el orden de primera aparición
+// de cada tipo, y el orden original dentro de cada uno): así, p.ej., todos
+// los de seguridad se recorren seguidos, cámara en mano de uno a otro sin
+// volver al plano general -eso solo pasa al cambiar de tipo de elemento.
+function groupElementsByType(tourable) {
+	const groups = [];
+	const groupByType = new Map();
+	tourable.forEach(el => {
+		let group = groupByType.get(el.type);
+		if (!group) {
+			group = [];
+			groupByType.set(el.type, group);
+			groups.push(group);
+		}
+		group.push(el);
+	});
+	return groups;
 }
 
 function buildTourKeyframes() {
 	const keyframes = [];
-	keyframes.push(buildOverviewKeyframe(0, 3000));
+	const baseAngleOffset = Math.random() * Math.PI * 2;
+	let overviewCount = 0;
+	keyframes.push(buildOverviewKeyframe(overviewCount++, 3000, baseAngleOffset));
 
-	elements
-		.filter(el => el.type !== 'fence' && el._threeObj)
-		.forEach((el, idx) => {
+	const tourable = elements.filter(el => el.type !== 'fence' && el._threeObj);
+	let elIdx = 0;
+
+	groupElementsByType(tourable).forEach(group => {
+		group.forEach(el => {
 			const worldPos = new THREE.Vector3();
 			el._threeObj.getWorldPosition(worldPos);
 			const cfg = (typeof festivalConfig !== 'undefined' && festivalConfig[el.type]) || {};
 			const size = Math.max(el.length || 0, el.width || 0, 3);
 			const dist = Math.max(size * 1.5, 4.5);
-			const angle = idx * GOLDEN_ANGLE; // variedad de encuadres por elemento
+			const angle = elIdx * GOLDEN_ANGLE; // variedad de encuadres por elemento
 			const targetHeight = 1.3;
 			const target = new THREE.Vector3(worldPos.x, targetHeight, worldPos.z);
 			const pos = new THREE.Vector3(
@@ -467,15 +495,17 @@ function buildTourKeyframes() {
 				pos,
 				hold: 1600,
 				// Las figuras que deambulan (ver updateWanderingDrunks) se mueven
-				// solas: durante el hold seguimos su posición real en vez de la
-				// congelada al construir el fotograma clave.
+				// solas: durante el hold (y ya desde la transición) seguimos su
+				// posición real en vez de la congelada al construir el fotograma.
 				followElement: el.type === 'drunk' ? el : null
 			});
-
-			// Tras cada elemento, un respiro de plano general desde otro punto
-			// antes de enfocar el siguiente.
-			keyframes.push(buildOverviewKeyframe(idx + 1, 1700));
+			elIdx++;
 		});
+
+		// Solo al terminar cada TIPO de elemento -no entre cada uno- un
+		// respiro de plano general desde otro punto antes de seguir.
+		keyframes.push(buildOverviewKeyframe(overviewCount++, 1700, baseAngleOffset));
+	});
 
 	return keyframes;
 }
@@ -530,11 +560,25 @@ function updateTour() {
 	const now = performance.now();
 	const elapsed = now - tourState.segStart;
 
+	// Fotograma de destino "en vivo": si la cámara persigue a una figura que
+	// deambula (ver updateWanderingDrunks), tanto la transición como el hold
+	// apuntan a su posición actual -no a la congelada al construir el
+	// fotograma-, si no la transición llegaba a un punto y el hold arrancaba
+	// de otro: un salto justo al terminar de llegar.
+	let liveTarget = kf.target;
+	let livePos = kf.pos;
+	if (kf.followElement && kf.followElement._threeObj) {
+		const wp = new THREE.Vector3();
+		kf.followElement._threeObj.getWorldPosition(wp);
+		liveTarget = new THREE.Vector3(wp.x, kf.target.y, wp.z);
+		livePos = new THREE.Vector3(liveTarget.x + (kf.pos.x - kf.target.x), kf.pos.y, liveTarget.z + (kf.pos.z - kf.target.z));
+	}
+
 	if (tourState.phase === 'transition') {
 		const t = Math.min(1, elapsed / TOUR_TRANSITION_MS);
 		const ease = easeInOutQuad(t);
-		const pos = tourState.fromPos.clone().lerp(kf.pos, ease);
-		const target = tourState.fromTarget.clone().lerp(kf.target, ease);
+		const pos = tourState.fromPos.clone().lerp(livePos, ease);
+		const target = tourState.fromTarget.clone().lerp(liveTarget, ease);
 		threeCamera.position.copy(pos);
 		threeCamera.lookAt(target);
 		threeControls.target.copy(target);
@@ -546,25 +590,20 @@ function updateTour() {
 	}
 
 	// phase === 'hold'
-	let target = kf.target;
-	if (kf.followElement && kf.followElement._threeObj) {
-		const wp = new THREE.Vector3();
-		kf.followElement._threeObj.getWorldPosition(wp);
-		target = new THREE.Vector3(wp.x, kf.target.y, wp.z);
-	}
 	let pos;
 	if (kf.orbit) {
-		const angle = elapsed * 0.00025;
+		// Continúa la órbita desde el mismo ángulo en el que terminó la
+		// transición (orbitBaseAngle), no desde 0: si no, había un salto
+		// justo al llegar al plano general.
+		const angle = kf.orbitBaseAngle + elapsed * 0.00025;
 		const r = kf.pos.clone().sub(kf.target).setY(0).length();
-		pos = new THREE.Vector3(target.x + Math.sin(angle) * r, kf.pos.y, target.z + Math.cos(angle) * r);
-	} else if (kf.followElement) {
-		pos = new THREE.Vector3(target.x + (kf.pos.x - kf.target.x), kf.pos.y, target.z + (kf.pos.z - kf.target.z));
+		pos = new THREE.Vector3(liveTarget.x + Math.sin(angle) * r, kf.pos.y, liveTarget.z + Math.cos(angle) * r);
 	} else {
-		pos = kf.pos;
+		pos = livePos;
 	}
 	threeCamera.position.copy(pos);
-	threeCamera.lookAt(target);
-	threeControls.target.copy(target);
+	threeCamera.lookAt(liveTarget);
+	threeControls.target.copy(liveTarget);
 	if (elapsed >= kf.hold) advanceTourKeyframe();
 }
 

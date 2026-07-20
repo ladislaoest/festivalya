@@ -32,13 +32,16 @@ function terrainNoiseShape(x, y) {
 // Ruido barato, usado como micro-relieve incluso cuando hay datos de
 // elevación reales (para que el suelo no quede perfectamente liso donde el
 // terreno real es casi plano) y como único relieve mientras esos datos no
-// están disponibles o fallan. La amplitud escala con el tamaño del plano
-// -que puede ir de ~20 a varios cientos de metros según el zoom- porque una
-// amplitud fija (como antes) se notaba en un recinto pequeño pero era
-// invisible en uno grande: el suelo volvía a parecer una foto plana.
+// están disponibles o fallan. Amplitud fija en metros absolutos -NO relativa
+// al tamaño del plano-: el plano mide lo que mida el tile visible a este
+// zoom (puede ser de 20 a varios cientos de metros) por motivos que no
+// tienen nada que ver con cuánto sube o baja el terreno de verdad, así que
+// escalar la amplitud con ese tamaño podía disparar el relieve a decenas de
+// metros en un recinto grande: los elementos (colocados a esa altura del
+// suelo) quedaban muy por encima de donde mira la cámara -"todo violeta",
+// sin ningún error, porque el escenario literalmente flotaba a 100m.
 function fakeTerrainNoise(x, y) {
-	const amp = Math.max(map3dPlaneSize * 0.02, 1.2);
-	return amp * terrainNoiseShape(x, y);
+	return 1.6 * terrainNoiseShape(x, y);
 }
 
 // Relieve real del recinto (ver fetchTerrainElevation): una rejilla NxN de
@@ -49,8 +52,11 @@ let terrainElevGrid = null;
 let terrainRequestId = 0;
 const TERRAIN_GRID_SIZE = 9;
 const TERRAIN_EXAGGERATION = 3.5;
-const TERRAIN_MIN_RELIEF_RATIO = 0.035; // amplitud mínima garantizada (relativa al plano)
-const TERRAIN_MAX_RELIEF_RATIO = 0.12; // tope de amplitud relativo al tamaño del plano
+// Metros absolutos, no relativos al tamaño del plano (ver fakeTerrainNoise):
+// un festival real rara vez tiene más de unos pocos metros de desnivel real,
+// así que ni el mínimo garantizado ni el tope necesitan crecer con el zoom.
+const TERRAIN_MIN_RELIEF_ABS = 3; // amplitud mínima garantizada, en metros
+const TERRAIN_MAX_RELIEF_ABS = 40; // tope de amplitud, en metros (terreno realmente montañoso)
 
 function getTerrainHeight(x, y) {
 	if (!terrainElevGrid) return fakeTerrainNoise(x, y);
@@ -106,8 +112,8 @@ async function fetchTerrainElevation(bbox, planeSize) {
 		if (raw.length !== size * size || raw.some(v => typeof v !== 'number')) return null;
 
 		const mean = raw.reduce((a, b) => a + b, 0) / raw.length;
-		const maxAmplitude = planeSize * TERRAIN_MAX_RELIEF_RATIO;
-		const minAmplitude = planeSize * TERRAIN_MIN_RELIEF_RATIO;
+		const maxAmplitude = TERRAIN_MAX_RELIEF_ABS;
+		const minAmplitude = TERRAIN_MIN_RELIEF_ABS;
 		let scaled = raw.map(v => (v - mean) * TERRAIN_EXAGGERATION);
 		const scaledAmp = Math.max(...scaled) - Math.min(...scaled);
 		// Un recinto de festival real suele ser justo el sitio más llano de
@@ -515,13 +521,26 @@ function generate3DViewInner(style) {
 
 	threeScene = new THREE.Scene();
 	threeCamera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, farPlane);
+	// El centro real de los elementos (en coordenadas del plano) casi nunca
+	// cae en el origen (0,0): el suelo se ajusta a los límites de los
+	// tiles del mapa a este zoom, no al centro exacto de los elementos, así
+	// que ese centro puede quedar desplazado decenas o cientos de metros
+	// del (0,0,0). Mirar siempre al origen -como antes- podía dejar la
+	// cámara apuntando a suelo vacío con pocos elementos: se veía "todo en
+	// violeta" sin ningún error, porque no había ningún fallo, solo nada
+	// que ver desde ahí.
+	const cameraTargetPlane = latLngToPlane(center.lat, center.lng, { minLat, maxLat, minLng, maxLng });
 	// La cámara encuadra el radio real que ocupan los elementos (no el
 	// suelo completo, que suele tener margen de sobra), para que el
 	// escenario y compañía se vean grandes de entrada y no haya que
-	// acercar la cámara a mano para distinguirlos del fondo.
-	const cameraFitRadius = maxReachMeters > 0 ? maxReachMeters : map3dPlaneSize * 0.5;
-	threeCamera.position.set(0, cameraFitRadius * 0.96, cameraFitRadius * 1.2);
-	threeCamera.lookAt(0, 0, 0);
+	// acercar la cámara a mano para distinguirlos del fondo. Con pocos
+	// elementos muy juntos (o uno solo, pequeño) ese radio podía ser de
+	// menos de un metro: la cámara terminaba literalmente dentro de la
+	// figura/modelo. Un mínimo razonable evita que quede pegada o metida
+	// dentro de la geometría.
+	const cameraFitRadius = Math.max(maxReachMeters > 0 ? maxReachMeters : map3dPlaneSize * 0.5, 8);
+	threeCamera.position.set(cameraTargetPlane.x, cameraFitRadius * 0.96, cameraTargetPlane.z + cameraFitRadius * 1.2);
+	threeCamera.lookAt(cameraTargetPlane.x, 0, cameraTargetPlane.z);
 
 	threeRenderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: true, alpha: false });
 	threeRenderer.setClearColor(0x222244, 1);
@@ -529,6 +548,7 @@ function generate3DViewInner(style) {
 
 	threeControls = new THREE.OrbitControls(threeCamera, threeRenderer.domElement);
 	threeControls.enableDamping = true;
+	threeControls.target.set(cameraTargetPlane.x, 0, cameraTargetPlane.z);
 
 	window.addEventListener('resize', () => {
 		const container = document.getElementById('container-3d-full');
@@ -622,6 +642,20 @@ function generate3DViewInner(style) {
 			if (el._threeLabel) el._threeLabel.position.y += h;
 			el._threeObj.position.y = h;
 		});
+
+		// La cámara (y el punto al que mira) se posicionaron antes de saber
+		// la altura real del terreno ahí -asumiendo y=0-, así que si el
+		// recinto resulta tener relieve de verdad, ambos quedaban a la
+		// altura vieja mientras el contenido ya se movió a la nueva: la
+		// cámara terminaba mirando muy por debajo (o por encima) de todo.
+		// Solo se ajusta si el usuario no tocó la cámara todavía (el tour o
+		// un arrastre manual ya la mueven por su cuenta).
+		if (!tourActive && threeControls) {
+			const targetH = getTerrainHeight(cameraTargetPlane.x, -cameraTargetPlane.z);
+			threeCamera.position.y += targetH;
+			threeControls.target.y += targetH;
+			threeControls.update();
+		}
 	});
 
 	// Edificios y árboles reales del entorno (ver fetchMapFeatures): sin
@@ -755,17 +789,18 @@ const GOLDEN_ANGLE = 2.4;
 // "orbitBaseAngle" queda guardado en el fotograma para que, durante el
 // hold, la órbita continúe desde ahí en vez de reiniciar en ángulo 0 -eso
 // producía un salto/corte justo al llegar al plano general (ver updateTour).
-function buildOverviewKeyframe(idx, hold, baseAngleOffset) {
+function buildOverviewKeyframe(idx, hold, baseAngleOffset, center) {
 	const overviewDist = Math.max(map3dPlaneSize * 0.55, 15);
 	const angle = baseAngleOffset + idx * GOLDEN_ANGLE * 1.3;
 	const elevation = 0.65 + 0.25 * Math.sin(idx * 1.7);
+	const c = center || new THREE.Vector3(0, 0, 0);
 	return {
 		label: 'Vista general',
-		target: new THREE.Vector3(0, 0, 0),
+		target: c.clone(),
 		pos: new THREE.Vector3(
-			Math.sin(angle) * overviewDist,
-			overviewDist * elevation,
-			Math.cos(angle) * overviewDist
+			c.x + Math.sin(angle) * overviewDist,
+			c.y + overviewDist * elevation,
+			c.z + Math.cos(angle) * overviewDist
 		),
 		hold,
 		orbit: true,
@@ -796,9 +831,24 @@ function buildTourKeyframes() {
 	const keyframes = [];
 	const baseAngleOffset = Math.random() * Math.PI * 2;
 	let overviewCount = 0;
-	keyframes.push(buildOverviewKeyframe(overviewCount++, 3000, baseAngleOffset));
 
 	const tourable = elements.filter(el => el.type !== 'fence' && el.type !== 'panic-fence' && el._threeObj);
+	// El plano general orbita alrededor del centro real de los elementos,
+	// no del origen del mundo (0,0,0): el suelo se ajusta a los tiles del
+	// mapa a ese zoom, no al centro de los elementos, así que ambos casi
+	// nunca coinciden -con pocos elementos lejos del origen, el plano
+	// general apuntaba a suelo vacío.
+	const overviewCenter = new THREE.Vector3();
+	if (tourable.length) {
+		tourable.forEach(el => {
+			const wp = new THREE.Vector3();
+			el._threeObj.getWorldPosition(wp);
+			overviewCenter.add(wp);
+		});
+		overviewCenter.divideScalar(tourable.length);
+		overviewCenter.y = 0;
+	}
+	keyframes.push(buildOverviewKeyframe(overviewCount++, 3000, baseAngleOffset, overviewCenter));
 	let elIdx = 0;
 
 	groupElementsByType(tourable).forEach(group => {
@@ -831,7 +881,7 @@ function buildTourKeyframes() {
 
 		// Solo al terminar cada TIPO de elemento -no entre cada uno- un
 		// respiro de plano general desde otro punto antes de seguir.
-		keyframes.push(buildOverviewKeyframe(overviewCount++, 1700, baseAngleOffset));
+		keyframes.push(buildOverviewKeyframe(overviewCount++, 1700, baseAngleOffset, overviewCenter));
 	});
 
 	return keyframes;

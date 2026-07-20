@@ -168,18 +168,23 @@ function loadProjectData(data) {
             element = addRectangleToMap(el.name, el.type, el.coords, el.length, el.width);
             group.addLayer(element.rectangle);
         } else {
-            element = addFixedFenceToMap(el.length, el.coords);
+            // El tipo real (valla de obra vs. antipánico) se pasaba antes
+            // sin usar: cualquier elemento de línea guardado se recreaba
+            // siempre como 'fence' al recargar el proyecto, sin importar
+            // qué tipo era en realidad.
+            element = addFixedFenceToMap(el.length, el.coords, el.rotation, el.type);
             element.name = el.name;
             group.addLayer(element.line);
         }
         element.rotation = el.rotation || 0;
         element.illustratedHidden = el.illustratedHidden || false;
         if (el.labelCoords) element.labelMarker.setLatLng(el.labelCoords);
-        updateElementShape(element, true);
         elements.push(element);
+        updateElementShape(element, true);
         updateElementCard(element);
         bindMarkerEvents(element);
     });
+    updateStats();
 
     // Si no hay vista guardada, centramos en los elementos
     if (!viewData) {

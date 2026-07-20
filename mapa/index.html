@@ -11,7 +11,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=3.18">
+  <link rel="stylesheet" href="css/styles.css?v=3.20">
 </head>
 <body>
   <!-- Botón Menú Móvil -->
@@ -60,7 +60,8 @@
                     <option value="wc">Baños</option>
                     <option value="security">Seguridad</option>
                     <option value="drunk">Borracho</option>
-                    <option value="fence">Valla</option>
+                    <option value="fence">Valla de Obra</option>
+                    <option value="panic-fence">Valla Antipánico</option>
                     <option value="signal-parking">Señal Parking</option>
                     <option value="signal-disabled">Señal Minusválidos</option>
                     <option value="signal-no-parking">Prohibido Aparcar</option>
@@ -104,7 +105,8 @@
                     <div class="icon-option" data-icon="wc" title="WC">W</div>
                     <div class="icon-option" data-icon="security" title="Seguridad">Sg</div>
                     <div class="icon-option" data-icon="drunk" title="Borracho">Bo</div>
-                    <div class="icon-option" data-icon="fence" title="Valla">V</div>
+                    <div class="icon-option" data-icon="fence" title="Valla de Obra">V</div>
+                    <div class="icon-option" data-icon="panic-fence" title="Valla Antipánico">VA</div>
                     <div class="icon-option" data-icon="parking" title="Parking">P</div>
                     <div class="icon-option" data-icon="disabled" title="Minusválidos">M</div>
                     <div class="icon-option" data-icon="noparking" title="Prohibido">∅</div>
@@ -148,6 +150,7 @@
           <h3>MEMORIA TÉCNICA</h3>
           <p>Total Vallas: <span id="stat-vallas-m" class="stat-val">0</span>m</p>
           <p>Secciones (2m): <span id="stat-vallas-n" class="stat-val">0</span></p>
+          <p>Vallas Antipánico: <span id="stat-panic-m" class="stat-val">0</span>m</p>
           <p>Total Baños: <span id="stat-wc" class="stat-val">0</span></p>
           <p>Food Trucks: <span id="stat-food" class="stat-val">0</span></p>
           <p>Barras: <span id="stat-bar" class="stat-val">0</span></p>
@@ -182,11 +185,11 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-  <script src="js/map.js?v=3.18"></script>
-  <script src="js/elements.js?v=3.18"></script>
-  <script src="js/view3d.js?v=3.18"></script>
-  <script src="js/save-load.js?v=3.18"></script>
-  <script src="js/main.js?v=3.18"></script>
+  <script src="js/map.js?v=3.20"></script>
+  <script src="js/elements.js?v=3.20"></script>
+  <script src="js/view3d.js?v=3.20"></script>
+  <script src="js/save-load.js?v=3.20"></script>
+  <script src="js/main.js?v=3.20"></script>
 
   <div id="startup-modal" class="modal-overlay">
     <div class="modal-content">

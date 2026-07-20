@@ -450,7 +450,7 @@ function generate3DView(style) {
 		groundGeometry.computeVertexNormals();
 
 		elements.forEach(el => {
-			if (!el._threeObj || el.type === 'fence') return;
+			if (!el._threeObj || el.type === 'fence' || el.type === 'panic-fence') return;
 			const h = getTerrainHeight(el._threeObj.position.x, -el._threeObj.position.z);
 			if (el._threeLabel) el._threeLabel.position.y += h;
 			el._threeObj.position.y = h;
@@ -611,7 +611,7 @@ function buildTourKeyframes() {
 	let overviewCount = 0;
 	keyframes.push(buildOverviewKeyframe(overviewCount++, 3000, baseAngleOffset));
 
-	const tourable = elements.filter(el => el.type !== 'fence' && el._threeObj);
+	const tourable = elements.filter(el => el.type !== 'fence' && el.type !== 'panic-fence' && el._threeObj);
 	let elIdx = 0;
 
 	groupElementsByType(tourable).forEach(group => {
@@ -944,20 +944,9 @@ function drawElements(elements, threeScene) {
             obj3d = createDrunkFigure(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
             wanderingDrunks.push({ element, group: obj3d, centerX: pos.x, centerZ: pos.z, phase: Math.random() * Math.PI * 2 });
         } else if (element.type === 'fence') {
-            // Caja fina a escala real en vez de estirar el modelo 3D (que
-            // deformaba también su alto/ancho y generaba postes gigantes).
-            const fenceHeight = 1.2;
-            const fenceThickness = 0.15;
-            const geometry = new THREE.BoxGeometry(element.length, fenceHeight, fenceThickness);
-            const material = new THREE.MeshStandardMaterial({ color: element.color || '#e5e5e5' });
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.position.set(pos.x, fenceHeight / 2, pos.z);
-            // El ángulo de Leaflet crece en sentido contrario al rotation.y
-            // de Three.js sobre este mismo plano XZ; sin el signo negativo
-            // los elementos rotados quedaban en espejo respecto al 2D.
-            mesh.rotation.y = -(element.rotation * Math.PI) / 180;
-            threeScene.add(mesh);
-            obj3d = mesh;
+            obj3d = createConstructionFenceSegment(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+        } else if (element.type === 'panic-fence') {
+            obj3d = createPanicFenceSegment(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
         } else if (element.type === 'bar' || element.type === 'wc' || element.type.startsWith('signal')) {
             obj3d = createGeometricElement(element, pos, threeScene);
         } else if (element.isRectangle) {
@@ -981,7 +970,7 @@ function drawElements(elements, threeScene) {
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
         } else if (element.type === 'drunk') {
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, DRUNK_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
-        } else if (element.type !== 'fence') {
+        } else if (element.type !== 'fence' && element.type !== 'panic-fence') {
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
         }
 
@@ -1282,6 +1271,103 @@ function createDrunkFigure(pos, element, scene) {
 	group.userData.armDown = armDown;
 
 	group.scale.set(DRUNK_FIGURE_SCALE, DRUNK_FIGURE_SCALE, DRUNK_FIGURE_SCALE);
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+	return group;
+}
+
+// Textura de malla naranja de obra (rombos), generada una vez en canvas y
+// clonada por cada tramo para poder darle a cada uno su propio "repeat"
+// según su longitud, sin que se estiren igual los tramos cortos y los largos.
+let constructionMeshTextureBase = null;
+function getConstructionMeshTexture() {
+	if (constructionMeshTextureBase) return constructionMeshTextureBase;
+	const canvas = document.createElement('canvas');
+	canvas.width = 128;
+	canvas.height = 128;
+	const ctx = canvas.getContext('2d');
+	ctx.fillStyle = '#e8720c';
+	ctx.fillRect(0, 0, 128, 128);
+	ctx.strokeStyle = 'rgba(0,0,0,0.32)';
+	ctx.lineWidth = 4;
+	for (let i = -128; i < 256; i += 24) {
+		ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i + 128, 128); ctx.stroke();
+		ctx.beginPath(); ctx.moveTo(i, 128); ctx.lineTo(i - 128, 128); ctx.stroke();
+	}
+	constructionMeshTextureBase = new THREE.CanvasTexture(canvas);
+	constructionMeshTextureBase.wrapS = THREE.RepeatWrapping;
+	constructionMeshTextureBase.wrapT = THREE.RepeatWrapping;
+	return constructionMeshTextureBase;
+}
+
+// "Valla de obra": panel de malla naranja (la típica malla plástica de
+// construcción) sobre pies de plástico oscuro, en vez de la caja blanca lisa
+// de antes. Un pie cada ~2m (como los tramos reales) para que no parezca un
+// único panel gigante estirado.
+function createConstructionFenceSegment(pos, element, scene) {
+	const group = new THREE.Group();
+	const panelLength = Math.max(element.length || 2, 0.5);
+	const height = 1.05;
+
+	const meshTex = getConstructionMeshTexture().clone();
+	meshTex.needsUpdate = true;
+	meshTex.repeat.set(Math.max(1, panelLength / 1.4), 1);
+	const panel = new THREE.Mesh(
+		new THREE.BoxGeometry(panelLength, height, 0.06),
+		new THREE.MeshStandardMaterial({ map: meshTex, roughness: 0.85 })
+	);
+	panel.position.set(0, height / 2 + 0.12, 0);
+	group.add(panel);
+
+	const footMat = new THREE.MeshStandardMaterial({ color: 0x2b2b2b });
+	const footCount = Math.max(2, Math.round(panelLength / 2) + 1);
+	for (let i = 0; i < footCount; i++) {
+		const t = footCount === 1 ? 0.5 : i / (footCount - 1);
+		const foot = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.12, 0.32), footMat);
+		foot.position.set(-panelLength / 2 + t * panelLength, 0.06, 0);
+		group.add(foot);
+	}
+
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+	return group;
+}
+
+// "Valla antipánico": barrera metálica con postes cada ~2m (como los tramos
+// reales que se enganchan unos a otros) unidos por dos barras horizontales
+// continuas, sobre un pie de apoyo perpendicular en cada poste -la silueta
+// típica de las barreras de control de público en conciertos/eventos.
+function createPanicFenceSegment(pos, element, scene) {
+	const group = new THREE.Group();
+	const len = Math.max(element.length || 2, 0.5);
+	const metalMat = new THREE.MeshStandardMaterial({ color: 0xb2b6b8, metalness: 0.7, roughness: 0.35 });
+	const postHeight = 1.0;
+	const barRadius = 0.022;
+
+	const postCount = Math.max(2, (element.numVallas || Math.ceil(len / 2)) + 1);
+	for (let i = 0; i < postCount; i++) {
+		const t = postCount === 1 ? 0.5 : i / (postCount - 1);
+		const x = -len / 2 + t * len;
+
+		const post = new THREE.Mesh(new THREE.CylinderGeometry(barRadius * 1.5, barRadius * 1.5, postHeight, 8), metalMat);
+		post.position.set(x, postHeight / 2, 0);
+		group.add(post);
+
+		// Pie de apoyo perpendicular a la valla, como en las barreras reales.
+		const foot = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.05, 0.5), metalMat);
+		foot.position.set(x, 0.03, 0.15);
+		group.add(foot);
+	}
+
+	[0.35, 0.82].forEach(barY => {
+		const bar = new THREE.Mesh(new THREE.CylinderGeometry(barRadius, barRadius, len, 8), metalMat);
+		bar.rotation.z = Math.PI / 2;
+		bar.position.set(0, barY, 0);
+		group.add(bar);
+	});
+
 	group.position.copy(pos);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
 	scene.add(group);

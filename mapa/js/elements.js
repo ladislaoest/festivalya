@@ -8,7 +8,8 @@ const festivalConfig = {
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
     'security': { label: 'SEGURIDAD', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
     'drunk': { label: 'BORRACHO', color: '#d9a441', icon: 'drunk', defaultLen: 1, defaultWid: 1 },
-    'fence': { label: 'VALLA', color: '#ffffff', icon: 'fence' },
+    'fence': { label: 'VALLA DE OBRA', color: '#f39c12', icon: 'fence' },
+    'panic-fence': { label: 'VALLA ANTIPÁNICO', color: '#95a5a6', icon: 'panic-fence' },
     'signal-parking': { label: 'PARKING', color: '#3498db', icon: 'parking', defaultLen: 4, defaultWid: 4 },
     'signal-disabled': { label: 'MINUSVÁLIDOS', color: '#3498db', icon: 'disabled', defaultLen: 4, defaultWid: 4 },
     'signal-no-parking': { label: 'PROHIBIDO APARCAR', color: '#e74c3c', icon: 'noparking', defaultLen: 4, defaultWid: 4 },
@@ -55,6 +56,12 @@ function toggleMeasureMode() {
         map.off('mousemove');
     }
 }
+// Vallas de obra y antipánico comparten el mismo mecanismo de línea
+// (dibujar en el mapa o medida fija): ver startFenceDrawing/addFixedFenceToMap.
+function isFenceType(type) {
+    return type === 'fence' || type === 'panic-fence';
+}
+
 let elements = [], selectedIcon = 'stage', editingElement = null;
 let history = [];
 const MAX_HISTORY = 20;
@@ -81,8 +88,8 @@ function undo() {
     clearAllElements();
     lastState.forEach(el => {
         let element;
-        if (el.type === 'fence') {
-            element = addFixedFenceToMap(el.length, el.coords, el.rotation);
+        if (isFenceType(el.type)) {
+            element = addFixedFenceToMap(el.length, el.coords, el.rotation, el.type);
         } else {
             element = addRectangleToMap(el.name, el.type, el.coords, el.length, el.width, el.rotation);
         }
@@ -401,12 +408,13 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
 }
 
 function updateStats() {
-    let totalVallasM = 0, totalVallasN = 0, totalWC = 0, totalFood = 0, totalBar = 0;
+    let totalVallasM = 0, totalVallasN = 0, totalPanicM = 0, totalWC = 0, totalFood = 0, totalBar = 0;
     const typesPresent = new Set();
 
     elements.forEach(el => {
         typesPresent.add(el.type);
         if (el.type === 'fence') { totalVallasM += el.length; totalVallasN += el.numVallas; }
+        else if (el.type === 'panic-fence') { totalPanicM += el.length; }
         else if (el.type === 'wc') totalWC++;
         else if (el.type === 'food-truck') totalFood++;
         else if (el.type === 'bar') totalBar++;
@@ -414,6 +422,7 @@ function updateStats() {
 
     document.getElementById('stat-vallas-m').innerText = totalVallasM.toFixed(1);
     document.getElementById('stat-vallas-n').innerText = totalVallasN;
+    document.getElementById('stat-panic-m').innerText = totalPanicM.toFixed(1);
     document.getElementById('stat-wc').innerText = totalWC;
     document.getElementById('stat-food').innerText = totalFood;
     document.getElementById('stat-bar').innerText = totalBar;
@@ -501,7 +510,7 @@ function setupElementEvents() {
 			this.classList.add('selected');
 			const mapIconToType = {
                 'stage': 'main-stage', 'food': 'food-truck', 'bar': 'bar',
-                'wc': 'signal-wc', 'fence': 'fence', 'custom': 'generator',
+                'wc': 'signal-wc', 'fence': 'fence', 'panic-fence': 'panic-fence', 'custom': 'generator',
                 'parking': 'signal-parking', 'disabled': 'signal-disabled', 'noparking': 'signal-no-parking',
                 'exit': 'signal-exit', 'security': 'security', 'entrance': 'entrance', 'drunk': 'drunk'
             };
@@ -511,8 +520,9 @@ function setupElementEvents() {
 
 	if (elemType) {
 		elemType.onchange = function() {
-			document.getElementById('dimension-controls').style.display = (this.value === 'fence') ? 'none' : 'block';
-            document.getElementById('fence-controls').style.display = (this.value === 'fence') ? 'block' : 'none';
+			const isFence = isFenceType(this.value);
+			document.getElementById('dimension-controls').style.display = isFence ? 'none' : 'block';
+            document.getElementById('fence-controls').style.display = isFence ? 'block' : 'none';
             const config = festivalConfig[this.value];
 			if (config && config.defaultLen) {
 				document.getElementById('element-length').value = config.defaultLen;
@@ -530,14 +540,20 @@ function setupElementEvents() {
 
 	document.getElementById('add-element').onclick = function() {
 		const type = elemType.value;
-		if (type === 'fence' && document.getElementById('fence-mode').value === 'draw') {
-            startFenceDrawing();
+		if (isFenceType(type) && document.getElementById('fence-mode').value === 'draw') {
+            startFenceDrawing(type);
         } else {
             const config = festivalConfig[type], name = document.getElementById('element-name').value || config.label;
-            const length = type === 'fence' ? parseFloat(document.getElementById('fence-fixed-length').value) : parseFloat(document.getElementById('element-length').value);
+            const length = isFenceType(type) ? parseFloat(document.getElementById('fence-fixed-length').value) : parseFloat(document.getElementById('element-length').value);
             const width = parseFloat(document.getElementById('element-width').value) || 5;
-            const element = (type === 'fence') ? addFixedFenceToMap(length) : addRectangleToMap(name, type, map.getCenter(), length, width);
+            const element = isFenceType(type) ? addFixedFenceToMap(length, undefined, undefined, type) : addRectangleToMap(name, type, map.getCenter(), length, width);
             elements.push(element); updateElementCard(element); bindMarkerEvents(element);
+            // addFixedFenceToMap/addRectangleToMap ya llaman a updateStats()
+            // internamente, pero ANTES de este push -con el elemento recién
+            // creado todavía fuera de "elements"-, así que su propio conteo
+            // se quedaba sin reflejar hasta que otra acción disparara un
+            // recálculo. Se repite aquí, ya con el elemento dentro.
+            updateStats();
             saveHistory();
         }
         if (window.innerWidth <= 768) panel.classList.remove('active');
@@ -561,7 +577,7 @@ function setupElementEvents() {
 	};
 }
 
-function startFenceDrawing() {
+function startFenceDrawing(type = 'fence') {
 	isDrawingLine = true; map.dragging.disable(); map.getContainer().style.cursor = 'crosshair';
 	map.once('click', (e) => {
 		drawStartLatLng = e.latlng;
@@ -591,24 +607,27 @@ function startFenceDrawing() {
             
             const rotation = (angle + 360) % 360;
             
-            const element = addFixedFenceToMap(dist, L.latLngBounds(drawStartLatLng, e2.latlng).getCenter(), rotation);
+            const element = addFixedFenceToMap(dist, L.latLngBounds(drawStartLatLng, e2.latlng).getCenter(), rotation, type);
             elements.push(element); updateElementCard(element); bindMarkerEvents(element);
+            updateStats();
             saveHistory();
         });
 	});
 }
 
-function addFixedFenceToMap(len, center = map.getCenter(), rotation = 0) {
-    const line = L.polyline([], { color: 'white', weight: 5, interactive: true, bubblingMouseEvents: false }).addTo(map);
+function addFixedFenceToMap(len, center = map.getCenter(), rotation = 0, type = 'fence') {
+    const config = festivalConfig[type] || festivalConfig['fence'];
+    const line = L.polyline([], { color: config.color, weight: 5, interactive: true, bubblingMouseEvents: false }).addTo(map);
     const moveMarker = L.marker(center, { icon: moveHandleIcon, draggable: true, zIndexOffset: 2000 });
     const labelMarker = L.marker(center, { icon: L.divIcon({ className: 'rectangle-label', html: '' }), draggable: true, zIndexOffset: 1000 });
-    
+
     if (!isFestivalMode) {
         moveMarker.addTo(map);
         labelMarker.addTo(map);
     }
 
-    const element = { id: Date.now(), type: 'fence', name: 'Valla', line, labelMarker, moveMarker, length: len, numVallas: Math.ceil(len / 2), isLine: true, isRectangle: false, color: '#ffffff', iconUrl: 'assets/icons/fence.svg', rotation: rotation };
+    const name = type === 'panic-fence' ? 'Valla Antipánico' : 'Valla';
+    const element = { id: Date.now(), type, name, line, labelMarker, moveMarker, length: len, numVallas: Math.ceil(len / 2), isLine: true, isRectangle: false, color: config.color, iconUrl: getGenericIconUrl(config.icon), rotation: rotation };
     addRotateHandle(element);
     
     function onDragStart(e) {
@@ -943,6 +962,7 @@ function getPinIconSVG(iconKey) {
         'rest': `<svg viewBox="0 0 24 24" ${S}><path d="M12 3v18"/><path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 21c-1.5 0-2-1-2-2"/></svg>`,
         'first-aid': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`,
         'fence': `<svg viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round"><path d="M4 4v16M9 4v16M15 4v16M20 4v16"/><path d="M2 9h20M2 15h20"/></svg>`,
+        'panic-fence': `<svg viewBox="0 0 24 24" ${S}><path d="M4 9h16M4 15h16"/><path d="M6 6v12M18 6v12"/></svg>`,
         'security': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.2" fill="white" stroke="none"/><path d="M12 8v6"/><path d="M12 10 6 6"/><path d="M12 10l6-4"/><path d="M12 14l-5 7"/><path d="M12 14l5 7"/></svg>`,
         'entrance': `<svg viewBox="0 0 24 24" ${S}><path d="M4 21V11a8 8 0 0 1 16 0v10"/><path d="M4 21h4M16 21h4"/></svg>`,
         'drunk': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="5" r="2.2" fill="white" stroke="none"/><path d="M11 8v6" transform="rotate(-8 11 11)"/><path d="M11 10 7 8"/><path d="M11 10l5-1"/><rect x="15" y="7.5" width="2.6" height="2.4" fill="white" stroke="none"/><path d="M10 14 6 21"/><path d="M11 14l6 6"/></svg>`
@@ -959,6 +979,7 @@ function getGenericIconUrl(type) {
         'first-aid': 'assets/icons/first-aid.svg', 
         'parking': 'assets/icons/parking.svg', 
         'fence': 'assets/icons/fence.svg',
+        'panic-fence': 'assets/icons/panic-fence.svg',
         'tent': 'assets/icons/tent.svg',
         'security': 'assets/icons/security.svg',
         'entrance': 'assets/icons/entrance.svg',

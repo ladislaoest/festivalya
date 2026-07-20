@@ -7,7 +7,7 @@ const SECURITY_FIGURE_SCALE = 1.4;
 const SECURITY_FIGURE_HEIGHT = 1.77 * SECURITY_FIGURE_SCALE;
 
 const DRUNK_FIGURE_SCALE = 1.6;
-const DRUNK_FIGURE_HEIGHT = 1.82 * DRUNK_FIGURE_SCALE;
+const DRUNK_FIGURE_HEIGHT = 1.99 * DRUNK_FIGURE_SCALE; // 1.99 = tope de la cabeza (ver createDrunkFigure)
 const DRUNK_WANDER_RADIUS = 2.5;
 
 // Figuras "borracho" que deambulan solas cada frame (ver updateWanderingDrunks).
@@ -23,10 +23,15 @@ const TOUR_TRANSITION_MS = 1200;
 // Ruido barato (senos superpuestos), usado como micro-relieve incluso
 // cuando hay datos de elevación reales (para que el suelo no quede
 // perfectamente liso donde el terreno real es casi plano) y como único
-// relieve mientras esos datos no están disponibles o fallan.
+// relieve mientras esos datos no están disponibles o fallan. La amplitud
+// escala con el tamaño del plano -que puede ir de ~20 a varios cientos de
+// metros según el zoom- porque una amplitud fija (como antes) se notaba en
+// un recinto pequeño pero era invisible en uno grande: el suelo volvía a
+// parecer una foto plana.
 function fakeTerrainNoise(x, y) {
-	return 0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
-		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7);
+	const amp = Math.max(map3dPlaneSize * 0.02, 1.2);
+	return amp * (0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
+		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7));
 }
 
 // Relieve real del recinto (ver fetchTerrainElevation): una rejilla NxN de
@@ -37,6 +42,7 @@ let terrainElevGrid = null;
 let terrainRequestId = 0;
 const TERRAIN_GRID_SIZE = 9;
 const TERRAIN_EXAGGERATION = 3.5;
+const TERRAIN_MIN_RELIEF_RATIO = 0.035; // amplitud mínima garantizada (relativa al plano)
 const TERRAIN_MAX_RELIEF_RATIO = 0.12; // tope de amplitud relativo al tamaño del plano
 
 function getTerrainHeight(x, y) {
@@ -53,7 +59,10 @@ function getTerrainHeight(x, y) {
 	const h11 = values[j1 * size + i1];
 	const h0 = h00 * (1 - fu) + h10 * fu;
 	const h1 = h01 * (1 - fu) + h11 * fu;
-	return h0 * (1 - fv) + h1 * fv + fakeTerrainNoise(x, y) * 0.3;
+	// El detalle fino ya es más discreto que antes porque la base real (o
+	// su mínimo garantizado) ya se ve por sí sola; si no, competían y se
+	// veía ruidoso en vez de un relieve limpio.
+	return h0 * (1 - fv) + h1 * fv + fakeTerrainNoise(x, y) * 0.15;
 }
 
 // Consulta elevación real (Open-Elevation, gratis y sin API key) en una
@@ -91,10 +100,19 @@ async function fetchTerrainElevation(bbox, planeSize) {
 
 		const mean = raw.reduce((a, b) => a + b, 0) / raw.length;
 		const maxAmplitude = planeSize * TERRAIN_MAX_RELIEF_RATIO;
-		const values = raw.map(v => {
-			const h = (v - mean) * TERRAIN_EXAGGERATION;
-			return Math.max(-maxAmplitude, Math.min(maxAmplitude, h));
-		});
+		const minAmplitude = planeSize * TERRAIN_MIN_RELIEF_RATIO;
+		let scaled = raw.map(v => (v - mean) * TERRAIN_EXAGGERATION);
+		const scaledAmp = Math.max(...scaled) - Math.min(...scaled);
+		// Si el terreno real es casi plano, la variación exagerada puede
+		// seguir siendo minúscula (de ahí la queja de "sigue sin relieve"):
+		// se sube hasta una amplitud mínima visible, sin inventar relieve
+		// donde el servicio no devolvió ninguna variación real (scaledAmp
+		// ~0, típicamente mar o un fallo silencioso de la API).
+		if (scaledAmp > 0.01 && scaledAmp < minAmplitude) {
+			const boost = Math.min(minAmplitude / scaledAmp, 25);
+			scaled = scaled.map(v => v * boost);
+		}
+		const values = scaled.map(v => Math.max(-maxAmplitude, Math.min(maxAmplitude, v)));
 		return { size, values, halfSize: half };
 	} catch (err) {
 		console.warn('[3D] No se pudo obtener elevación real, se usa relieve simulado.', err);
@@ -211,13 +229,21 @@ function generate3DView(style) {
 	if (elements.length > 0) {
 		let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
 		elements.forEach(el => {
-			const ll = el.moveMarker.getLatLng();
-			minLat = Math.min(minLat, ll.lat);
-			maxLat = Math.max(maxLat, ll.lat);
-			minLng = Math.min(minLng, ll.lng);
-			maxLng = Math.max(maxLng, ll.lng);
+			// Un elemento sin moveMarker válido (datos viejos/corruptos) no
+			// debe abortar toda la generación de la vista 3D -eso dejaba la
+			// pantalla congelada en el color de fondo para siempre-, así
+			// que se ignora y se sigue con el resto.
+			try {
+				const ll = el.moveMarker.getLatLng();
+				minLat = Math.min(minLat, ll.lat);
+				maxLat = Math.max(maxLat, ll.lat);
+				minLng = Math.min(minLng, ll.lng);
+				maxLng = Math.max(maxLng, ll.lng);
+			} catch (err) {
+				console.error('[3D] Elemento con coordenadas inválidas, se ignora:', el && el.type, el && el.id, err);
+			}
 		});
-		center = L.latLng((minLat + maxLat) / 2, (minLng + maxLng) / 2);
+		center = (minLat !== Infinity) ? L.latLng((minLat + maxLat) / 2, (minLng + maxLng) / 2) : map.getCenter();
 	} else {
 		center = map.getCenter();
 	}
@@ -232,11 +258,15 @@ function generate3DView(style) {
 	// el plano para que ninguno quede fuera (o directamente invisible).
 	let maxReachMeters = 0;
 	elements.forEach(el => {
-		const dist = map.distance(center, el.moveMarker.getLatLng());
-		const halfExtent = el.isRectangle
-			? Math.sqrt(Math.pow((el.length || 0) / 2, 2) + Math.pow((el.width || 0) / 2, 2))
-			: (el.length || 0) / 2;
-		maxReachMeters = Math.max(maxReachMeters, dist + halfExtent);
+		try {
+			const dist = map.distance(center, el.moveMarker.getLatLng());
+			const halfExtent = el.isRectangle
+				? Math.sqrt(Math.pow((el.length || 0) / 2, 2) + Math.pow((el.width || 0) / 2, 2))
+				: (el.length || 0) / 2;
+			maxReachMeters = Math.max(maxReachMeters, dist + halfExtent);
+		} catch (err) {
+			console.error('[3D] Elemento con coordenadas inválidas, se ignora:', el && el.type, el && el.id, err);
+		}
 	});
 	const fitAllSize = maxReachMeters > 0 ? maxReachMeters * 2 * 1.2 : 0;
 	const desiredPlaneSize = Math.max(tileBasedSize, fitAllSize, 20);
@@ -762,6 +792,17 @@ function setupElementDragging(canvas) {
 	if (canvas.dataset.dragHandlersBound) return;
 	canvas.dataset.dragHandlersBound = '1';
 
+	// Mover un elemento en 3D exige doble clic/doble toque -no basta con un
+	// clic y arrastrar-: si no, cada vez que el cursor bajaba encima de un
+	// elemento para simplemente girar la cámara, el elemento se movía en
+	// vez de orbitar la vista. Con un solo toque no se arma el arrastre (ni
+	// se bloquean los OrbitControls, que giran con normalidad); solo el
+	// segundo toque de un doble clic -y mantener pulsado tras él- arrastra.
+	let lastElementTap = { element: null, time: 0, x: 0, y: 0 };
+	let pendingFocusTap = null;
+	const DOUBLE_TAP_MS = 400;
+	const TAP_MOVE_PX = 6;
+
 	canvas.addEventListener('pointerdown', (ev) => {
 		if (!threeScene || !threeCamera) return;
 		updatePointerNDC(ev);
@@ -769,31 +810,47 @@ function setupElementDragging(canvas) {
 		const hits = dragRaycaster.intersectObjects(threeScene.children, true);
 		for (const hit of hits) {
 			const element = findElementIn3DObject(hit.object);
-			if (element) {
-				// "moved" distingue un toque/clic (sin arrastre real) de un
-				// arrastre: por debajo del umbral en píxeles se trata como
-				// clic y sirve para centrar la cámara en ese elemento (ver
-				// endDrag) en vez de intentar moverlo.
-				dragState = { element, lastX: null, lastZ: null, moved: false, startX: ev.clientX, startY: ev.clientY };
+			if (!element) continue;
+
+			const now = performance.now();
+			const isSecondTap = lastElementTap.element === element
+				&& (now - lastElementTap.time) < DOUBLE_TAP_MS
+				&& Math.hypot(ev.clientX - lastElementTap.x, ev.clientY - lastElementTap.y) < 25;
+
+			if (isSecondTap) {
+				lastElementTap = { element: null, time: 0, x: 0, y: 0 };
+				pendingFocusTap = null;
+				dragState = { element, lastX: null, lastZ: null, moved: false };
 				if (typeof selectElement === 'function') selectElement(element);
 				if (threeControls) threeControls.enabled = false;
 				// Captura el puntero para que pointermove/pointerup sigan
 				// llegando aunque el cursor salga del lienzo a mitad de arrastre.
 				canvas.setPointerCapture(ev.pointerId);
 				ev.preventDefault();
-				break;
+			} else {
+				// Primer toque: ni arrastra ni bloquea la cámara, solo se
+				// recuerda para detectar el siguiente toque como doble clic
+				// y, si en el pointerup no hubo apenas movimiento, centrar
+				// la cámara en el elemento (ver el listener de pointerup).
+				lastElementTap = { element, time: now, x: ev.clientX, y: ev.clientY };
+				pendingFocusTap = { element, startX: ev.clientX, startY: ev.clientY };
 			}
+			break;
+		}
+	});
+
+	canvas.addEventListener('pointerup', (ev) => {
+		if (dragState || !pendingFocusTap) return;
+		const { element, startX, startY } = pendingFocusTap;
+		pendingFocusTap = null;
+		if (Math.hypot(ev.clientX - startX, ev.clientY - startY) < TAP_MOVE_PX) {
+			focusCameraOnElement(element);
 		}
 	});
 
 	canvas.addEventListener('pointermove', (ev) => {
 		if (!dragState) return;
-		if (!dragState.moved) {
-			const dx = ev.clientX - dragState.startX;
-			const dy = ev.clientY - dragState.startY;
-			if (Math.hypot(dx, dy) < 6) return; // aún dentro del umbral de "toque"
-			dragState.moved = true;
-		}
+		if (!dragState.moved) dragState.moved = true;
 		const ground = threeScene.children.find(o => o.userData && o.userData.minLat !== undefined);
 		if (!ground) return;
 		updatePointerNDC(ev);
@@ -823,7 +880,8 @@ function setupElementDragging(canvas) {
 		const { element, lastX, lastZ, moved } = dragState;
 		dragState = null;
 		if (!moved || lastX === null) {
-			// Fue un toque, no un arrastre: en vez de no hacer nada, centra
+			// Doble clic armado pero sin arrastre real después (o el rayo
+			// nunca llegó a tocar el suelo): en vez de no hacer nada, centra
 			// la cámara en ese elemento. Así se puede "traer al centro" un
 			// elemento que quedó en una esquina (p.ej. la entrada) sin
 			// depender de paneo manual, y luego acercar el zoom con calma.
@@ -863,6 +921,13 @@ function drawElements(elements, threeScene) {
 	wanderingDrunks = [];
 
 	elements.forEach(element => {
+	  // Un elemento con datos corruptos/inesperados (p.ej. de una versión
+	  // vieja del proyecto, o un duplicado a medio guardar) no debe tirar
+	  // abajo TODA la vista 3D: sin este try/catch, una excepción aquí
+	  // interrumpía drawElements a mitad de camino y generate3DView nunca
+	  // llegaba a animate() -la pantalla se quedaba fija en el color de
+	  // fondo (lila) para siempre, con o sin conexión a internet.
+	  try {
 		const latLng = element.moveMarker.getLatLng();
 		const pos = latLngToPlane(latLng.lat, latLng.lng, bbox);
 		let obj3d;
@@ -928,6 +993,9 @@ function drawElements(elements, threeScene) {
         if (label) label.userData.element = element;
         element._threeObj = obj3d || null;
         element._threeLabel = label || null;
+	  } catch (err) {
+		console.error('[3D] No se pudo crear el elemento', element && element.type, element && element.id, err);
+	  }
 	});
 }
 
@@ -1102,9 +1170,13 @@ function createDrunkFigure(pos, element, scene) {
 	const foamMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0 });
 
 	// Cabeza grande, cabezón desproporcionado estilo cartoon; la cara real
-	// va pegada delante como textura (ver más abajo).
+	// va pegada delante como textura (ver más abajo). Más arriba que el
+	// centro geométrico del torso (que llega hasta y=1.395) para que no se
+	// coma la barbilla/boca de la cara real: con la cabeza a 1.55 el torso
+	// tapaba la parte de abajo del parche de la cara y solo se veía hasta
+	// la nariz.
 	const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 14), skinMat);
-	head.position.set(0, 1.55, 0);
+	head.position.set(0, 1.72, 0);
 	group.add(head);
 
 	// Cara real del "borracho" tallada en la propia cabeza: en vez de una
@@ -1120,7 +1192,14 @@ function createDrunkFigure(pos, element, scene) {
 	const faceTextureLoader = new THREE.TextureLoader();
 	const faceColorMap = faceTextureLoader.load('assets/faces/borracho.jpg');
 	const faceDepthMap = faceTextureLoader.load('assets/faces/borracho_depth.jpg');
-	const facePatchAngle = Math.PI * 0.8;
+	// Un arco demasiado ancho (antes 0.8*PI) hace que el borde de la foto
+	// -donde está la barbilla/boca, ya que el recorte llega hasta ahí- caiga
+	// cerca del "horizonte" visible de la esfera: en un plano de frente esa
+	// zona queda tan escorzada por la curvatura que se ve casi ilegible,
+	// como si la cara estuviera cortada aunque la textura sí llegue hasta
+	// ahí. Con un arco más estrecho el contenido queda más cerca del centro
+	// (de frente a la cámara) y se lee entero.
+	const facePatchAngle = Math.PI * 0.58;
 	const faceGeom = new THREE.SphereGeometry(
 		0.27 + 0.006, 48, 48,
 		Math.PI / 2 - facePatchAngle / 2, facePatchAngle,
@@ -1135,7 +1214,7 @@ function createDrunkFigure(pos, element, scene) {
 			displacementBias: 0
 		})
 	);
-	face.position.set(0, 1.55, 0);
+	face.position.set(0, 1.72, 0);
 	group.add(face);
 
 	// Torso panzón con camiseta de tirantes (los brazos, aparte, quedan al

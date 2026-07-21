@@ -7,7 +7,7 @@ const festivalConfig = {
     'generator': { label: 'GENERADOR', color: '#9b59b6', icon: 'custom', defaultLen: 4, defaultWid: 2 },
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
     'security': { label: 'SEGURIDAD', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
-    'drunk': { label: 'Bread&Water', color: '#d9a441', icon: 'drunk', defaultLen: 1, defaultWid: 1 },
+    'drunk': { label: 'BREAD & WATHER', color: '#d9a441', icon: 'drunk', defaultLen: 1, defaultWid: 1 },
     'fence': { label: 'VALLA DE OBRA', color: '#f39c12', icon: 'fence' },
     'panic-fence': { label: 'VALLA ANTIPÁNICO', color: '#95a5a6', icon: 'panic-fence' },
     'signal-parking': { label: 'PARKING', color: '#3498db', icon: 'parking', defaultLen: 4, defaultWid: 4 },

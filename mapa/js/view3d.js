@@ -77,9 +77,13 @@ function median(numbers) {
 // Con un único punto (el centro) un objeto ancho o largo podía quedar con un
 // extremo bien apoyado y el otro literalmente hundido en el suelo en cuanto
 // el terreno tenía algo de pendiente bajo su huella -"la valla/el escenario/
-// la barra están enterrados"-. Apoyarse en el punto más alto dentro de la
-// huella deja como mucho un pequeño hueco en el lado bajo, mucho menos
-// llamativo que atravesar el suelo.
+// la barra están enterrados"-. Apoyarse en el punto más alto de la huella
+// evita que se hunda, pero por sí solo deja un hueco en el lado bajo (el
+// objeto queda plano y en el aire por ese lado) en cuanto hay pendiente real
+// -por eso se combina con una "plataforma" nivelada en el propio terreno
+// (ver terrainPads/computeGroundHeight más abajo): así el suelo se ve
+// allanado bajo el elemento, como una obra real prepararía el sitio, en vez
+// de quedar el objeto suspendido sobre la pendiente.
 function groundHeightForFootprint(x, z, length, width, rotationDeg) {
 	const rotY = -((rotationDeg || 0) * Math.PI) / 180; // mismo criterio que el resto de la vista 3D (ver group.rotation.y)
 	const hl = (length || 0) / 2;
@@ -95,6 +99,45 @@ function groundHeightForFootprint(x, z, length, width, rotationDeg) {
 		if (h > maxH) maxH = h;
 	}
 	return maxH;
+}
+
+// Elementos con huella real (ver drawElements) para los que el suelo se
+// allana localmente a su altura de apoyo -"plataforma" nivelada, como
+// prepararía de verdad el montaje en un terreno con pendiente-: {x, z,
+// halfLength, halfWidth, rotY, padY}. Se reinicia en cada generate3DView().
+let terrainPads = [];
+// Ancho de la transición entre la plataforma nivelada y el terreno natural
+// de alrededor, en metros: un corte a pico (sin transición) se vería como un
+// escalón artificial; con esto se funde suavemente en la pendiente real.
+const TERRAIN_PAD_MARGIN = 1.5;
+
+// 1 dentro de la huella, 0 a partir de "margin" fuera de ella, con una
+// transición suave (coseno, no lineal) en medio.
+function terrainPadWeight(localX, localZ, halfLength, halfWidth, margin) {
+	const dx = Math.max(Math.abs(localX) - halfLength, 0);
+	const dz = Math.max(Math.abs(localZ) - halfWidth, 0);
+	const dist = Math.sqrt(dx * dx + dz * dz);
+	if (dist <= 0) return 1;
+	if (dist >= margin) return 0;
+	return 0.5 * (1 + Math.cos((dist / margin) * Math.PI));
+}
+
+// Altura del suelo en un punto del plano, ya con las plataformas niveladas
+// aplicadas: se usa para CONSTRUIR la malla del suelo (ver generate3DView),
+// no para decidir dónde se apoya cada elemento -eso sigue siendo
+// groundHeightForFootprint, sobre el terreno natural sin allanar-.
+function computeGroundHeight(vx, vy) {
+	const rawH = getTerrainHeight(vx, vy);
+	if (!terrainPads.length) return rawH;
+	const worldX = vx, worldZ = -vy;
+	let bestWeight = 0, bestPadY = rawH;
+	const v = new THREE.Vector3();
+	for (const pad of terrainPads) {
+		v.set(worldX - pad.x, 0, worldZ - pad.z).applyAxisAngle(UP_AXIS, -pad.rotY);
+		const w = terrainPadWeight(v.x, v.z, pad.halfLength, pad.halfWidth, TERRAIN_PAD_MARGIN);
+		if (w > bestWeight) { bestWeight = w; bestPadY = pad.padY; }
+	}
+	return rawH * (1 - bestWeight) + bestPadY * bestWeight;
 }
 
 // Consulta elevación real en una rejilla NxN sobre el recinto, vía nuestro
@@ -518,6 +561,7 @@ function generate3DViewInner(style) {
 	// llega la nueva (ver fetchTerrainElevation más abajo).
 	terrainElevGrid = null;
 	mapFeatureAnchors = [];
+	terrainPads = [];
 	const myTerrainRequestId = ++terrainRequestId;
 	// La escena/cámara/controles de un tour en marcha quedan obsoletos en
 	// cuanto se regenera la vista (p.ej. se editó el mapa): no seguir
@@ -733,14 +777,17 @@ function generate3DViewInner(style) {
 	directionalLight.position.set(1, 1, 1);
 	threeScene.add(directionalLight);
 
-	// Relieve del suelo: arranca con el ruido falso (ver getTerrainHeight)
-	// mientras se descarga la elevación real del recinto, para no dejar la
-	// vista bloqueada esperando red. En cuanto llega esa elevación (más
-	// abajo, tras drawElements) se reconstruye con datos reales.
+	// Relieve del suelo: arranca liso (sin datos de elevación real todavía,
+	// ver getTerrainHeight) para no dejar la vista bloqueada esperando red.
+	// En cuanto llega esa elevación (más abajo, tras drawElements) se
+	// reconstruye con datos reales -y, en ambas pasadas, con las
+	// plataformas niveladas bajo cada elemento (ver computeGroundHeight),
+	// que solo se conocen DESPUÉS de llamar a drawElements: por eso el
+	// suelo se reconstruye otra vez justo después de esa llamada.
 	const groundGeometry = new THREE.PlaneGeometry(map3dPlaneSize, map3dPlaneSize, 48, 48);
 	const groundPos = groundGeometry.attributes.position;
 	for (let i = 0; i < groundPos.count; i++) {
-		groundPos.setZ(i, getTerrainHeight(groundPos.getX(i), groundPos.getY(i)));
+		groundPos.setZ(i, computeGroundHeight(groundPos.getX(i), groundPos.getY(i)));
 	}
 	groundPos.needsUpdate = true;
 	groundGeometry.computeVertexNormals();
@@ -809,6 +856,20 @@ function generate3DViewInner(style) {
 
 	drawElements(elements, threeScene);
 
+	// drawElements acaba de rellenar "terrainPads" (una plataforma nivelada
+	// por cada elemento con huella real): el suelo ya se construyó ANTES de
+	// saber esto, así que se reconstruye una vez más ahora para allanarlo
+	// bajo cada elemento -si no, el primer fotograma se veía sin allanar
+	// hasta que llegara la elevación real (o nunca, si esa petición fallaba).
+	{
+		const gPos = groundGeometry.attributes.position;
+		for (let i = 0; i < gPos.count; i++) {
+			gPos.setZ(i, computeGroundHeight(gPos.getX(i), gPos.getY(i)));
+		}
+		gPos.needsUpdate = true;
+		groundGeometry.computeVertexNormals();
+	}
+
 	// Elevación real del recinto (ver fetchTerrainElevation): al llegar,
 	// reconstruye el relieve del suelo y reacomoda cada elemento ya
 	// colocado -y su etiqueta- a la altura real del terreno en su
@@ -819,13 +880,11 @@ function generate3DViewInner(style) {
 		if (!grid || myTerrainRequestId !== terrainRequestId) return;
 		terrainElevGrid = grid;
 
-		const gPos = groundGeometry.attributes.position;
-		for (let i = 0; i < gPos.count; i++) {
-			gPos.setZ(i, getTerrainHeight(gPos.getX(i), gPos.getY(i)));
-		}
-		gPos.needsUpdate = true;
-		groundGeometry.computeVertexNormals();
-
+		// Reajusta cada elemento -y su plataforma nivelada (ver
+		// terrainPads)- ANTES de reconstruir el suelo con esos datos: si no,
+		// el suelo se allanaba a la altura vieja (calculada con el terreno
+		// de la primera pasada) mientras el elemento ya se movía a la
+		// nueva, dejando el mismo hueco/hundimiento que se quería evitar.
 		elements.forEach(el => {
 			// Las vallas SÍ deben reajustarse igual que cualquier otro
 			// elemento: se crean apoyadas en el terreno visible en ese
@@ -849,7 +908,15 @@ function generate3DViewInner(style) {
 				el._threeLabel.position.y = h + localOffset;
 			}
 			el._threeObj.position.y = h;
+			if (el._terrainPad) el._terrainPad.padY = h;
 		});
+
+		const gPos = groundGeometry.attributes.position;
+		for (let i = 0; i < gPos.count; i++) {
+			gPos.setZ(i, computeGroundHeight(gPos.getX(i), gPos.getY(i)));
+		}
+		gPos.needsUpdate = true;
+		groundGeometry.computeVertexNormals();
 
 		// Edificios/árboles reales ya colocados (ver applyMapFeatures): si
 		// Overpass respondió antes que la elevación real, se posicionaron
@@ -1399,6 +1466,27 @@ function drawElements(elements, threeScene) {
 		// con el ruido de respaldo: los elementos parecían flotar o hundirse
 		// según el punto, independientemente de si había datos reales o no.
 		const groundY = groundHeightForFootprint(pos.x, pos.z, element.length, element.width, element.rotation);
+		// Nivela una "plataforma" en el propio terreno bajo su huella (ver
+		// computeGroundHeight/terrainPads): sin esto, apoyarse en el punto
+		// más alto dejaba el objeto plano y en el aire por el lado bajo en
+		// cuanto había pendiente real -"apoyando en un lado y el otro en el
+		// aire"-, en vez de verse como si el sitio se hubiera preparado de
+		// verdad para el montaje.
+		const terrainPad = {
+			x: pos.x, z: pos.z,
+			halfLength: (element.length || 0) / 2,
+			halfWidth: (element.width || 0) / 2,
+			rotY: -((element.rotation || 0) * Math.PI) / 180,
+			padY: groundY
+		};
+		terrainPads.push(terrainPad);
+		// Referencia guardada en el propio elemento para poder actualizar
+		// "padY" cuando llegue la elevación real (ver más abajo, junto al
+		// reajuste de altura de "elements"): sin esto no habría forma de
+		// encontrar de vuelta la plataforma de ESTE elemento -el orden de
+		// "terrainPads" no tiene por qué corresponderse con el de
+		// "elements" si algún otro elemento falló y quedó fuera.
+		element._terrainPad = terrainPad;
 
 		if (element.type === 'main-stage') {
             obj3d = createStageModel(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);

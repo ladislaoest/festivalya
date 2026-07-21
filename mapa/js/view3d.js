@@ -198,60 +198,41 @@ const MAP_FEATURES_MAX_TREES = 200;
 // se coma todo el presupuesto de MAP_FEATURES_MAX_TREES.
 const MAP_FEATURES_MAX_FOREST_TREES = 260;
 
-// Edificios y árboles reales alrededor del recinto (Overpass API sobre
-// datos de OpenStreetMap, gratis y sin API key): sin esto, por mucho
-// relieve que tenga el suelo, los edificios/árboles de verdad seguían
-// siendo solo la textura plana del satélite. Un "way" con building=* trae
-// su contorno completo con "out geom" (sin una segunda consulta), y los
-// nodos con natural=tree dan los árboles sueltos. Si falla (sin red,
-// timeout, servicio saturado -Overpass es compartido y a veces va lento)
-// se ignora en silencio: es una mejora visual, no algo crítico como el
-// propio recinto.
-// Overpass es un servicio compartido y gratuito: la instancia principal se
-// satura con facilidad (504) en horas punta. Se prueban un par de espejos
-// públicos conocidos antes de rendirse.
-const OVERPASS_ENDPOINTS = [
-	'https://overpass-api.de/api/interpreter',
-	'https://overpass.openstreetmap.fr/api/interpreter',
-	'https://overpass.kumi.systems/api/interpreter'
-];
-
+// Edificios y árboles reales alrededor del recinto, vía nuestro propio
+// proxy /api/map-features (ver server.js): éste ya habla con Overpass -sobre
+// datos de OpenStreetMap- probando varios espejos y CACHEANDO por recinto,
+// así que una vista que ya se pidió antes (por este usuario o cualquier
+// otro) no vuelve a depender de que Overpass esté arriba en ese momento. Sin
+// esto, por mucho relieve que tenga el suelo, los edificios/árboles de
+// verdad seguían siendo solo la textura plana del satélite -Overpass es un
+// servicio compartido y gratuito que se satura con facilidad (504 visto en
+// pruebas reales)-. Si aun así falla, se ignora: es una mejora visual, no
+// algo crítico como el propio recinto.
 async function fetchMapFeatures(bbox) {
-	const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
-	// La mayoría de la vegetación real de OSM no está etiquetada árbol a
-	// árbol (natural=tree es minoritario, solo en parques bien mapeados):
-	// el grueso viene como polígono de masa forestal (natural=wood,
-	// landuse=forest). Sin esto, casi nunca se veían árboles reales aunque
-	// el recinto estuviera rodeado de bosque de verdad.
-	const query = `[out:json][timeout:20];(way["building"](${bboxStr});node["natural"="tree"](${bboxStr});way["natural"="wood"](${bboxStr});way["landuse"="forest"](${bboxStr}););out geom;`;
-
 	let data = null;
-	for (const endpoint of OVERPASS_ENDPOINTS) {
-		try {
-			const controller = new AbortController();
-			const timeoutId = setTimeout(() => controller.abort(), 20000);
-			const res = await fetch(endpoint, {
-				method: 'POST',
-				body: 'data=' + encodeURIComponent(query),
-				signal: controller.signal
-			});
-			clearTimeout(timeoutId);
-			if (!res.ok) continue;
-			data = await res.json();
-			break;
-		} catch (err) {
-			console.warn(`[3D] Fallo consultando ${endpoint}, se prueba el siguiente.`, err);
+	try {
+		const controller = new AbortController();
+		const timeoutId = setTimeout(() => controller.abort(), 55000); // el proxy ya prueba varios espejos en serie
+		const res = await fetch('/api/map-features', {
+			method: 'POST',
+			headers: { 'Content-Type': 'application/json' },
+			body: JSON.stringify({ bbox }),
+			signal: controller.signal
+		});
+		clearTimeout(timeoutId);
+		if (res.ok) {
+			const json = await res.json();
+			if (Array.isArray(json.elements)) data = json.elements;
 		}
+	} catch (err) {
+		console.warn('[3D] No se pudieron obtener edificios/árboles reales, se omiten.', err);
 	}
-	if (!data) {
-		console.warn('[3D] No se pudieron obtener edificios/árboles reales (todos los servidores de Overpass fallaron), se omiten.');
-		return null;
-	}
+	if (!data) return null;
 
 	const buildings = [];
 	const trees = [];
 	const forests = [];
-	for (const el of data.elements) {
+	for (const el of data) {
 		if (el.type === 'way' && el.tags && el.tags.building && el.geometry && el.geometry.length >= 3) {
 			if (buildings.length >= MAP_FEATURES_MAX_BUILDINGS) continue;
 			let height = parseFloat(el.tags.height);

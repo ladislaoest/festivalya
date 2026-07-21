@@ -44,6 +44,95 @@ app.get('/api/projects', (req, res) => {
     });
 });
 
+// Proxy de edificios/árboles reales (Overpass sobre datos de OpenStreetMap):
+// igual que con la elevación, pasar por nuestro servidor evita depender de
+// que ESE navegador concreto llegue a uno de los espejos públicos a tiempo,
+// y de paso permite cachear -Overpass es compartido y se satura con
+// facilidad (504 visto en pruebas reales), y los edificios/árboles de un
+// mismo recinto no cambian de un minuto a otro, así que no tiene sentido
+// volver a pedirlos cada vez que alguien abre la vista 3D de ese festival.
+const OVERPASS_ENDPOINTS = [
+    // Orden por fiabilidad comprobada, no alfabético: "overpass.osm.ch" se
+    // quitó de la lista porque responde 200 con la base de datos vacía en
+    // vez de fallar limpiamente -eso hacía que el proxy se conformara con
+    // "sin edificios" en vez de seguir probando el resto-, peor que un
+    // fallo honesto. Los dos primeros son los que de verdad devuelven datos
+    // completos en las pruebas; los últimos quedan como último recurso.
+    'https://overpass.openstreetmap.fr/api/interpreter',
+    'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+    'https://overpass-api.de/api/interpreter',
+    'https://overpass.kumi.systems/api/interpreter'
+];
+const MAP_FEATURES_CACHE_TTL_MS = 6 * 60 * 60 * 1000; // 6h: edificios/árboles no cambian de un momento a otro
+const MAP_FEATURES_CACHE_MAX_ENTRIES = 300;
+const mapFeaturesCache = new Map(); // clave -> { data, at }
+
+function mapFeaturesCacheKey(bbox) {
+    // Redondeado a ~11m (4 decimales): así una vista casi idéntica (mismo
+    // recinto, zoom ligeramente distinto) reutiliza la misma entrada en vez
+    // de fallar el caché por un margen insignificante.
+    const r = (n) => Math.round(n * 10000) / 10000;
+    return `${r(bbox.minLat)},${r(bbox.minLng)},${r(bbox.maxLat)},${r(bbox.maxLng)}`;
+}
+
+app.post('/api/map-features', async (req, res) => {
+    const { bbox } = req.body || {};
+    if (!bbox || !isFinite(bbox.minLat) || !isFinite(bbox.minLng) || !isFinite(bbox.maxLat) || !isFinite(bbox.maxLng)) {
+        return res.status(400).json({ message: 'bbox {minLat, minLng, maxLat, maxLng} requerido.' });
+    }
+
+    const cacheKey = mapFeaturesCacheKey(bbox);
+    const cached = mapFeaturesCache.get(cacheKey);
+    if (cached && (Date.now() - cached.at) < MAP_FEATURES_CACHE_TTL_MS) {
+        return res.json({ elements: cached.data, cached: true });
+    }
+
+    const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    const query = `[out:json][timeout:20];(way["building"](${bboxStr});node["natural"="tree"](${bboxStr});way["natural"="wood"](${bboxStr});way["landuse"="forest"](${bboxStr}););out geom;`;
+
+    let data = null;
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000); // hay 4 espejos que probar en serie, ver OVERPASS_ENDPOINTS
+            const r = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'data=' + encodeURIComponent(query),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!r.ok) continue;
+            const json = await r.json();
+            if (!Array.isArray(json.elements)) continue;
+            if (json.elements.length > 0) { data = json.elements; break; }
+            // Responde con éxito pero sin resultados: puede ser un área
+            // realmente vacía, o un espejo con la base de datos incompleta
+            // -se ha visto en vivo un espejo devolver 200 con la base
+            // vacía-. Se guarda por si ningún otro da algo mejor, pero se
+            // sigue intentando antes de conformarse con esto.
+            if (data === null) data = json.elements;
+        } catch (err) {
+            console.warn(`[map-features] Fallo consultando ${endpoint}, se prueba el siguiente:`, err.message);
+        }
+    }
+
+    if (!data) {
+        // Si había una entrada vieja en caché (pasado el TTL) es mejor
+        // servirla igual que dejar la vista 3D sin edificios/árboles del
+        // todo: casi seguro sigue siendo válida.
+        if (cached) return res.json({ elements: cached.data, cached: true, stale: true });
+        return res.status(502).json({ message: 'No se pudieron obtener edificios/árboles reales (todos los servidores de Overpass fallaron).' });
+    }
+
+    if (mapFeaturesCache.size >= MAP_FEATURES_CACHE_MAX_ENTRIES) {
+        const oldestKey = mapFeaturesCache.keys().next().value;
+        mapFeaturesCache.delete(oldestKey);
+    }
+    mapFeaturesCache.set(cacheKey, { data, at: Date.now() });
+    res.json({ elements: data, cached: false });
+});
+
 // Proxy de elevación real del terreno: el propio navegador ya podía llamar
 // directo a Open-Elevation (y de hecho así era antes), pero eso ata la vista
 // 3D a que ESE único servicio gratuito y sin SLA esté arriba en ese momento

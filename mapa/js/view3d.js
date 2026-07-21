@@ -87,6 +87,12 @@ function getTerrainHeight(x, y) {
 
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
 
+function median(numbers) {
+	const sorted = [...numbers].sort((a, b) => a - b);
+	const mid = Math.floor(sorted.length / 2);
+	return sorted.length % 2 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+}
+
 // Altura de apoyo para un elemento con extensión real (escenario, valla,
 // barra...), no solo un punto: muestrea el terreno en las esquinas/extremos
 // de su huella real (girada según su rotación) y se queda con la MÁS ALTA.
@@ -527,7 +533,7 @@ function generate3DViewInner(style) {
 	// directamente fuera, viéndose solo su etiqueta flotante.
 	let center;
 	if (elements.length > 0) {
-		let minLat = Infinity, maxLat = -Infinity, minLng = Infinity, maxLng = -Infinity;
+		const lats = [], lngs = [];
 		elements.forEach(el => {
 			// Un elemento sin moveMarker válido (datos viejos/corruptos) no
 			// debe abortar toda la generación de la vista 3D -eso dejaba la
@@ -540,15 +546,23 @@ function generate3DViewInner(style) {
 				// tamaño del plano y a la posición de la cámara sin ningún
 				// error visible): de ahí el "todo violeta" sin pista alguna.
 				if (!isFinite(ll.lat) || !isFinite(ll.lng)) throw new Error('coordenada no finita');
-				minLat = Math.min(minLat, ll.lat);
-				maxLat = Math.max(maxLat, ll.lat);
-				minLng = Math.min(minLng, ll.lng);
-				maxLng = Math.max(maxLng, ll.lng);
+				lats.push(ll.lat);
+				lngs.push(ll.lng);
 			} catch (err) {
 				console.error('[3D] Elemento con coordenadas inválidas, se ignora:', el && el.type, el && el.id, err);
 			}
 		});
-		center = (minLat !== Infinity) ? L.latLng((minLat + maxLat) / 2, (minLng + maxLng) / 2) : map.getCenter();
+		// Mediana, no el punto medio de min/max: con min/max, un único
+		// elemento perdido lejos del resto (dato viejo/corrupto, pero con
+		// coordenadas finitas -no lo detecta la guarda de arriba-) arrastra
+		// igualmente el centro justo a medio camino hacia él. El recinto
+		// real -el resto de elementos, agrupados entre sí- quedaba centrado
+		// en un punto equivocado: la cámara/suelo se armaban ahí, y el
+		// recinto de verdad, ahora lejos de ese centro, quedaba fuera de lo
+		// visible -"se ve el mapa pero sin los elementos"-. La mediana
+		// ignora esa clase de valores atípicos mientras sean menos de la
+		// mitad de los elementos.
+		center = lats.length ? L.latLng(median(lats), median(lngs)) : map.getCenter();
 	} else {
 		center = map.getCenter();
 	}

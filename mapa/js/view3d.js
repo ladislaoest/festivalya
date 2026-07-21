@@ -26,7 +26,15 @@ const TOUR_TRANSITION_MS = 1200;
 // el terreno real viene casi plano - ver fetchTerrainElevation).
 function terrainNoiseShape(x, y) {
 	return 0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
-		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7);
+		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7)
+		// Onda corta (~18m de periodo): las dos anteriores varían en escalas
+		// de 70-140m, así que dentro del área que realmente se ve con la
+		// cámara por defecto -encuadrada de cerca sobre los propios
+		// elementos, no sobre todo el plano- apenas cambiaban: dentro de
+		// esos ~15-30m el terreno se veía prácticamente plano aunque el
+		// recinto entero (a más distancia) sí tuviera relieve real. Esta
+		// añade ondulación visible incluso a esa escala corta.
+		+ 0.5 * Math.sin(x * 0.35 + 2.1) * Math.cos(y * 0.28 + 0.4);
 }
 
 // Ruido barato, usado como micro-relieve incluso cuando hay datos de
@@ -79,10 +87,14 @@ function getTerrainHeight(x, y) {
 	const h11 = values[j1 * size + i1];
 	const h0 = h00 * (1 - fu) + h10 * fu;
 	const h1 = h01 * (1 - fu) + h11 * fu;
-	// El detalle fino ya es más discreto que antes porque la base real (o
-	// su mínimo garantizado) ya se ve por sí sola; si no, competían y se
-	// veía ruidoso en vez de un relieve limpio.
-	return h0 * (1 - fv) + h1 * fv + fakeTerrainNoise(x, y) * 0.15;
+	// El detalle fino se suma siempre (real o no) para que la cámara, que
+	// por defecto encuadra de cerca sobre los propios elementos -no sobre
+	// todo el plano-, vea ondulación aunque el terreno real sea localmente
+	// casi plano justo ahí (la rejilla real interpola en celdas de decenas
+	// de metros, lisas a esa escala). Antes se atenuaba mucho (0.15) para
+	// no "competir" visualmente con el relieve base, pero eso lo dejaba
+	// imperceptible precisamente donde más se mira.
+	return h0 * (1 - fv) + h1 * fv + fakeTerrainNoise(x, y) * 0.8;
 }
 
 const UP_AXIS = new THREE.Vector3(0, 1, 0);

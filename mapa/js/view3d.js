@@ -50,6 +50,13 @@ function fakeTerrainNoise(x, y) {
 // una ubicación/tamaño de plano distintos mientras llega la nueva.
 let terrainElevGrid = null;
 let terrainRequestId = 0;
+// Edificios/árboles reales ya colocados (ver applyMapFeatures) pendientes de
+// reanclar a la altura real del terreno en cuanto llegue (ver más abajo,
+// junto al reajuste de "elements"): {mesh, ax, az, offset}, donde ax/az son
+// las coordenadas tal cual las espera getTerrainHeight y "offset" es la
+// distancia vertical fija por encima de esa altura (0 para un edificio,
+// la altura del tronco/copa para un árbol).
+let mapFeatureAnchors = [];
 const TERRAIN_GRID_SIZE = 9;
 const TERRAIN_EXAGGERATION = 3.5;
 // Metros absolutos, no relativos al tamaño del plano (ver fakeTerrainNoise):
@@ -254,7 +261,9 @@ function applyMapFeatures(data, bbox, scene) {
 			// necesita más que apoyarse a la altura real del terreno bajo
 			// su primer punto.
 			const base = latLngToPlane(b.points[0].lat, b.points[0].lon, bbox);
-			mesh.position.y = getTerrainHeight(base.x, -base.z);
+			const ax = base.x, az = -base.z;
+			mesh.position.y = getTerrainHeight(ax, az);
+			mapFeatureAnchors.push({ mesh, ax, az, offset: 0 });
 			group.add(mesh);
 		} catch (err) {
 			console.warn('[3D] Edificio omitido (contorno inválido).', err);
@@ -265,15 +274,20 @@ function applyMapFeatures(data, bbox, scene) {
 	const canopyMat = new THREE.MeshStandardMaterial({ color: 0x3f7d3f });
 
 	function addTreeAt(x, z) {
-		const h = getTerrainHeight(x, -z);
+		const az = -z;
+		const h = getTerrainHeight(x, az);
 		const treeHeight = 2.2 + Math.random() * 1.6;
 
+		const trunkOffset = treeHeight * 0.2;
 		const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, treeHeight * 0.4, 6), trunkMat);
-		trunk.position.set(x, h + treeHeight * 0.2, z);
+		trunk.position.set(x, h + trunkOffset, z);
+		mapFeatureAnchors.push({ mesh: trunk, ax: x, az, offset: trunkOffset });
 		group.add(trunk);
 
+		const canopyOffset = treeHeight * 0.4 + treeHeight * 0.375;
 		const canopy = new THREE.Mesh(new THREE.ConeGeometry(treeHeight * 0.38, treeHeight * 0.75, 8), canopyMat);
-		canopy.position.set(x, h + treeHeight * 0.4 + treeHeight * 0.375, z);
+		canopy.position.set(x, h + canopyOffset, z);
+		mapFeatureAnchors.push({ mesh: canopy, ax: x, az, offset: canopyOffset });
 		group.add(canopy);
 	}
 
@@ -464,6 +478,7 @@ function generate3DViewInner(style) {
 	// anteriores: se descarta para no aplicar datos de otro sitio mientras
 	// llega la nueva (ver fetchTerrainElevation más abajo).
 	terrainElevGrid = null;
+	mapFeatureAnchors = [];
 	const myTerrainRequestId = ++terrainRequestId;
 	// La escena/cámara/controles de un tour en marcha quedan obsoletos en
 	// cuanto se regenera la vista (p.ej. se editó el mapa): no seguir
@@ -517,6 +532,16 @@ function generate3DViewInner(style) {
 
 	// Si los elementos están más lejos del centro que ese tile, agrandamos
 	// el plano para que ninguno quede fuera (o directamente invisible).
+	// Ningún festival real mide más de esto de punta a punta: un solo
+	// elemento con una coordenada válida (finita) pero absurdamente lejana
+	// -p.ej. un arrastre que se fue de madre, o un dato importado de otro
+	// sitio- no lanza ninguna excepción por sí solo (a diferencia de un
+	// NaN), pero disparaba "maxReachMeters" a un valor igual de destructivo:
+	// la cámara se colocaba a esa misma distancia absurda de su objetivo,
+	// muy por detrás del plano de recorte lejano de la cámara (ver
+	// "farPlane" más abajo) -el recinto entero quedaba fuera de lo que la
+	// cámara puede llegar a dibujar, sin ningún error, "todo violeta".
+	const MAX_SANE_REACH_METERS = 3000;
 	let maxReachMeters = 0;
 	elements.forEach(el => {
 		try {
@@ -525,11 +550,8 @@ function generate3DViewInner(style) {
 				? Math.sqrt(Math.pow((el.length || 0) / 2, 2) + Math.pow((el.width || 0) / 2, 2))
 				: (el.length || 0) / 2;
 			const reach = dist + halfExtent;
-			// Mismo riesgo de contaminación por NaN que arriba: un elemento
-			// corrupto podía disparar "maxReachMeters" (y con él el tamaño
-			// del plano y el radio de cámara) a NaN o a un valor absurdo,
-			// dejando la cámara mirando al vacío.
 			if (!isFinite(reach)) throw new Error('alcance no finito');
+			if (reach > MAX_SANE_REACH_METERS) throw new Error(`alcance atípico (${Math.round(reach)}m), se ignora para encuadrar la cámara`);
 			maxReachMeters = Math.max(maxReachMeters, reach);
 		} catch (err) {
 			console.error('[3D] Elemento con coordenadas inválidas, se ignora:', el && el.type, el && el.id, err);
@@ -611,7 +633,12 @@ function generate3DViewInner(style) {
 	const minLat = tile2lat(tileYmax + 1, zoom);
 
 	map3dPlaneSize = (maxLng - minLng) * 111320 * Math.cos(center.lat * Math.PI / 180);
-	const farPlane = Math.max(1000, map3dPlaneSize * 4);
+	// "cameraFitRadius" (más abajo) puede superar "map3dPlaneSize" -el suelo
+	// se ajusta al mosaico de tiles, no al alcance real de los elementos-,
+	// así que el plano de recorte lejano tiene que cubrir también ese
+	// alcance: si la cámara queda más lejos de su objetivo que "farPlane",
+	// TODO lo que hay que ver cae fuera del frustum y no se dibuja nada.
+	const farPlane = Math.max(1000, map3dPlaneSize * 4, maxReachMeters * 6);
 
 	threeScene = new THREE.Scene();
 	threeCamera = new THREE.PerspectiveCamera(75, container.offsetWidth / container.offsetHeight, 0.1, farPlane);
@@ -731,10 +758,28 @@ function generate3DViewInner(style) {
 		groundGeometry.computeVertexNormals();
 
 		elements.forEach(el => {
-			if (!el._threeObj || el.type === 'fence' || el.type === 'panic-fence') return;
+			// Las vallas SÍ deben reajustarse igual que cualquier otro
+			// elemento: se crean a y=0 (ver drawElements/createConstruction-
+			// FenceSegment) y de quedar excluidas aquí -como antes- se
+			// quedaban ancladas a esa altura fija para siempre. En cuanto el
+			// relieve real llegaba (con el suelo ya ondulado de verdad, ver
+			// más arriba) y el terreno subía por encima de y=0 en su punto,
+			// la valla quedaba literalmente enterrada bajo el suelo: se veía
+			// bien un instante -mientras solo estaba el ruido falso, cercano
+			// a 0- y luego "desaparecía" en cuanto se aplicaba el relieve real.
+			if (!el._threeObj) return;
 			const h = getTerrainHeight(el._threeObj.position.x, -el._threeObj.position.z);
 			if (el._threeLabel) el._threeLabel.position.y += h;
 			el._threeObj.position.y = h;
+		});
+
+		// Edificios/árboles reales ya colocados (ver applyMapFeatures): si
+		// Overpass respondió antes que la elevación real, se posicionaron
+		// con el ruido falso de entonces y se quedaban así para siempre
+		// -"sin relieve"-, sin enterarse de que ya hay datos reales. Se
+		// reancla cada uno a su altura real, igual que los elementos.
+		mapFeatureAnchors.forEach(a => {
+			a.mesh.position.y = getTerrainHeight(a.ax, a.az) + a.offset;
 		});
 
 		// La cámara (y el punto al que mira) se posicionaron antes de saber

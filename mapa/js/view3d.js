@@ -164,34 +164,91 @@ const MAP_FEATURES_MAX_TREES = 200;
 // se coma todo el presupuesto de MAP_FEATURES_MAX_TREES.
 const MAP_FEATURES_MAX_FOREST_TREES = 260;
 
-// Edificios y árboles reales alrededor del recinto, vía nuestro propio
-// proxy /api/map-features (ver server.js): éste ya habla con Overpass -sobre
-// datos de OpenStreetMap- probando varios espejos y CACHEANDO por recinto,
-// así que una vista que ya se pidió antes (por este usuario o cualquier
-// otro) no vuelve a depender de que Overpass esté arriba en ese momento. Sin
-// esto, por mucho relieve que tenga el suelo, los edificios/árboles de
-// verdad seguían siendo solo la textura plana del satélite -Overpass es un
-// servicio compartido y gratuito que se satura con facilidad (504 visto en
-// pruebas reales)-. Si aun así falla, se ignora: es una mejora visual, no
-// algo crítico como el propio recinto.
+const OVERPASS_ENDPOINTS = [
+	'https://overpass.openstreetmap.fr/api/interpreter',
+	'https://maps.mail.ru/osm/tools/overpass/api/interpreter',
+	'https://overpass-api.de/api/interpreter',
+	'https://overpass.kumi.systems/api/interpreter'
+];
+
+async function queryOverpassMirror(endpoint, query, signal) {
+	const res = await fetch(endpoint, { method: 'POST', body: 'data=' + encodeURIComponent(query), signal });
+	if (!res.ok) throw new Error(`${endpoint} status ${res.status}`);
+	const json = await res.json();
+	if (!Array.isArray(json.elements)) throw new Error(`${endpoint}: respuesta sin "elements"`);
+	return json.elements;
+}
+
+// Lanza varios espejos en paralelo y se queda con el primero que traiga
+// resultados no vacíos (o, si el margen de tiempo se agota, con el mejor
+// 200-pero-vacío que haya llegado -algunos espejos responden así con la
+// base de datos rota, visto en vivo con overpass.osm.ch- en vez de nada).
+function raceFirstNonEmpty(factories, overallTimeoutMs) {
+	return new Promise((resolve) => {
+		let settled = false, remaining = factories.length, bestEmpty = null;
+		const finish = (value) => { if (settled) return; settled = true; clearTimeout(timer); resolve(value); };
+		const timer = setTimeout(() => finish(bestEmpty), overallTimeoutMs);
+		factories.forEach(async (factory) => {
+			try {
+				const elements = await factory();
+				if (elements.length > 0) { finish(elements); return; }
+				if (bestEmpty === null) bestEmpty = elements;
+			} catch (err) {
+				// se ignora, puede que otro espejo sí responda
+			} finally {
+				remaining--;
+				if (remaining === 0) finish(bestEmpty);
+			}
+		});
+	});
+}
+
+// Edificios y árboles reales alrededor del recinto: se prueba Overpass
+// DIRECTO desde el navegador primero -con la IP real de quien lo usa, no de
+// un proveedor cloud-, ya que los espejos públicos son notoriamente hostiles
+// al tráfico que viene de rangos de IP compartidos de nube (comprobado en
+// vivo: el mismo espejo responde en un segundo desde una conexión normal,
+// pero se cuelga sistemáticamente cuando la petición sale desde el propio
+// servidor en Vercel). Solo si eso falla del todo se recurre al proxy propio
+// (/api/map-features), que además cachea por si alguna petición anterior sí
+// consiguió pasar. Si ambos fallan, se ignora: es una mejora visual, no algo
+// crítico como el propio recinto.
 async function fetchMapFeatures(bbox) {
+	const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+	const query = `[out:json][timeout:20];(way["building"](${bboxStr});node["natural"="tree"](${bboxStr});way["natural"="wood"](${bboxStr});way["landuse"="forest"](${bboxStr}););out geom;`;
+
 	let data = null;
 	try {
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 55000); // el proxy ya prueba varios espejos en serie
-		const res = await fetch('/api/map-features', {
-			method: 'POST',
-			headers: { 'Content-Type': 'application/json' },
-			body: JSON.stringify({ bbox }),
-			signal: controller.signal
-		});
+		const timeoutId = setTimeout(() => controller.abort(), 20000);
+		data = await raceFirstNonEmpty(
+			OVERPASS_ENDPOINTS.map(endpoint => () => queryOverpassMirror(endpoint, query, controller.signal)),
+			20000
+		);
 		clearTimeout(timeoutId);
-		if (res.ok) {
-			const json = await res.json();
-			if (Array.isArray(json.elements)) data = json.elements;
-		}
+		controller.abort();
 	} catch (err) {
-		console.warn('[3D] No se pudieron obtener edificios/árboles reales, se omiten.', err);
+		console.warn('[3D] Fallo consultando Overpass directo, se prueba el proxy propio.', err);
+	}
+
+	if (!data) {
+		try {
+			const controller = new AbortController();
+			const timeoutId = setTimeout(() => controller.abort(), 20000);
+			const res = await fetch('/api/map-features', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ bbox }),
+				signal: controller.signal
+			});
+			clearTimeout(timeoutId);
+			if (res.ok) {
+				const json = await res.json();
+				if (Array.isArray(json.elements)) data = json.elements;
+			}
+		} catch (err) {
+			console.warn('[3D] No se pudieron obtener edificios/árboles reales (ni directo ni por el proxy), se omiten.', err);
+		}
 	}
 	if (!data) return null;
 

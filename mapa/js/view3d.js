@@ -41,7 +41,7 @@ function terrainNoiseShape(x, y) {
 // suelo) quedaban muy por encima de donde mira la cámara -"todo violeta",
 // sin ningún error, porque el escenario literalmente flotaba a 100m.
 function fakeTerrainNoise(x, y) {
-	return 1.6 * terrainNoiseShape(x, y);
+	return 2.5 * terrainNoiseShape(x, y);
 }
 
 // Relieve real del recinto (ver fetchTerrainElevation): una rejilla NxN de
@@ -55,7 +55,7 @@ const TERRAIN_EXAGGERATION = 3.5;
 // Metros absolutos, no relativos al tamaño del plano (ver fakeTerrainNoise):
 // un festival real rara vez tiene más de unos pocos metros de desnivel real,
 // así que ni el mínimo garantizado ni el tope necesitan crecer con el zoom.
-const TERRAIN_MIN_RELIEF_ABS = 3; // amplitud mínima garantizada, en metros
+const TERRAIN_MIN_RELIEF_ABS = 6; // amplitud mínima garantizada, en metros
 const TERRAIN_MAX_RELIEF_ABS = 40; // tope de amplitud, en metros (terreno realmente montañoso)
 
 function getTerrainHeight(x, y) {
@@ -98,7 +98,15 @@ async function fetchTerrainElevation(bbox, planeSize) {
 	}
 	try {
 		const controller = new AbortController();
-		const timeoutId = setTimeout(() => controller.abort(), 8000);
+		// Open-Elevation es un servicio público gratuito y sin SLA: una
+		// rejilla de 9x9 (81 puntos) tarda normalmente 3-8s pero puede
+		// superar fácilmente ese margen bajo carga. Como esta petición nunca
+		// bloquea la interfaz -el relieve se actualiza solo cuando llega,
+		// mientras tanto se ve el respaldo simulado-, un timeout corto solo
+		// tira trabajo válido a la basura: mejor esperar más antes de
+		// resignarse al relieve simulado, que es justo lo que se veía como
+		// "el mapa aparece plano".
+		const timeoutId = setTimeout(() => controller.abort(), 18000);
 		const res = await fetch('https://api.open-elevation.com/api/v1/lookup', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
@@ -143,6 +151,10 @@ async function fetchTerrainElevation(bbox, planeSize) {
 
 const MAP_FEATURES_MAX_BUILDINGS = 150;
 const MAP_FEATURES_MAX_TREES = 200;
+// Árboles esparcidos dentro de zonas de bosque/parque reales (ver más abajo):
+// aparte del límite de árboles sueltos, para que una masa forestal grande no
+// se coma todo el presupuesto de MAP_FEATURES_MAX_TREES.
+const MAP_FEATURES_MAX_FOREST_TREES = 260;
 
 // Edificios y árboles reales alrededor del recinto (Overpass API sobre
 // datos de OpenStreetMap, gratis y sin API key): sin esto, por mucho
@@ -158,18 +170,24 @@ const MAP_FEATURES_MAX_TREES = 200;
 // públicos conocidos antes de rendirse.
 const OVERPASS_ENDPOINTS = [
 	'https://overpass-api.de/api/interpreter',
+	'https://overpass.openstreetmap.fr/api/interpreter',
 	'https://overpass.kumi.systems/api/interpreter'
 ];
 
 async function fetchMapFeatures(bbox) {
 	const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
-	const query = `[out:json][timeout:15];(way["building"](${bboxStr});node["natural"="tree"](${bboxStr}););out geom;`;
+	// La mayoría de la vegetación real de OSM no está etiquetada árbol a
+	// árbol (natural=tree es minoritario, solo en parques bien mapeados):
+	// el grueso viene como polígono de masa forestal (natural=wood,
+	// landuse=forest). Sin esto, casi nunca se veían árboles reales aunque
+	// el recinto estuviera rodeado de bosque de verdad.
+	const query = `[out:json][timeout:20];(way["building"](${bboxStr});node["natural"="tree"](${bboxStr});way["natural"="wood"](${bboxStr});way["landuse"="forest"](${bboxStr}););out geom;`;
 
 	let data = null;
 	for (const endpoint of OVERPASS_ENDPOINTS) {
 		try {
 			const controller = new AbortController();
-			const timeoutId = setTimeout(() => controller.abort(), 15000);
+			const timeoutId = setTimeout(() => controller.abort(), 20000);
 			const res = await fetch(endpoint, {
 				method: 'POST',
 				body: 'data=' + encodeURIComponent(query),
@@ -190,6 +208,7 @@ async function fetchMapFeatures(bbox) {
 
 	const buildings = [];
 	const trees = [];
+	const forests = [];
 	for (const el of data.elements) {
 		if (el.type === 'way' && el.tags && el.tags.building && el.geometry && el.geometry.length >= 3) {
 			if (buildings.length >= MAP_FEATURES_MAX_BUILDINGS) continue;
@@ -202,9 +221,12 @@ async function fetchMapFeatures(bbox) {
 		} else if (el.type === 'node' && el.tags && el.tags.natural === 'tree') {
 			if (trees.length >= MAP_FEATURES_MAX_TREES) continue;
 			trees.push({ lat: el.lat, lng: el.lon });
+		} else if (el.type === 'way' && el.tags && (el.tags.natural === 'wood' || el.tags.landuse === 'forest')
+				&& el.geometry && el.geometry.length >= 3) {
+			forests.push({ points: el.geometry });
 		}
 	}
-	return { buildings, trees };
+	return { buildings, trees, forests };
 }
 
 // Construye los edificios (extrusión del contorno real a su altura, o 6m
@@ -241,26 +263,87 @@ function applyMapFeatures(data, bbox, scene) {
 
 	const trunkMat = new THREE.MeshStandardMaterial({ color: 0x6b4a30 });
 	const canopyMat = new THREE.MeshStandardMaterial({ color: 0x3f7d3f });
+
+	function addTreeAt(x, z) {
+		const h = getTerrainHeight(x, -z);
+		const treeHeight = 2.2 + Math.random() * 1.6;
+
+		const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, treeHeight * 0.4, 6), trunkMat);
+		trunk.position.set(x, h + treeHeight * 0.2, z);
+		group.add(trunk);
+
+		const canopy = new THREE.Mesh(new THREE.ConeGeometry(treeHeight * 0.38, treeHeight * 0.75, 8), canopyMat);
+		canopy.position.set(x, h + treeHeight * 0.4 + treeHeight * 0.375, z);
+		group.add(canopy);
+	}
+
 	data.trees.forEach(t => {
 		try {
 			const planePos = latLngToPlane(t.lat, t.lng, bbox);
 			if (!isFinite(planePos.x) || !isFinite(planePos.z)) return;
-			const h = getTerrainHeight(planePos.x, -planePos.z);
-			const treeHeight = 2.2 + Math.random() * 1.6;
-
-			const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, treeHeight * 0.4, 6), trunkMat);
-			trunk.position.set(planePos.x, h + treeHeight * 0.2, planePos.z);
-			group.add(trunk);
-
-			const canopy = new THREE.Mesh(new THREE.ConeGeometry(treeHeight * 0.38, treeHeight * 0.75, 8), canopyMat);
-			canopy.position.set(planePos.x, h + treeHeight * 0.4 + treeHeight * 0.375, planePos.z);
-			group.add(canopy);
+			addTreeAt(planePos.x, planePos.z);
 		} catch (err) {
 			console.warn('[3D] Árbol omitido (coordenadas inválidas).', err);
 		}
 	});
 
+	// Zonas de bosque/parque reales (natural=wood, landuse=forest): OSM las
+	// da como un polígono de contorno, no árbol a árbol, así que se esparcen
+	// árboles genéricos dentro del contorno (test punto-en-polígono simple)
+	// en vez de dibujar un único bloque -así se lee como masa forestal en
+	// vez de una superficie sólida rara. Presupuesto total limitado
+	// (MAP_FEATURES_MAX_FOREST_TREES) repartido entre todas las zonas según
+	// su área, para no disparar el número de mallas con un bosque grande.
+	let forestTreesLeft = MAP_FEATURES_MAX_FOREST_TREES;
+	(data.forests || []).forEach(f => {
+		if (forestTreesLeft <= 0) return;
+		try {
+			const poly = f.points.map(p => {
+				const pp = latLngToPlane(p.lat, p.lon, bbox);
+				return { x: pp.x, z: -pp.z };
+			});
+			if (poly.some(p => !isFinite(p.x) || !isFinite(p.z))) return;
+
+			let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+			poly.forEach(p => {
+				minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+				minZ = Math.min(minZ, p.z); maxZ = Math.max(maxZ, p.z);
+			});
+			const area = Math.max(0, (maxX - minX) * (maxZ - minZ));
+			// Densidad moderada (un árbol cada ~9m² de caja delimitadora),
+			// recortada al presupuesto restante.
+			const wanted = Math.min(forestTreesLeft, Math.round(area / 9));
+			let placed = 0;
+			let attempts = 0;
+			while (placed < wanted && attempts < wanted * 6) {
+				attempts++;
+				const x = minX + Math.random() * (maxX - minX);
+				const z = minZ + Math.random() * (maxZ - minZ);
+				if (!pointInPolygon(x, z, poly)) continue;
+				addTreeAt(x, z);
+				placed++;
+			}
+			forestTreesLeft -= placed;
+		} catch (err) {
+			console.warn('[3D] Zona de bosque omitida (contorno inválido).', err);
+		}
+	});
+
 	scene.add(group);
+}
+
+// Ray-casting estándar en 2D (plano X/Z): cuenta cruces de una semirrecta
+// horizontal desde el punto hacia +X con cada arista del polígono.
+function pointInPolygon(x, z, poly) {
+	let inside = false;
+	for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+		const xi = poly[i].x, zi = poly[i].z;
+		const xj = poly[j].x, zj = poly[j].z;
+		const intersects = ((zi > z) !== (zj > z))
+			&& (x < (xj - xi) * (z - zi) / (zj - zi) + xi);
+		if (intersects) inside = !inside;
+	}
+	return inside;
 }
 
 const GLTFLoader = window.THREE.GLTFLoader;
@@ -408,6 +491,11 @@ function generate3DViewInner(style) {
 			// que se ignora y se sigue con el resto.
 			try {
 				const ll = el.moveMarker.getLatLng();
+				// Un solo NaN aquí no lanza excepción (Math.min/max con NaN
+				// da NaN, y esa contaminación se arrastra a "center", al
+				// tamaño del plano y a la posición de la cámara sin ningún
+				// error visible): de ahí el "todo violeta" sin pista alguna.
+				if (!isFinite(ll.lat) || !isFinite(ll.lng)) throw new Error('coordenada no finita');
 				minLat = Math.min(minLat, ll.lat);
 				maxLat = Math.max(maxLat, ll.lat);
 				minLng = Math.min(minLng, ll.lng);
@@ -436,7 +524,13 @@ function generate3DViewInner(style) {
 			const halfExtent = el.isRectangle
 				? Math.sqrt(Math.pow((el.length || 0) / 2, 2) + Math.pow((el.width || 0) / 2, 2))
 				: (el.length || 0) / 2;
-			maxReachMeters = Math.max(maxReachMeters, dist + halfExtent);
+			const reach = dist + halfExtent;
+			// Mismo riesgo de contaminación por NaN que arriba: un elemento
+			// corrupto podía disparar "maxReachMeters" (y con él el tamaño
+			// del plano y el radio de cámara) a NaN o a un valor absurdo,
+			// dejando la cámara mirando al vacío.
+			if (!isFinite(reach)) throw new Error('alcance no finito');
+			maxReachMeters = Math.max(maxReachMeters, reach);
 		} catch (err) {
 			console.error('[3D] Elemento con coordenadas inválidas, se ignora:', el && el.type, el && el.id, err);
 		}
@@ -1168,6 +1262,12 @@ function drawElements(elements, threeScene) {
 	  try {
 		const latLng = element.moveMarker.getLatLng();
 		const pos = latLngToPlane(latLng.lat, latLng.lng, bbox);
+		// Una posición no finita no lanza excepción por sí sola: produce una
+		// malla con vértices/esfera acotadora NaN que Three.js recorta en
+		// silencio (frustum culling), invisible sin ningún error en consola
+		// -así podían "desaparecer" vallas u otros elementos concretos
+		// mientras el resto de la escena se veía con normalidad.
+		if (!isFinite(pos.x) || !isFinite(pos.z)) throw new Error('posición no finita');
 		let obj3d;
 
 		if (element.type === 'main-stage') {
@@ -1527,7 +1627,10 @@ function createDrunkFigure(pos, element, scene) {
 // se notaría) y un pie que sobresale en cada extremo.
 function createConstructionFenceSegment(pos, element, scene) {
 	const group = new THREE.Group();
-	const len = Math.max(element.length || 2, 0.5);
+	// Un "length" no finito (dato corrupto/antiguo) rompía la geometría de
+	// los cilindros en silencio -sin lanzar excepción, la valla quedaba con
+	// una esfera acotadora NaN y Three.js la recortaba, invisible-.
+	const len = Number.isFinite(element.length) && element.length > 0 ? Math.max(element.length, 0.5) : 2;
 	const height = 1.0;
 	const barRadius = 0.022;
 	const metalMat = new THREE.MeshStandardMaterial({ color: element.color || 0xf1c40f, metalness: 0.5, roughness: 0.5 });
@@ -1589,7 +1692,8 @@ function createConstructionFenceSegment(pos, element, scene) {
 // horizontales de antes (esa silueta es más de valla peatonal genérica).
 function createPanicFenceSegment(pos, element, scene) {
 	const group = new THREE.Group();
-	const len = Math.max(element.length || 2, 0.5);
+	// Ver misma nota en createConstructionFenceSegment.
+	const len = Number.isFinite(element.length) && element.length > 0 ? Math.max(element.length, 0.5) : 2;
 	const panelHeight = 1.1;
 	const baseDepth = 0.85;
 	const metalMat = new THREE.MeshStandardMaterial({ color: 0xcfd2d4, metalness: 0.55, roughness: 0.4 });

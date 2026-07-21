@@ -20,38 +20,6 @@ let tourActive = false;
 let tourState = null;
 const TOUR_TRANSITION_MS = 1200;
 
-// Forma de ruido "pura" (sin amplitud aplicada, rango aprox. [-0.8, 0.8]):
-// separada de fakeTerrainNoise para poder reutilizar la misma forma con
-// amplitudes distintas (el respaldo sin datos reales, y el relleno cuando
-// el terreno real viene casi plano - ver fetchTerrainElevation).
-function terrainNoiseShape(x, y) {
-	return 0.5 * Math.sin(x * 0.045) * Math.cos(y * 0.06)
-		+ 0.3 * Math.sin(x * 0.09 + 1.3) * Math.sin(y * 0.11 + 0.7)
-		// Onda corta (~18m de periodo): las dos anteriores varían en escalas
-		// de 70-140m, así que dentro del área que realmente se ve con la
-		// cámara por defecto -encuadrada de cerca sobre los propios
-		// elementos, no sobre todo el plano- apenas cambiaban: dentro de
-		// esos ~15-30m el terreno se veía prácticamente plano aunque el
-		// recinto entero (a más distancia) sí tuviera relieve real. Esta
-		// añade ondulación visible incluso a esa escala corta.
-		+ 0.5 * Math.sin(x * 0.35 + 2.1) * Math.cos(y * 0.28 + 0.4);
-}
-
-// Ruido barato, usado como micro-relieve incluso cuando hay datos de
-// elevación reales (para que el suelo no quede perfectamente liso donde el
-// terreno real es casi plano) y como único relieve mientras esos datos no
-// están disponibles o fallan. Amplitud fija en metros absolutos -NO relativa
-// al tamaño del plano-: el plano mide lo que mida el tile visible a este
-// zoom (puede ser de 20 a varios cientos de metros) por motivos que no
-// tienen nada que ver con cuánto sube o baja el terreno de verdad, así que
-// escalar la amplitud con ese tamaño podía disparar el relieve a decenas de
-// metros en un recinto grande: los elementos (colocados a esa altura del
-// suelo) quedaban muy por encima de donde mira la cámara -"todo violeta",
-// sin ningún error, porque el escenario literalmente flotaba a 100m.
-function fakeTerrainNoise(x, y) {
-	return 2.5 * terrainNoiseShape(x, y);
-}
-
 // Relieve real del recinto (ver fetchTerrainElevation): una rejilla NxN de
 // alturas relativas ya en metros de mundo, interpolada bilinealmente. Se
 // reinicia a null en cada generate3DView() para no arrastrar la rejilla de
@@ -67,14 +35,19 @@ let terrainRequestId = 0;
 let mapFeatureAnchors = [];
 const TERRAIN_GRID_SIZE = 9;
 const TERRAIN_EXAGGERATION = 3.5;
-// Metros absolutos, no relativos al tamaño del plano (ver fakeTerrainNoise):
-// un festival real rara vez tiene más de unos pocos metros de desnivel real,
-// así que ni el mínimo garantizado ni el tope necesitan crecer con el zoom.
-const TERRAIN_MIN_RELIEF_ABS = 6; // amplitud mínima garantizada, en metros
+// Metros absolutos, no relativos al tamaño del plano: el plano mide lo que
+// mida el tile visible a este zoom (de 20 a varios cientos de metros) por
+// motivos que no tienen nada que ver con cuánto sube o baja el terreno de
+// verdad, así que escalar el tope con ese tamaño podía disparar el relieve
+// a decenas de metros en un recinto grande sin que fuera un dato real.
 const TERRAIN_MAX_RELIEF_ABS = 40; // tope de amplitud, en metros (terreno realmente montañoso)
 
+// Solo relieve real: sin datos de elevación (aún no han llegado, o la
+// petición falló) el suelo se queda liso -nada de ondulación inventada de
+// respaldo-, para no mostrar como "relieve" algo que no corresponde al
+// terreno de verdad.
 function getTerrainHeight(x, y) {
-	if (!terrainElevGrid) return fakeTerrainNoise(x, y);
+	if (!terrainElevGrid) return 0;
 	const { size, values, halfSize } = terrainElevGrid;
 	const u = Math.min(size - 1.001, Math.max(0, ((x + halfSize) / (halfSize * 2)) * (size - 1)));
 	const v = Math.min(size - 1.001, Math.max(0, ((y + halfSize) / (halfSize * 2)) * (size - 1)));
@@ -87,14 +60,7 @@ function getTerrainHeight(x, y) {
 	const h11 = values[j1 * size + i1];
 	const h0 = h00 * (1 - fu) + h10 * fu;
 	const h1 = h01 * (1 - fu) + h11 * fu;
-	// El detalle fino se suma siempre (real o no) para que la cámara, que
-	// por defecto encuadra de cerca sobre los propios elementos -no sobre
-	// todo el plano-, vea ondulación aunque el terreno real sea localmente
-	// casi plano justo ahí (la rejilla real interpola en celdas de decenas
-	// de metros, lisas a esa escala). Antes se atenuaba mucho (0.15) para
-	// no "competir" visualmente con el relieve base, pero eso lo dejaba
-	// imperceptible precisamente donde más se mira.
-	return h0 * (1 - fv) + h1 * fv + fakeTerrainNoise(x, y) * 0.8;
+	return h0 * (1 - fv) + h1 * fv;
 }
 
 const UP_AXIS = new THREE.Vector3(0, 1, 0);
@@ -175,30 +141,18 @@ async function fetchTerrainElevation(bbox, planeSize) {
 
 		const mean = raw.reduce((a, b) => a + b, 0) / raw.length;
 		const maxAmplitude = TERRAIN_MAX_RELIEF_ABS;
-		const minAmplitude = TERRAIN_MIN_RELIEF_ABS;
-		let scaled = raw.map(v => (v - mean) * TERRAIN_EXAGGERATION);
-		const scaledAmp = Math.max(...scaled) - Math.min(...scaled);
 		// Un recinto de festival real suele ser justo el sitio más llano de
-		// la zona (aparcamientos, campos...), así que lo normal es que el
-		// servicio devuelva una variación real minúscula o directamente
-		// CERO -no solo "pequeña"-. Reescalar multiplicando una variación
-		// que ya es 0 seguía dando 0 (por eso "seguía sin relieve" incluso
-		// con este mínimo puesto): en vez de eso, se SUMA la misma forma de
-		// ruido que el respaldo, a la amplitud mínima que falte.
-		if (scaledAmp < minAmplitude) {
-			const fillAmplitude = minAmplitude - scaledAmp;
-			scaled = scaled.map((v, idx) => {
-				const i = idx % size;
-				const j = Math.floor(idx / size);
-				const x = -half + (i / (size - 1)) * planeSize;
-				const y = -half + (j / (size - 1)) * planeSize;
-				return v + terrainNoiseShape(x, y) * fillAmplitude;
-			});
-		}
+		// la zona (aparcamientos, campos...): que la variación real salga
+		// minúscula o directamente CERO es un resultado legítimo, no un
+		// fallo -no se rellena con ondulación inventada, el terreno se
+		// queda liso si de verdad lo es-. Solo se acota el valor real (ya
+		// exagerado) a un tope razonable, por si el dato de origen tuviera
+		// un pico erróneo.
+		const scaled = raw.map(v => (v - mean) * TERRAIN_EXAGGERATION);
 		const values = scaled.map(v => Math.max(-maxAmplitude, Math.min(maxAmplitude, v)));
 		return { size, values, halfSize: half };
 	} catch (err) {
-		console.warn('[3D] No se pudo obtener elevación real, se usa relieve simulado.', err);
+		console.warn('[3D] No se pudo obtener elevación real, el suelo se queda liso.', err);
 		return null;
 	}
 }

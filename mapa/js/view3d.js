@@ -1564,9 +1564,21 @@ function create3DLabel(text, position, scene, size = [10, 5]) {
 	canvas.height = 128;
 	context.fillStyle = 'rgba(0,0,0,0.5)';
 	context.fillRect(0, 0, 256, 128);
-	context.font = 'Bold 40px Arial';
 	context.fillStyle = 'white';
 	context.textAlign = 'center';
+
+	// Tamaño de letra fijo (40px) pensado para nombres cortos tipo
+	// "ESCENARIO"/"BARRA": un nombre más largo (p.ej. "BREAD & WATHER")
+	// se salía del lienzo por ambos lados -al estar centrado, se recortaba
+	// el principio y el final por igual, dejando leerse solo el trozo
+	// central-. Se reduce el tamaño hasta que el texto quepa entero.
+	const maxTextWidth = 236; // margen de ~10px a cada lado de los 256 del lienzo
+	let fontSize = 40;
+	context.font = `Bold ${fontSize}px Arial`;
+	while (context.measureText(text).width > maxTextWidth && fontSize > 14) {
+		fontSize -= 2;
+		context.font = `Bold ${fontSize}px Arial`;
+	}
 	context.fillText(text, 128, 70);
 
 	const texture = new THREE.CanvasTexture(canvas);

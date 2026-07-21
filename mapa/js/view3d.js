@@ -34,7 +34,14 @@ let terrainRequestId = 0;
 // la altura del tronco/copa para un árbol).
 let mapFeatureAnchors = [];
 const TERRAIN_GRID_SIZE = 9;
-const TERRAIN_EXAGGERATION = 3.5;
+// Sin exagerar: el terreno real (sobre todo a la resolución del dato
+// gratuito que se usa, ~90m por punto) ya trae su propio margen de ruido
+// -pequeñas variaciones que no son relieve real del sitio, solo artefactos
+// de esa resolución-, y amplificarlo (antes x3.5) convertía ese ruido en
+// "montañas" allí donde el terreno real es plano. Con exageración 1 se ve
+// exactamente la diferencia de altura real entre los puntos muestreados,
+// ni más ni menos.
+const TERRAIN_EXAGGERATION = 1;
 // Metros absolutos, no relativos al tamaño del plano: el plano mide lo que
 // mida el tile visible a este zoom (de 20 a varios cientos de metros) por
 // motivos que no tienen nada que ver con cuánto sube o baja el terreno de

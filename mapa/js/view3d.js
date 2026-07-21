@@ -85,12 +85,43 @@ function getTerrainHeight(x, y) {
 	return h0 * (1 - fv) + h1 * fv + fakeTerrainNoise(x, y) * 0.15;
 }
 
-// Consulta elevación real (Open-Elevation, gratis y sin API key) en una
-// rejilla NxN sobre el recinto. "planeToLatLng" ya define cómo se
-// corresponden las coordenadas del plano con lat/lng (ver más abajo), así
-// que se reutiliza tal cual para que la rejilla quede perfectamente
-// alineada con el suelo y los elementos. Si falla (sin red, timeout,
-// servicio caído) devuelve null y el relieve se queda en el ruido falso.
+const UP_AXIS = new THREE.Vector3(0, 1, 0);
+
+// Altura de apoyo para un elemento con extensión real (escenario, valla,
+// barra...), no solo un punto: muestrea el terreno en las esquinas/extremos
+// de su huella real (girada según su rotación) y se queda con la MÁS ALTA.
+// Con un único punto (el centro) un objeto ancho o largo podía quedar con un
+// extremo bien apoyado y el otro literalmente hundido en el suelo en cuanto
+// el terreno tenía algo de pendiente bajo su huella -"la valla/el escenario/
+// la barra están enterrados"-. Apoyarse en el punto más alto dentro de la
+// huella deja como mucho un pequeño hueco en el lado bajo, mucho menos
+// llamativo que atravesar el suelo.
+function groundHeightForFootprint(x, z, length, width, rotationDeg) {
+	const rotY = -((rotationDeg || 0) * Math.PI) / 180; // mismo criterio que el resto de la vista 3D (ver group.rotation.y)
+	const hl = (length || 0) / 2;
+	const hw = (width || 0) / 2;
+	const localPts = hw > 0
+		? [[0, 0], [-hl, -hw], [hl, -hw], [hl, hw], [-hl, hw]]
+		: [[0, 0], [-hl, 0], [hl, 0]];
+	let maxH = -Infinity;
+	const v = new THREE.Vector3();
+	for (const [lx, lz] of localPts) {
+		v.set(lx, 0, lz).applyAxisAngle(UP_AXIS, rotY);
+		const h = getTerrainHeight(x + v.x, -(z + v.z));
+		if (h > maxH) maxH = h;
+	}
+	return maxH;
+}
+
+// Consulta elevación real en una rejilla NxN sobre el recinto, vía nuestro
+// propio proxy /api/elevation (ver server.js): éste encadena Open Topo Data
+// y Open-Elevation server a servidor, sin el problema de CORS que impide
+// llamar a algunas fuentes directo desde el navegador, y sin depender de que
+// un único servicio gratuito esté arriba en ese momento (se ha visto caer
+// con 504 en pruebas reales). "planeToLatLng" ya define cómo se corresponden
+// las coordenadas del plano con lat/lng (ver más abajo), así que se reutiliza
+// tal cual para que la rejilla quede perfectamente alineada con el suelo y
+// los elementos. Si falla devuelve null y el relieve se queda en el ruido falso.
 async function fetchTerrainElevation(bbox, planeSize) {
 	const size = TERRAIN_GRID_SIZE;
 	const half = planeSize / 2;
@@ -105,16 +136,14 @@ async function fetchTerrainElevation(bbox, planeSize) {
 	}
 	try {
 		const controller = new AbortController();
-		// Open-Elevation es un servicio público gratuito y sin SLA: una
-		// rejilla de 9x9 (81 puntos) tarda normalmente 3-8s pero puede
-		// superar fácilmente ese margen bajo carga. Como esta petición nunca
-		// bloquea la interfaz -el relieve se actualiza solo cuando llega,
-		// mientras tanto se ve el respaldo simulado-, un timeout corto solo
-		// tira trabajo válido a la basura: mejor esperar más antes de
-		// resignarse al relieve simulado, que es justo lo que se veía como
-		// "el mapa aparece plano".
-		const timeoutId = setTimeout(() => controller.abort(), 18000);
-		const res = await fetch('https://api.open-elevation.com/api/v1/lookup', {
+		// El proxy intenta hasta dos fuentes en serie (10s + 12s de margen
+		// cada una, ver server.js) antes de rendirse: como esta petición
+		// nunca bloquea la interfaz -el relieve se actualiza solo cuando
+		// llega, mientras tanto se ve el respaldo simulado-, un timeout
+		// corto en el cliente solo tira ese trabajo a la basura antes de
+		// tiempo, que es justo lo que se veía como "el mapa aparece plano".
+		const timeoutId = setTimeout(() => controller.abort(), 25000);
+		const res = await fetch('/api/elevation', {
 			method: 'POST',
 			headers: { 'Content-Type': 'application/json' },
 			body: JSON.stringify({ locations }),
@@ -711,21 +740,43 @@ function generate3DViewInner(style) {
 	stitchCanvas.width = numTX * 256;
 	stitchCanvas.height = numTY * 256;
 	const stitchCtx = stitchCanvas.getContext('2d');
+	// Un tile que falla (hipo de red puntual, no necesariamente el servidor
+	// caído -ya se ha comprobado que responde bien la mayoría de veces-) se
+	// tragaba en silencio (img.onerror simplemente resolvía igual, sin
+	// reintento ni aviso): el suelo se quedaba con ese hueco -o, si fallaban
+	// muchos/todos, "el mapa se ve vacío"- sin ninguna pista de que había
+	// pasado. Ahora cada tile fallido se reintenta una vez antes de rendirse,
+	// y se avisa por consola si una parte notable del mosaico quedó sin cargar.
+	let tileFailCount = 0;
+	const totalTiles = numTX * numTY;
+	function loadTile(tx, ty, px, py, isRetry) {
+		return new Promise((resolve) => {
+			const img = new Image();
+			img.crossOrigin = 'anonymous';
+			img.onload = () => { stitchCtx.drawImage(img, px, py, 256, 256); resolve(); };
+			img.onerror = () => {
+				if (!isRetry) {
+					setTimeout(() => loadTile(tx, ty, px, py, true).then(resolve), 400);
+				} else {
+					tileFailCount++;
+					resolve();
+				}
+			};
+			img.src = tileUrlFor(tx, ty) + (isRetry ? (tileUrlFor(tx, ty).includes('?') ? '&' : '?') + 'retry=1' : '');
+		});
+	}
 	const tileLoads = [];
 	for (let ty = tileYmin; ty <= tileYmax; ty++) {
 		for (let tx = tileXmin; tx <= tileXmax; tx++) {
 			const px = (tx - tileXmin) * 256;
 			const py = (ty - tileYmin) * 256;
-			tileLoads.push(new Promise((resolve) => {
-				const img = new Image();
-				img.crossOrigin = 'anonymous';
-				img.onload = () => { stitchCtx.drawImage(img, px, py, 256, 256); resolve(); };
-				img.onerror = () => resolve();
-				img.src = tileUrlFor(tx, ty);
-			}));
+			tileLoads.push(loadTile(tx, ty, px, py, false));
 		}
 	}
 	Promise.all(tileLoads).then(() => {
+		if (tileFailCount > 0) {
+			console.warn(`[3D] ${tileFailCount}/${totalTiles} tiles del mapa de fondo no se pudieron cargar (tras reintentar); el suelo se ve con huecos o vacío en esa zona.`);
+		}
 		const texture = new THREE.CanvasTexture(stitchCanvas);
 		texture.needsUpdate = true;
 		ground.material.map = texture;
@@ -759,17 +810,26 @@ function generate3DViewInner(style) {
 
 		elements.forEach(el => {
 			// Las vallas SÍ deben reajustarse igual que cualquier otro
-			// elemento: se crean a y=0 (ver drawElements/createConstruction-
-			// FenceSegment) y de quedar excluidas aquí -como antes- se
-			// quedaban ancladas a esa altura fija para siempre. En cuanto el
-			// relieve real llegaba (con el suelo ya ondulado de verdad, ver
-			// más arriba) y el terreno subía por encima de y=0 en su punto,
-			// la valla quedaba literalmente enterrada bajo el suelo: se veía
-			// bien un instante -mientras solo estaba el ruido falso, cercano
-			// a 0- y luego "desaparecía" en cuanto se aplicaba el relieve real.
+			// elemento: se crean apoyadas en el terreno visible en ese
+			// momento (ver drawElements) y de quedar excluidas aquí -como
+			// antes- se quedaban anclada a esa altura para siempre. En
+			// cuanto el relieve real llegaba y el terreno subía por encima
+			// en su punto, la valla quedaba literalmente enterrada bajo el
+			// suelo.
 			if (!el._threeObj) return;
-			const h = getTerrainHeight(el._threeObj.position.x, -el._threeObj.position.z);
-			if (el._threeLabel) el._threeLabel.position.y += h;
+			// Punto más alto de la huella real (no solo el centro): con un
+			// único punto, un escenario/valla/barra con algo de pendiente
+			// real bajo su huella quedaba con un extremo bien apoyado y el
+			// otro hundido en el suelo.
+			const h = groundHeightForFootprint(el._threeObj.position.x, el._threeObj.position.z, el.length, el.width, el.rotation);
+			if (el._threeLabel) {
+				// La etiqueta no se creó a "h=0": ya llevaba su propio
+				// desplazamiento local (altura de la figura, etc.) sumado a
+				// la altura de apoyo de ESE momento -hay que conservar solo
+				// ese desplazamiento, no la altura de apoyo vieja.
+				const localOffset = el._threeLabel.position.y - el._threeObj.position.y;
+				el._threeLabel.position.y = h + localOffset;
+			}
 			el._threeObj.position.y = h;
 		});
 
@@ -1315,33 +1375,40 @@ function drawElements(elements, threeScene) {
 		if (!isFinite(pos.x) || !isFinite(pos.z)) throw new Error('posición no finita');
 		let obj3d;
 
+		// Altura de apoyo ya desde la primera pasada (antes quedaba a 0 hasta
+		// que el terreno real llegaba -o para siempre, si esa petición
+		// fallaba-, mientras el suelo ya ondulaba desde el primer fotograma
+		// con el ruido de respaldo: los elementos parecían flotar o hundirse
+		// según el punto, independientemente de si había datos reales o no.
+		const groundY = groundHeightForFootprint(pos.x, pos.z, element.length, element.width, element.rotation);
+
 		if (element.type === 'main-stage') {
-            obj3d = createStageModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createStageModel(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'food-truck') {
-            obj3d = createFoodTruckModel(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createFoodTruckModel(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'security') {
-            obj3d = createSecurityFigure(new THREE.Vector3(pos.x, 0, pos.z), element.rotation, threeScene);
+            obj3d = createSecurityFigure(new THREE.Vector3(pos.x, groundY, pos.z), element.rotation, threeScene);
         } else if (element.type === 'entrance') {
-            obj3d = createEntranceArch(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createEntranceArch(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'drunk') {
-            obj3d = createDrunkFigure(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createDrunkFigure(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
             wanderingDrunks.push({ element, group: obj3d, centerX: pos.x, centerZ: pos.z, phase: Math.random() * Math.PI * 2 });
         } else if (element.type === 'fence') {
-            obj3d = createConstructionFenceSegment(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createConstructionFenceSegment(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'panic-fence') {
-            obj3d = createPanicFenceSegment(new THREE.Vector3(pos.x, 0, pos.z), element, threeScene);
+            obj3d = createPanicFenceSegment(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'bar' || element.type === 'wc' || element.type.startsWith('signal')) {
-            obj3d = createGeometricElement(element, pos, threeScene);
+            obj3d = createGeometricElement(element, pos, threeScene, groundY);
         } else if (element.isRectangle) {
 			const geometry = new THREE.BoxGeometry(element.length, 2, element.width);
 			const material = new THREE.MeshStandardMaterial({ color: element.color });
 			const mesh = new THREE.Mesh(geometry, material);
-			mesh.position.set(pos.x, geometry.parameters.height / 2, pos.z);
+			mesh.position.set(pos.x, groundY + geometry.parameters.height / 2, pos.z);
 			mesh.rotation.y = -(element.rotation * Math.PI) / 180;
 			threeScene.add(mesh);
 			obj3d = mesh;
 		} else {
-			obj3d = createGeometricElement(element, pos, threeScene);
+			obj3d = createGeometricElement(element, pos, threeScene, groundY);
 		}
 
         // Etiqueta flotante 3D para todos, salvo las vallas: con muchos
@@ -1350,11 +1417,11 @@ function drawElements(elements, threeScene) {
         if (element.type === 'security') {
             // Pegada justo encima de la cabeza del muñeco, y bastante más
             // pequeña que la de un elemento grande (escenario, zonas...).
-            label = create3DLabel(element.name, new THREE.Vector3(pos.x, SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
+            label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
         } else if (element.type === 'drunk') {
-            label = create3DLabel(element.name, new THREE.Vector3(pos.x, DRUNK_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
+            label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + DRUNK_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
         } else if (element.type !== 'fence' && element.type !== 'panic-fence') {
-            label = create3DLabel(element.name, new THREE.Vector3(pos.x, 8, pos.z), threeScene);
+            label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + 8, pos.z), threeScene);
         }
 
         // Referencias para poder pinchar y arrastrar el elemento en 3D
@@ -1803,7 +1870,7 @@ function createEntranceArch(pos, element, scene) {
 	return group;
 }
 
-function createGeometricElement(element, pos, scene) {
+function createGeometricElement(element, pos, scene, groundY = 0) {
 	const group = new THREE.Group();
 	const colorMap = {
 		'bar': 0xf1c40f,
@@ -1858,7 +1925,7 @@ function createGeometricElement(element, pos, scene) {
 		iconPlane.material.needsUpdate = true;
 	});
 
-	group.position.set(pos.x, 0, pos.z);
+	group.position.set(pos.x, groundY, pos.z);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
 	scene.add(group);
 	return group;

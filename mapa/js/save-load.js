@@ -162,10 +162,18 @@ function loadProjectData(data) {
     }
 
     const group = new L.FeatureGroup();
+    // El nombre por defecto del "borracho" cambió más de una vez
+    // (BORRACHO -> Bread&Water -> BREAD & WATHER): un proyecto guardado
+    // con cualquiera de los nombres viejos se corrige solo al cargar, en
+    // vez de dejar que dependa de editarlo a mano elemento por elemento.
+    const OLD_DRUNK_NAMES = new Set(['BORRACHO', 'Bread&Water']);
     elementsData.forEach(el => {
         let element;
+        const elName = (el.type === 'drunk' && OLD_DRUNK_NAMES.has(el.name))
+            ? festivalConfig['drunk'].label
+            : el.name;
         if (el.isRectangle) {
-            element = addRectangleToMap(el.name, el.type, el.coords, el.length, el.width);
+            element = addRectangleToMap(elName, el.type, el.coords, el.length, el.width);
             group.addLayer(element.rectangle);
         } else {
             // El tipo real (valla de obra vs. antipánico) se pasaba antes
@@ -173,7 +181,7 @@ function loadProjectData(data) {
             // siempre como 'fence' al recargar el proyecto, sin importar
             // qué tipo era en realidad.
             element = addFixedFenceToMap(el.length, el.coords, el.rotation, el.type);
-            element.name = el.name;
+            element.name = elName;
             group.addLayer(element.line);
         }
         element.rotation = el.rotation || 0;

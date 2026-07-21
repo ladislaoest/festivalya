@@ -8,6 +8,7 @@ const festivalConfig = {
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
     'security': { label: 'SEGURIDAD', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
     'drunk': { label: 'BREAD & WATHER', color: '#d9a441', icon: 'drunk', defaultLen: 1, defaultWid: 1 },
+    'gabry': { label: 'GABRY', color: '#f1c40f', icon: 'gabry', defaultLen: 4.35, defaultWid: 1.75 },
     'fence': { label: 'VALLA DE OBRA', color: '#f39c12', icon: 'fence' },
     'panic-fence': { label: 'VALLA ANTIPÁNICO', color: '#95a5a6', icon: 'panic-fence' },
     'signal-parking': { label: 'PARKING', color: '#3498db', icon: 'parking', defaultLen: 4, defaultWid: 4 },
@@ -512,7 +513,8 @@ function setupElementEvents() {
                 'stage': 'main-stage', 'food': 'food-truck', 'bar': 'bar',
                 'wc': 'signal-wc', 'fence': 'fence', 'panic-fence': 'panic-fence', 'custom': 'generator',
                 'parking': 'signal-parking', 'disabled': 'signal-disabled', 'noparking': 'signal-no-parking',
-                'exit': 'signal-exit', 'security': 'security', 'entrance': 'entrance', 'drunk': 'drunk'
+                'exit': 'signal-exit', 'security': 'security', 'entrance': 'entrance', 'drunk': 'drunk',
+                'gabry': 'gabry'
             };
 			if (elemType) { elemType.value = mapIconToType[this.dataset.icon]; elemType.dispatchEvent(new Event('change')); }
 		};
@@ -965,7 +967,8 @@ function getPinIconSVG(iconKey) {
         'panic-fence': `<svg viewBox="0 0 24 24" ${S}><path d="M4 9h16M4 15h16"/><path d="M6 6v12M18 6v12"/></svg>`,
         'security': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.2" fill="white" stroke="none"/><path d="M12 8v6"/><path d="M12 10 6 6"/><path d="M12 10l6-4"/><path d="M12 14l-5 7"/><path d="M12 14l5 7"/></svg>`,
         'entrance': `<svg viewBox="0 0 24 24" ${S}><path d="M4 21V11a8 8 0 0 1 16 0v10"/><path d="M4 21h4M16 21h4"/></svg>`,
-        'drunk': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="5" r="2.2" fill="white" stroke="none"/><path d="M11 8v6" transform="rotate(-8 11 11)"/><path d="M11 10 7 8"/><path d="M11 10l5-1"/><rect x="15" y="7.5" width="2.6" height="2.4" fill="white" stroke="none"/><path d="M10 14 6 21"/><path d="M11 14l6 6"/></svg>`
+        'drunk': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="5" r="2.2" fill="white" stroke="none"/><path d="M11 8v6" transform="rotate(-8 11 11)"/><path d="M11 10 7 8"/><path d="M11 10l5-1"/><rect x="15" y="7.5" width="2.6" height="2.4" fill="white" stroke="none"/><path d="M10 14 6 21"/><path d="M11 14l6 6"/></svg>`,
+        'gabry': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 15h18l-2-5.5a2 2 0 0 0-1.9-1.3H6.9A2 2 0 0 0 5 9.5z"/><path d="M7 10.5l1-3.5h8l1 3.5"/><circle cx="7.5" cy="16" r="1.8" fill="white" stroke="none"/><circle cx="16.5" cy="16" r="1.8" fill="white" stroke="none"/></svg>`
     };
     return icons[iconKey] || `<svg viewBox="0 0 24 24" fill="white" stroke="#333" stroke-width="1"><circle cx="12" cy="12" r="5"/></svg>`;
 }
@@ -984,6 +987,7 @@ function getGenericIconUrl(type) {
         'security': 'assets/icons/security.svg',
         'entrance': 'assets/icons/entrance.svg',
         'drunk': 'assets/icons/drunk.svg',
+        'gabry': 'assets/icons/gabry.svg',
         'disabled': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Wheelchair_symbol.svg',
         'noparking': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzM0OThkYiIgc3Ryb2tlPSIjZTc0YzNjIiBzdHJva2Utd2lkdGg9IjEwIi8+PGxpbmUgeDE9IjE4IiB5MT0iMTgiIHgyPSI4MiIgeTI9IjgyIiBzdHJva2U9IiNlNzRjM2MiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=',
         'exit': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMjdhZTYwIi8+PHBhdGggZD0iTTMwIDIwaDQwdjYwSDMwek03NSA1MGwtMTUgMTBNNzUgNTBsLTE1LTEwIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjgiLz48L3N2Zz4=',

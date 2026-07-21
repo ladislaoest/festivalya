@@ -14,6 +14,15 @@ const DRUNK_WANDER_RADIUS = 2.5;
 // Se reconstruye entera cada vez que se regenera la escena 3D.
 let wanderingDrunks = [];
 
+// Secuencia animada del coche "gabry" (ver setupGabryAnimations/
+// updateGabryAnimations): coche que llega y aparca cerca de la barra, un
+// pasajero que se baja y camina hasta ella. Se reconstruye entera en cada
+// generate3DView().
+let gabryAnimations = [];
+const GABRY_DRIVE_DURATION_MS = 4500;
+const GABRY_DISEMBARK_PAUSE_MS = 700;
+const GABRY_WALK_SPEED_MPS = 1.1; // metros/segundo, paso normal
+
 // "Tour automático": plano general del recinto y luego un recorrido por
 // todos los elementos, uno a uno (ver buildTourKeyframes/updateTour).
 let tourActive = false;
@@ -863,6 +872,13 @@ function generate3DViewInner(style) {
 
 	drawElements(elements, threeScene);
 
+	// El coche "gabry" necesita saber dónde está la barra para poder
+	// aparcar cerca -y eso solo se conoce con seguridad una vez que
+	// drawElements ya ha creado TODOS los elementos (si "bar" apareciera
+	// más adelante en la lista que "gabry", buscarla a mitad del propio
+	// drawElements se la habría perdido).
+	setupGabryAnimations(elements);
+
 	// drawElements acaba de rellenar "terrainPads" (una plataforma nivelada
 	// por cada elemento con huella real): el suelo ya se construyó ANTES de
 	// saber esto, así que se reconstruye una vez más ahora para allanarlo
@@ -977,6 +993,7 @@ function generate3DViewInner(style) {
 				threeControls.update();
 			}
 			updateWanderingDrunks();
+			updateGabryAnimations();
 			threeRenderer.render(threeScene, threeCamera);
 		} catch (err) {
 			console.error('[3D] Error de render:', err);
@@ -1038,6 +1055,116 @@ function updateWanderingDrunks() {
 			entry.element._threeLabel.position.z = z;
 			entry.element._threeLabel.position.y = getTerrainHeight(x, -z) + DRUNK_FIGURE_HEIGHT + 0.3;
 		}
+	});
+}
+
+const GABRY_PARK_DISTANCE = 4; // metros de la barra donde para el coche
+const GABRY_WALK_STOP_DISTANCE = 1.4; // metros de la barra donde se detiene el pasajero
+const GABRY_DRIVE_SPEED_MPS = 3.2; // m/s, velocidad lenta dentro del recinto
+
+// Calcula, para cada coche "gabry" ya colocado (ver drawElements), a qué
+// barra dirigirse y dónde aparcar/detenerse: la barra MÁS CERCANA a donde
+// se colocó el coche en el mapa. Sin ninguna barra en el recinto no hay
+// dónde ir, así que se queda aparcado donde se puso (sin animar).
+function setupGabryAnimations(elementsList) {
+	if (!gabryAnimations.length) return;
+	const bars = elementsList.filter(el => el.type === 'bar' && el._threeObj);
+	gabryAnimations.forEach(entry => {
+		if (!bars.length) return;
+		let nearestBar = null, nearestDist = Infinity;
+		bars.forEach(bar => {
+			const d = entry.car.position.distanceTo(bar._threeObj.position);
+			if (d < nearestDist) { nearestDist = d; nearestBar = bar; }
+		});
+		if (!nearestBar) return;
+
+		const barPos = nearestBar._threeObj.position;
+		const start = entry.car.position.clone();
+		const toBar = new THREE.Vector3(barPos.x - start.x, 0, barPos.z - start.z);
+		const totalDist = toBar.length();
+		// Coche ya prácticamente encima de la barra: no hay trayecto real
+		// que animar (y calcular una dirección con un vector casi nulo daría
+		// un rumbo sin sentido).
+		if (totalDist < 0.5) return;
+		const dir = toBar.normalize();
+
+		const parkDist = Math.min(GABRY_PARK_DISTANCE, Math.max(0, totalDist - 0.5));
+		const target = new THREE.Vector3(barPos.x - dir.x * parkDist, start.y, barPos.z - dir.z * parkDist);
+		const walkStopDist = Math.min(GABRY_WALK_STOP_DISTANCE, Math.max(0, totalDist - 0.3));
+		const walkTarget = new THREE.Vector3(barPos.x - dir.x * walkStopDist, start.y, barPos.z - dir.z * walkStopDist);
+		// Rumbo (rotation.y) que hace que el morro del coche -su eje local
+		// +X, ver createGabryCarModel- apunte en la dirección "dir".
+		const heading = Math.atan2(-dir.z, dir.x);
+
+		const driveDist = start.distanceTo(target);
+		entry.phase = 'driving';
+		entry.driveStart = start;
+		entry.driveTarget = target;
+		entry.driveStartTime = performance.now();
+		entry.driveDuration = Math.min(12000, Math.max(1800, (driveDist / GABRY_DRIVE_SPEED_MPS) * 1000));
+		entry.heading = heading;
+		entry.walkTarget = walkTarget;
+	});
+}
+
+// Anima la secuencia completa de cada coche "gabry": conduce hasta su
+// punto de aparcamiento (ver setupGabryAnimations), espera un momento,
+// hace aparecer a un pasajero junto a la puerta y lo anima caminando hasta
+// la barra -con el mismo balanceo de piernas/brazos que "updateWandering-
+// Drunks", para no reinventar la animación de caminar.
+function updateGabryAnimations() {
+	if (!gabryAnimations.length) return;
+	const now = performance.now();
+	gabryAnimations.forEach(entry => {
+		if (dragState && dragState.element === entry.element) return;
+
+		if (entry.phase === 'driving') {
+			const t = Math.min(1, (now - entry.driveStartTime) / entry.driveDuration);
+			entry.car.position.lerpVectors(entry.driveStart, entry.driveTarget, easeInOutQuad(t));
+			entry.car.rotation.y = entry.heading;
+			if (entry.element._threeLabel) {
+				entry.element._threeLabel.position.x = entry.car.position.x;
+				entry.element._threeLabel.position.z = entry.car.position.z;
+			}
+			if (t >= 1) {
+				entry.phase = 'disembarking';
+				entry.disembarkStartTime = now;
+			}
+		} else if (entry.phase === 'disembarking') {
+			if (now - entry.disembarkStartTime >= GABRY_DISEMBARK_PAUSE_MS) {
+				// Junto a la puerta del copiloto (lado derecho del coche
+				// según su rumbo), no encima del propio coche.
+				const doorOffset = new THREE.Vector3(0, 0, (entry.element.width || 1.75) / 2 + 0.55);
+				doorOffset.applyAxisAngle(UP_AXIS, entry.heading);
+				const spawnPos = entry.car.position.clone().add(doorOffset);
+				spawnPos.y = entry.groundY;
+
+				const walkDir = new THREE.Vector3(entry.walkTarget.x - spawnPos.x, 0, entry.walkTarget.z - spawnPos.z);
+				const walkHeadingDeg = walkDir.lengthSq() > 0.0001
+					? -(Math.atan2(-walkDir.normalize().z, walkDir.x) * 180) / Math.PI
+					: -(entry.heading * 180) / Math.PI;
+
+				entry.passenger = createCasualPersonFigure(spawnPos, walkHeadingDeg, threeScene);
+				entry.walkStart = spawnPos.clone();
+				entry.walkStartTime = now;
+				const walkDist = spawnPos.distanceTo(entry.walkTarget);
+				entry.walkDuration = Math.max(400, (walkDist / GABRY_WALK_SPEED_MPS) * 1000);
+				entry.phase = 'walking';
+			}
+		} else if (entry.phase === 'walking') {
+			const t = Math.min(1, (now - entry.walkStartTime) / entry.walkDuration);
+			entry.passenger.position.lerpVectors(entry.walkStart, entry.walkTarget, t);
+
+			const stride = Math.sin((now / 1000) * 7);
+			const ud = entry.passenger.userData;
+			if (ud.legL) ud.legL.rotation.x = stride * 0.5;
+			if (ud.legR) ud.legR.rotation.x = -stride * 0.5;
+			if (ud.armL) ud.armL.rotation.x = -stride * 0.4;
+			if (ud.armR) ud.armR.rotation.x = stride * 0.4;
+
+			if (t >= 1) entry.phase = 'arrived';
+		}
+		// 'parked' (sin barra que visitar) y 'arrived': nada que animar.
 	});
 }
 
@@ -1447,6 +1574,7 @@ function drawElements(elements, threeScene) {
 	if (!ground) return;
 	const bbox = ground.userData;
 	wanderingDrunks = [];
+	gabryAnimations = [];
 	const skipped = [];
 
 	elements.forEach(element => {
@@ -1506,6 +1634,14 @@ function drawElements(elements, threeScene) {
         } else if (element.type === 'drunk') {
             obj3d = createDrunkFigure(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
             wanderingDrunks.push({ element, group: obj3d, centerX: pos.x, centerZ: pos.z, phase: Math.random() * Math.PI * 2 });
+        } else if (element.type === 'gabry') {
+            obj3d = createGabryCarModel(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
+            // El destino (aparcar cerca de una barra) se resuelve aparte,
+            // después de dibujar TODOS los elementos (ver
+            // setupGabryAnimations): aquí solo puede conocerse el punto de
+            // partida, no dónde está la barra -puede que aún no se haya
+            // creado si el bucle no ha llegado a ella todavía.
+            gabryAnimations.push({ element, car: obj3d, groundY, phase: 'parked' });
         } else if (element.type === 'fence') {
             obj3d = createConstructionFenceSegment(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'panic-fence') {
@@ -1688,6 +1824,118 @@ function createFoodTruckModel(pos, element, scene) {
 
 	group.position.copy(pos);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+	return group;
+}
+
+// "GABRY": coche amarillo estilo cupé deportivo (silueta 2 puertas: cuerpo
+// bajo, cabina/parabrisas retrasado y más corto que el cuerpo, morro
+// deportivo, faros). No es la réplica exacta de ningún modelo -geometría
+// procedural simple-, pero la silueta baja y deportiva evoca un cupé
+// compacto de finales de los 2000.
+function createGabryCarModel(pos, element, scene) {
+	const group = new THREE.Group();
+	const length = element.length || 4.35;
+	const width = element.width || 1.75;
+	const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f, metalness: 0.35, roughness: 0.35 });
+	const glassMat = new THREE.MeshStandardMaterial({ color: 0x1a2530, metalness: 0.6, roughness: 0.2 });
+	const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+
+	const groundClearance = 0.28;
+	const bodyHeight = 0.55;
+	const body = new THREE.Mesh(new THREE.BoxGeometry(length, bodyHeight, width), bodyMat);
+	body.position.set(0, groundClearance + bodyHeight / 2, 0);
+	group.add(body);
+
+	// Cabina de cristal, más corta que el cuerpo y desplazada hacia atrás
+	// -silueta de cupé, no de berlina-, con una ligera inclinación hacia
+	// atrás del parabrisas.
+	const cabinLength = length * 0.48;
+	const cabinHeight = 0.46;
+	const cabin = new THREE.Mesh(new THREE.BoxGeometry(cabinLength, cabinHeight, width * 0.9), glassMat);
+	cabin.position.set(-length * 0.06, groundClearance + bodyHeight + cabinHeight / 2, 0);
+	cabin.rotation.z = -0.06;
+	group.add(cabin);
+
+	const roof = new THREE.Mesh(new THREE.BoxGeometry(cabinLength * 0.82, 0.07, width * 0.78), bodyMat);
+	roof.position.set(-length * 0.06, groundClearance + bodyHeight + cabinHeight + 0.035, 0);
+	group.add(roof);
+
+	// Morro deportivo: más bajo que el resto del cuerpo, remata la silueta.
+	const nose = new THREE.Mesh(new THREE.BoxGeometry(length * 0.14, bodyHeight * 0.65, width * 0.94), bodyMat);
+	nose.position.set(length / 2 - length * 0.07, groundClearance + bodyHeight * 0.32, 0);
+	group.add(nose);
+
+	const headlightMat = new THREE.MeshStandardMaterial({ color: 0xfffbe6, emissive: 0xfff2b0, emissiveIntensity: 0.4 });
+	[-1, 1].forEach(side => {
+		const headlight = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.13, 0.3), headlightMat);
+		headlight.position.set(length / 2 - 0.04, groundClearance + bodyHeight * 0.55, side * width * 0.32);
+		group.add(headlight);
+	});
+
+	const wheelGeom = new THREE.CylinderGeometry(groundClearance, groundClearance, 0.22, 16);
+	[
+		[length / 2 - 0.7, width / 2 - 0.03], [length / 2 - 0.7, -width / 2 + 0.03],
+		[-length / 2 + 0.7, width / 2 - 0.03], [-length / 2 + 0.7, -width / 2 + 0.03]
+	].forEach(([x, z]) => {
+		const wheel = new THREE.Mesh(wheelGeom, darkMat);
+		wheel.rotation.x = Math.PI / 2;
+		wheel.position.set(x, groundClearance, z);
+		group.add(wheel);
+	});
+
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+	return group;
+}
+
+// Persona con ropa de calle (no el uniforme de seguridad), con piernas y
+// brazo por separado para poder animar el paso al caminar -ver
+// updateGabryAnimations-, igual que se hace con el "borracho" que deambula.
+function createCasualPersonFigure(pos, rotation, scene) {
+	const group = new THREE.Group();
+	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
+	const shirtMat = new THREE.MeshStandardMaterial({ color: 0x2f3e4e });
+	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x39424a });
+
+	const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), skinMat);
+	head.position.set(0, 1.55, 0);
+	group.add(head);
+
+	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.18, 0.7, 8), shirtMat);
+	torso.position.set(0, 1.15, 0);
+	group.add(torso);
+
+	const legHeight = 0.78;
+	const legGeom = new THREE.CylinderGeometry(0.08, 0.09, legHeight, 8);
+	legGeom.translate(0, -legHeight / 2, 0);
+	const hipY = 0.78;
+	const legL = new THREE.Mesh(legGeom, pantsMat);
+	legL.position.set(0.1, hipY, 0);
+	group.add(legL);
+	const legR = new THREE.Mesh(legGeom.clone(), pantsMat);
+	legR.position.set(-0.1, hipY, 0);
+	group.add(legR);
+
+	const armHeight = 0.55;
+	const armGeom = new THREE.CylinderGeometry(0.065, 0.075, armHeight, 8);
+	armGeom.translate(0, -armHeight / 2, 0);
+	const shoulderY = 1.4;
+	const armL = new THREE.Mesh(armGeom, skinMat);
+	armL.position.set(0.22, shoulderY, 0);
+	group.add(armL);
+	const armR = new THREE.Mesh(armGeom.clone(), skinMat);
+	armR.position.set(-0.22, shoulderY, 0);
+	group.add(armR);
+
+	group.userData.legL = legL;
+	group.userData.legR = legR;
+	group.userData.armL = armL;
+	group.userData.armR = armR;
+
+	group.position.copy(pos);
+	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
 	scene.add(group);
 	return group;
 }

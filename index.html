@@ -328,6 +328,79 @@
             border-radius: 6px;
         }
 
+        /* Resumen de tareas al abrir un evento (ver renderAssignmentSummaryPanel) */
+        .assign-summary-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-soft);
+            border-radius: 12px;
+            padding: 15px;
+            margin-bottom: 16px;
+        }
+
+        .assign-summary-header {
+            margin-bottom: 10px;
+        }
+
+        .assign-summary-title {
+            font-size: 12px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .assign-summary-title.pending { color: var(--danger); }
+        .assign-summary-title.resolved { color: var(--success); }
+
+        .assign-summary-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .assign-summary-group + .assign-summary-group {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--border-soft);
+        }
+
+        .assign-summary-row {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-size: 12px;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            background: var(--bg-elevated);
+        }
+
+        .assign-summary-row:hover {
+            background: var(--bg-card-hover);
+        }
+
+        .assign-summary-status { flex-shrink: 0; }
+        .assign-summary-row.resolved .assign-summary-status { color: var(--success); }
+        .assign-summary-row.pending .assign-summary-status { color: var(--danger); }
+
+        .assign-summary-label {
+            flex: 1;
+            font-weight: 600;
+        }
+
+        .assign-summary-user {
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        @keyframes assignFlash {
+            0%, 100% { box-shadow: none; }
+            50% { box-shadow: 0 0 0 3px var(--accent-gold); }
+        }
+
+        .assign-flash {
+            animation: assignFlash 1.2s ease;
+        }
+
         .btn-save-all {
             background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
             color: #14120a;
@@ -1038,6 +1111,11 @@
                     Calendario
                 </button>
             </div>
+            <div class="view-toggle-row">
+                <button type="button" id="status_filter_all" class="view-toggle-btn active" onclick="setEventsStatusFilter('all')">Todos</button>
+                <button type="button" id="status_filter_pending" class="view-toggle-btn" onclick="setEventsStatusFilter('pending')">Pendientes</button>
+                <button type="button" id="status_filter_finished" class="view-toggle-btn" onclick="setEventsStatusFilter('finished')">Finalizados</button>
+            </div>
             <div id="events_list_view" class="card-group" style="display:none;"></div>
             <div id="events_calendar_view"></div>
         </div>
@@ -1136,6 +1214,7 @@
 
         <div id="tab_produccion" class="app-page">
             <h2>Módulo de Producción</h2>
+            <div id="assignment_summary_panel"></div>
             <div class="card-group">
 
                 <div class="form-card">
@@ -1475,6 +1554,10 @@
         let calendarCursor = null;
         // Asignación de campos/tareas a un usuario: { [eventId]: { [fieldId]: rowDeFieldAssignments } }
         let fieldAssignments = {};
+        // Filtro de la vista general: 'all' | 'pending' | 'finished' -según
+        // si el evento tiene alguna tarea asignada sin resolver o no (ver
+        // eventMatchesStatusFilter).
+        let eventsStatusFilter = 'all';
 
         const allFields = [
             'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_vallas_antipanico',
@@ -2055,6 +2138,65 @@
                     resolvedChk.checked = false;
                 }
             });
+
+            renderAssignmentSummaryPanel();
+        }
+
+        // Resumen de tareas al abrir el evento (tab_produccion, la pestaña
+        // por defecto al entrar): qué campos quedan pendientes y quién los
+        // tiene asignados, o el aviso de que ya está todo resuelto. Sin esto
+        // la única pista era el contador de la tarjeta ("1 pendiente"), sin
+        // forma de saber CUÁL de los ~20 campos era sin ir mirando pestaña
+        // por pestaña.
+        function renderAssignmentSummaryPanel() {
+            const panel = document.getElementById('assignment_summary_panel');
+            if (!panel) return;
+            if (!currentEvent) { panel.innerHTML = ''; return; }
+
+            const assignments = Object.values(fieldAssignments[currentEvent] || {});
+            if (assignments.length === 0) { panel.innerHTML = ''; return; }
+
+            const pending = assignments.filter(a => !a.resolved);
+            const resolved = assignments.filter(a => a.resolved);
+
+            const rowHTML = (a) => {
+                const meta = FIELD_META[a.field_id] || { label: a.field_id };
+                return `
+                    <div class="assign-summary-row ${a.resolved ? 'resolved' : 'pending'}" onclick="focusAssignedField('${a.field_id}')">
+                        <span class="assign-summary-status">${a.resolved ? '✓' : '⏳'}</span>
+                        <span class="assign-summary-label">${escapeHtml(meta.label)}</span>
+                        <span class="assign-summary-user">${escapeHtml(a.assigned_to)}</span>
+                    </div>
+                `;
+            };
+
+            const titleHTML = pending.length === 0
+                ? `<span class="assign-summary-title resolved">✓ Todo resuelto</span>`
+                : `<span class="assign-summary-title pending">${pending.length} de ${assignments.length} pendiente${pending.length === 1 ? '' : 's'}</span>`;
+
+            panel.innerHTML = `
+                <div class="assign-summary-card">
+                    <div class="assign-summary-header">${titleHTML}</div>
+                    ${pending.length > 0 ? `<div class="assign-summary-group">${pending.map(rowHTML).join('')}</div>` : ''}
+                    ${resolved.length > 0 ? `<div class="assign-summary-group">${resolved.map(rowHTML).join('')}</div>` : ''}
+                </div>
+            `;
+        }
+
+        // Lleva a la pestaña del campo asignado y lo resalta un momento, para
+        // no tener que ir buscándolo a mano tras verlo en el resumen.
+        function focusAssignedField(fieldId) {
+            const meta = FIELD_META[fieldId];
+            switchTab(meta ? meta.tab : 'tab_produccion');
+
+            setTimeout(() => {
+                const el = document.getElementById(fieldId);
+                const target = (el && el.closest('.form-card')) || el;
+                if (!target) return;
+                target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                target.classList.add('assign-flash');
+                setTimeout(() => target.classList.remove('assign-flash'), 1200);
+            }, 60);
         }
 
         async function onAssignToggle(fieldId) {
@@ -2464,6 +2606,26 @@
             else renderEventsCalendarView();
         }
 
+        // "Pendiente" = le queda alguna tarea asignada sin resolver.
+        // "Finalizado" = no le queda ninguna -incluye los eventos sin
+        // ninguna tarea asignada todavía, no solo los que ya se resolvieron
+        // todas-.
+        function eventMatchesStatusFilter(event) {
+            if (eventsStatusFilter === 'all') return true;
+            const summary = getAssignmentSummary(event.id);
+            const hasPending = !!summary && summary.pending > 0;
+            return eventsStatusFilter === 'pending' ? hasPending : !hasPending;
+        }
+
+        function setEventsStatusFilter(filter) {
+            eventsStatusFilter = filter;
+            ['all', 'pending', 'finished'].forEach(f => {
+                const btn = document.getElementById(`status_filter_${f}`);
+                if (btn) btn.classList.toggle('active', f === filter);
+            });
+            refreshEventsBrowser();
+        }
+
         function formatDateEs(dateStr) {
             const d = new Date(dateStr + 'T00:00:00');
             return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
@@ -2483,7 +2645,7 @@
             if (!container) return;
             container.innerHTML = '';
 
-            const events = getVisibleEvents().sort((a, b) => {
+            const events = getVisibleEvents().filter(eventMatchesStatusFilter).sort((a, b) => {
                 if (!a.event_date && !b.event_date) return a.name.localeCompare(b.name);
                 if (!a.event_date) return 1;
                 if (!b.event_date) return -1;
@@ -2491,7 +2653,7 @@
             });
 
             if (events.length === 0) {
-                container.innerHTML = '<p class="empty-hint">No tenés eventos disponibles todavía.</p>';
+                container.innerHTML = '<p class="empty-hint">No hay eventos que coincidan con este filtro.</p>';
                 return;
             }
 
@@ -2525,7 +2687,7 @@
             const monthNames = ['Enero','Febrero','Marzo','Abril','Mayo','Junio','Julio','Agosto','Septiembre','Octubre','Noviembre','Diciembre'];
 
             const eventsByDay = {};
-            getVisibleEvents().forEach(e => {
+            getVisibleEvents().filter(eventMatchesStatusFilter).forEach(e => {
                 if (!e.event_date) return;
                 const d = new Date(e.event_date + 'T00:00:00');
                 if (d.getFullYear() === year && d.getMonth() === month) {

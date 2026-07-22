@@ -15,7 +15,7 @@ const festivalConfig = {
     'signal-disabled': { label: 'MINUSVÁLIDOS', color: '#3498db', icon: 'disabled', defaultLen: 4, defaultWid: 4 },
     'signal-no-parking': { label: 'PROHIBIDO APARCAR', color: '#e74c3c', icon: 'noparking', defaultLen: 4, defaultWid: 4 },
     'signal-exit': { label: 'SALIDA EMERGENCIA', color: '#27ae60', icon: 'exit', defaultLen: 4, defaultWid: 4 },
-    'signal-wc': { label: 'SEÑAL WC', color: '#3498db', icon: 'wc', defaultLen: 4, defaultWid: 4 },
+    'signal-wc': { label: 'WC', color: '#3498db', icon: 'wc', defaultLen: 4, defaultWid: 4 },
     'entrance': { label: 'ENTRADA', color: '#f1c40f', icon: 'entrance', defaultLen: 6, defaultWid: 2 },
     'zone-vip': { label: 'ZONA VIP', color: '#f1c40f', icon: 'star', defaultLen: 20, defaultWid: 20 },
     'zone-camping': { label: 'ZONA ACAMPADA', color: '#27ae60', icon: 'tent', defaultLen: 30, defaultWid: 30 },

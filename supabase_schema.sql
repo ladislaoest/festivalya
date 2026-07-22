@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS public.events (
     generadores TEXT,
     banos TEXT,
     ambulancia TEXT,
+    seguridad TEXT,
     contenedores TEXT,
     limpieza TEXT,
     media_video TEXT,
@@ -40,6 +41,7 @@ CREATE TABLE IF NOT EXISTS public.events (
 -- Por si la tabla ya existía de una instalación anterior sin estas columnas
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS event_date DATE;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS map_data JSONB;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS seguridad TEXT;
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -161,6 +163,27 @@ CREATE TABLE IF NOT EXISTS public.talkie_messages (
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Asignación de campos/tareas (rider, escenario, seguridad...) a un
+-- usuario, con estado resuelto/pendiente (ver migracion_asignaciones.sql)
+CREATE TABLE IF NOT EXISTS public.field_assignments (
+    id BIGSERIAL PRIMARY KEY,
+    event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+    field_id TEXT NOT NULL,
+    assigned_to TEXT NOT NULL,
+    assigned_by TEXT,
+    resolved BOOLEAN NOT NULL DEFAULT false,
+    resolved_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE (event_id, field_id)
+);
+
+DROP TRIGGER IF EXISTS update_field_assignments_updated_at ON public.field_assignments;
+CREATE TRIGGER update_field_assignments_updated_at
+    BEFORE UPDATE ON public.field_assignments
+    FOR EACH ROW
+    EXECUTE PROCEDURE public.handle_updated_at();
+
 -- =====================================================================
 -- DATOS INICIALES
 -- =====================================================================
@@ -192,6 +215,7 @@ ALTER TABLE public.event_design_status ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.push_subscriptions ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.messages ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.talkie_messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.field_assignments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "public access events" ON public.events;
 CREATE POLICY "public access events" ON public.events FOR ALL USING (true) WITH CHECK (true);
@@ -219,6 +243,9 @@ CREATE POLICY "public access push_subscriptions" ON public.push_subscriptions FO
 
 DROP POLICY IF EXISTS "public access talkie_messages" ON public.talkie_messages;
 CREATE POLICY "public access talkie_messages" ON public.talkie_messages FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access field_assignments" ON public.field_assignments;
+CREATE POLICY "public access field_assignments" ON public.field_assignments FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "public read talkie-recordings" ON storage.objects;
 CREATE POLICY "public read talkie-recordings" ON storage.objects

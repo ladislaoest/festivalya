@@ -310,6 +310,24 @@
             accent-color: var(--accent-gold);
         }
 
+        /* Asignación de tareas por campo (ver injectAssignWidgets/renderFieldAssignments) */
+        .assign-widget {
+            margin-top: 12px;
+            padding-top: 10px;
+            border-top: 1px dashed var(--border-soft);
+        }
+
+        .assign-box {
+            display: none;
+            flex-direction: column;
+            gap: 8px;
+            margin-top: 8px;
+            padding: 10px;
+            background: var(--accent-gold-dim);
+            border-left: 2px solid var(--accent-gold);
+            border-radius: 6px;
+        }
+
         .btn-save-all {
             background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
             color: #14120a;
@@ -653,6 +671,28 @@
             gap: 5px;
         }
 
+        .event-card-assign-badge {
+            display: inline-flex;
+            align-items: center;
+            font-size: 10px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.4px;
+            padding: 3px 8px;
+            border-radius: 20px;
+            margin-top: 6px;
+        }
+
+        .event-card-assign-badge.pending {
+            background: var(--danger-dim);
+            color: var(--danger);
+        }
+
+        .event-card-assign-badge.resolved {
+            background: rgba(52, 211, 153, 0.12);
+            color: var(--success);
+        }
+
         .search-result-item {
             background: var(--bg-elevated);
             border-left: 2px solid var(--accent-gold);
@@ -989,17 +1029,17 @@
 
         <div id="events_browser" style="margin-top: 16px;">
             <div class="view-toggle-row">
-                <button type="button" id="view_toggle_list" class="view-toggle-btn active" onclick="setEventsView('list')">
+                <button type="button" id="view_toggle_list" class="view-toggle-btn" onclick="setEventsView('list')">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg>
                     Lista
                 </button>
-                <button type="button" id="view_toggle_calendar" class="view-toggle-btn" onclick="setEventsView('calendar')">
+                <button type="button" id="view_toggle_calendar" class="view-toggle-btn active" onclick="setEventsView('calendar')">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                     Calendario
                 </button>
             </div>
-            <div id="events_list_view" class="card-group"></div>
-            <div id="events_calendar_view" style="display:none;"></div>
+            <div id="events_list_view" class="card-group" style="display:none;"></div>
+            <div id="events_calendar_view"></div>
         </div>
     </div>
 
@@ -1164,6 +1204,11 @@
                 <div class="form-card">
                     <label>Ambulancia / Asistencia</label>
                     <input type="text" id="prod_ambulancia" class="mention-field" placeholder="Ej: 1 Soporte Vital Básico + 2 Técnicos">
+                </div>
+
+                <div class="form-card">
+                    <label>Seguridad</label>
+                    <input type="text" id="prod_seguridad" class="mention-field" placeholder="Ej: Empresa de seguridad, nº de efectivos, turnos...">
                 </div>
 
                 <div class="form-card">
@@ -1426,13 +1471,15 @@
 
         let eventModalMode = 'create';
         let eventModalEditingId = null;
-        let eventsView = 'list';
+        let eventsView = 'calendar';
         let calendarCursor = null;
+        // Asignación de campos/tareas a un usuario: { [eventId]: { [fieldId]: rowDeFieldAssignments } }
+        let fieldAssignments = {};
 
         const allFields = [
             'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_vallas_antipanico',
             'prod_vallas_bajas', 'prod_efectos', 'prod_pirotecnia', 'prod_generadores',
-            'prod_banos', 'prod_ambulancia', 'prod_contenedores', 'prod_limpieza',
+            'prod_banos', 'prod_ambulancia', 'prod_seguridad', 'prod_contenedores', 'prod_limpieza',
             'media_video', 'media_foto', 'media_drone', 'media_speaker',
             'host_barras', 'host_foodtrucks', 'log_transfers', 'log_camerinos'
         ];
@@ -1449,6 +1496,7 @@
             prod_generadores: 'generadores',
             prod_banos: 'banos',
             prod_ambulancia: 'ambulancia',
+            prod_seguridad: 'seguridad',
             prod_contenedores: 'contenedores',
             prod_limpieza: 'limpieza',
             media_video: 'media_video',
@@ -1473,6 +1521,7 @@
             prod_generadores: { label: 'Generadores / Energía', tab: 'tab_produccion' },
             prod_banos: { label: 'Baños', tab: 'tab_produccion' },
             prod_ambulancia: { label: 'Ambulancia / Asistencia', tab: 'tab_produccion' },
+            prod_seguridad: { label: 'Seguridad', tab: 'tab_produccion' },
             prod_contenedores: { label: 'Contenedores', tab: 'tab_produccion' },
             prod_limpieza: { label: 'Limpieza', tab: 'tab_produccion' },
             media_video: { label: 'Vídeo', tab: 'tab_media' },
@@ -1514,6 +1563,21 @@
 
             masterEscenarios = {};
             (escenarios || []).forEach(e => { masterEscenarios[e.id] = { name: e.name, measures: e.measures }; });
+
+            // Tabla nueva (ver migracion_asignaciones.sql): si todavía no se
+            // ha ejecutado esa migración en este proyecto de Supabase, no
+            // debe tirar abajo el resto de la carga -simplemente no habrá
+            // asignaciones hasta que se cree la tabla.
+            const { data: assignments, error: assignErr } = await sb.from('field_assignments').select('*');
+            fieldAssignments = {};
+            if (assignErr) {
+                console.warn('No se pudieron cargar las asignaciones de tareas (¿falta ejecutar migracion_asignaciones.sql?):', assignErr.message);
+            } else {
+                (assignments || []).forEach(a => {
+                    if (!fieldAssignments[a.event_id]) fieldAssignments[a.event_id] = {};
+                    fieldAssignments[a.event_id][a.field_id] = a;
+                });
+            }
         }
 
         function escapeHtml(str) {
@@ -1531,6 +1595,7 @@
             if (currentUser && usersCache[currentUser]) {
                 overlay.style.display = 'none';
                 setupUIByRole();
+                injectAssignWidgets();
                 updateEventSelect();
                 if (currentEvent) loadEventData();
                 renderAdminPanel();
@@ -1886,6 +1951,14 @@
 
             handleEscenarioChange();
             toggleRiderEmpresa();
+            renderFieldAssignments();
+            // Suscripción push para este (usuario, evento): sin gesto de
+            // usuario de por medio no muestra ningún diálogo nuevo si el
+            // permiso ya se concedió o denegó antes, así que es seguro
+            // llamarla cada vez que se abre un evento -y es lo que permite
+            // que la notificación de una tarea asignada (ver
+            // notifyAssignment) le llegue a alguien que nunca usó el Talkie.
+            setupPushSubscriptionForEvent().catch(() => {});
 
             if (document.getElementById('tab_mapa').classList.contains('active')) {
                 loadMapaIframe();
@@ -1897,6 +1970,229 @@
             if (document.getElementById('tab_talkie').classList.contains('active')) {
                 loadTalkieHistory().then(renderTalkieHistory);
             }
+        }
+
+        // --- ASIGNACIÓN DE TAREAS POR CAMPO ---
+        // Cualquiera de los ~20 campos (rider, escenario, seguridad...) se
+        // puede asignar a un usuario con acceso al evento; ese usuario recibe
+        // un aviso (mensaje interno + push) y marca él mismo si quedó
+        // resuelto o no. Cada tarjeta de evento resume cuántos campos
+        // asignados siguen pendientes, o si ya está todo resuelto.
+
+        function getUsersWithEventAccess(eventId) {
+            return Object.keys(usersCache)
+                .filter(u => canUserSeeEventFor(u, eventId))
+                .sort((a, b) => a.localeCompare(b));
+        }
+
+        function canUserSeeEventFor(username, eventId) {
+            const user = usersCache[username];
+            if (!user) return false;
+            if (user.role === 'admin') return true;
+            return !!(user.allowedEvents && user.allowedEvents.includes(eventId));
+        }
+
+        // Un único bloque de checkbox "Asignar" + selector de usuario +
+        // checkbox "Resuelto" por campo, insertado una sola vez dentro de
+        // cada .form-card -su estado (a qué evento/campo pertenece) se
+        // repuebla en cada renderFieldAssignments(), no hace falta volver a
+        // insertarlo.
+        function buildAssignWidgetHTML(fieldId) {
+            return `
+                <div class="assign-widget">
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="assign_chk_${fieldId}" onchange="onAssignToggle('${fieldId}')">
+                        Asignar a alguien
+                    </label>
+                    <div id="assign_box_${fieldId}" class="assign-box">
+                        <select id="assign_user_${fieldId}" onchange="onAssignUserChange('${fieldId}')">
+                            <option value="">-- Elegir usuario --</option>
+                        </select>
+                        <label class="checkbox-row">
+                            <input type="checkbox" id="assign_resolved_${fieldId}" onchange="onAssignResolvedChange('${fieldId}')">
+                            Resuelto
+                        </label>
+                    </div>
+                </div>
+            `;
+        }
+
+        function injectAssignWidgets() {
+            allFields.forEach(f => {
+                const input = document.getElementById(f);
+                const card = input && input.closest('.form-card');
+                if (!card || card.querySelector('.assign-widget')) return;
+                card.insertAdjacentHTML('beforeend', buildAssignWidgetHTML(f));
+            });
+        }
+
+        function renderFieldAssignments() {
+            if (!currentEvent) return;
+            const assignmentsForEvent = fieldAssignments[currentEvent] || {};
+            const usersWithAccess = getUsersWithEventAccess(currentEvent);
+            const userOptions = '<option value="">-- Elegir usuario --</option>' +
+                usersWithAccess.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
+
+            allFields.forEach(f => {
+                const chk = document.getElementById(`assign_chk_${f}`);
+                const box = document.getElementById(`assign_box_${f}`);
+                const userSelect = document.getElementById(`assign_user_${f}`);
+                const resolvedChk = document.getElementById(`assign_resolved_${f}`);
+                if (!chk || !box || !userSelect || !resolvedChk) return;
+
+                userSelect.innerHTML = userOptions;
+
+                const a = assignmentsForEvent[f];
+                if (a) {
+                    chk.checked = true;
+                    box.style.display = 'flex';
+                    userSelect.value = a.assigned_to;
+                    resolvedChk.checked = !!a.resolved;
+                } else {
+                    chk.checked = false;
+                    box.style.display = 'none';
+                    userSelect.value = '';
+                    resolvedChk.checked = false;
+                }
+            });
+        }
+
+        async function onAssignToggle(fieldId) {
+            const chk = document.getElementById(`assign_chk_${fieldId}`);
+            const box = document.getElementById(`assign_box_${fieldId}`);
+            if (!currentEvent) { chk.checked = false; return; }
+
+            if (chk.checked) {
+                box.style.display = 'flex';
+                // Sin usuario elegido todavía no hay nada que guardar -se
+                // guarda en cuanto se elige uno, ver onAssignUserChange.
+            } else {
+                box.style.display = 'none';
+                await removeFieldAssignment(fieldId);
+            }
+        }
+
+        async function removeFieldAssignment(fieldId) {
+            const eventId = currentEvent;
+            if (!eventId) return;
+            const { error } = await sb.from('field_assignments').delete().eq('event_id', eventId).eq('field_id', fieldId);
+            if (error) { console.warn('Error quitando la asignación:', error.message); return; }
+            if (fieldAssignments[eventId]) delete fieldAssignments[eventId][fieldId];
+            const userSelect = document.getElementById(`assign_user_${fieldId}`);
+            const resolvedChk = document.getElementById(`assign_resolved_${fieldId}`);
+            if (userSelect) userSelect.value = '';
+            if (resolvedChk) resolvedChk.checked = false;
+            refreshEventsBrowser();
+        }
+
+        async function onAssignUserChange(fieldId) {
+            const eventId = currentEvent;
+            if (!eventId) return;
+            const username = document.getElementById(`assign_user_${fieldId}`).value;
+            if (!username) {
+                await removeFieldAssignment(fieldId);
+                document.getElementById(`assign_chk_${fieldId}`).checked = false;
+                document.getElementById(`assign_box_${fieldId}`).style.display = 'none';
+                return;
+            }
+
+            const { data, error } = await sb.from('field_assignments')
+                .upsert({
+                    event_id: eventId,
+                    field_id: fieldId,
+                    assigned_to: username,
+                    assigned_by: currentUser,
+                    resolved: false,
+                    resolved_at: null
+                }, { onConflict: 'event_id,field_id' })
+                .select()
+                .single();
+
+            if (error) { alert('Error asignando la tarea: ' + error.message); return; }
+
+            if (!fieldAssignments[eventId]) fieldAssignments[eventId] = {};
+            fieldAssignments[eventId][fieldId] = data;
+            document.getElementById(`assign_resolved_${fieldId}`).checked = false;
+
+            const label = FIELD_META[fieldId] ? FIELD_META[fieldId].label : fieldId;
+            const eventName = eventsCache[eventId] ? eventsCache[eventId].name : '';
+            await logActivity(eventId, eventName, 'assign', `Asignó "${label}" a ${username}`);
+            await notifyAssignment(username, eventId, fieldId, eventName);
+            refreshEventsBrowser();
+        }
+
+        async function onAssignResolvedChange(fieldId) {
+            const eventId = currentEvent;
+            if (!eventId) return;
+            const resolvedChk = document.getElementById(`assign_resolved_${fieldId}`);
+            const resolved = resolvedChk.checked;
+
+            const { data, error } = await sb.from('field_assignments')
+                .update({ resolved, resolved_at: resolved ? new Date().toISOString() : null })
+                .eq('event_id', eventId).eq('field_id', fieldId)
+                .select()
+                .single();
+
+            if (error) { alert('Error actualizando el estado: ' + error.message); resolvedChk.checked = !resolved; return; }
+
+            if (!fieldAssignments[eventId]) fieldAssignments[eventId] = {};
+            fieldAssignments[eventId][fieldId] = data;
+
+            const label = FIELD_META[fieldId] ? FIELD_META[fieldId].label : fieldId;
+            const eventName = eventsCache[eventId] ? eventsCache[eventId].name : '';
+            await logActivity(eventId, eventName, 'resolve', `Marcó "${label}" como ${resolved ? 'resuelto' : 'pendiente'}`);
+            refreshEventsBrowser();
+        }
+
+        // Aviso al usuario asignado: un mensaje interno (mismo canal que las
+        // menciones, con el mismo deep-link al campo/pestaña) más una
+        // notificación push real si ya tiene una suscripción activa para
+        // este evento (ver setupPushSubscriptionForEvent, que se llama sola
+        // al abrir cualquier evento -no hace falta haber usado el Talkie).
+        async function notifyAssignment(username, eventId, fieldId, eventName) {
+            if (!username || username === currentUser) return;
+            const label = FIELD_META[fieldId] ? FIELD_META[fieldId].label : fieldId;
+            const tab = FIELD_META[fieldId] ? FIELD_META[fieldId].tab : 'tab_produccion';
+
+            await notifyMentions([username], `${label} — ${eventName}`, `${currentUser} te asignó esta tarea`, eventId, tab, fieldId, null);
+
+            const { data: subs } = await sb.from('push_subscriptions')
+                .select('subscription').eq('event_id', eventId).eq('username', username);
+            if (!subs || subs.length === 0) return;
+
+            fetch('/api/send-push', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    subscriptions: subs.map(s => s.subscription),
+                    payload: {
+                        title: 'Nueva tarea asignada',
+                        body: `${currentUser} te asignó "${label}" en ${eventName}`,
+                        url: './index.html',
+                        tag: 'assignment'
+                    }
+                })
+            }).catch(err => console.error('Error enviando notificación push de asignación:', err));
+        }
+
+        // Resumen para las tarjetas de evento (lista y calendario): cuántos
+        // campos asignados siguen pendientes, o si ya está todo resuelto.
+        // Sin ningún campo asignado no se muestra nada -"pendiente: 0" sin
+        // haber asignado nada no significa lo mismo que "ya está todo hecho".
+        function getAssignmentSummary(eventId) {
+            const assignments = Object.values(fieldAssignments[eventId] || {});
+            if (assignments.length === 0) return null;
+            const pending = assignments.filter(a => !a.resolved).length;
+            return { total: assignments.length, pending };
+        }
+
+        function renderAssignmentBadgeHTML(eventId) {
+            const summary = getAssignmentSummary(eventId);
+            if (!summary) return '';
+            if (summary.pending === 0) {
+                return `<div class="event-card-assign-badge resolved">✓ Todo resuelto</div>`;
+            }
+            return `<div class="event-card-assign-badge pending">${summary.pending} pendiente${summary.pending === 1 ? '' : 's'}</div>`;
         }
 
         async function saveAllFestivalData(e) {
@@ -2207,6 +2503,7 @@
                     <div>
                         <div class="event-card-name">${escapeHtml(event.name)}</div>
                         <div class="event-card-date">${ICON_CALENDAR} ${dateLabel}</div>
+                        ${renderAssignmentBadgeHTML(event.id)}
                     </div>
                     ${ICON_CHEVRON}
                 `;
@@ -2284,7 +2581,10 @@
                 const e = eventsCache[id];
                 if (!e) return '';
                 return `<div class="event-card" onclick="openEventById('${id}','tab_produccion')">
-                    <div class="event-card-name">${escapeHtml(e.name)}</div>
+                    <div>
+                        <div class="event-card-name">${escapeHtml(e.name)}</div>
+                        ${renderAssignmentBadgeHTML(e.id)}
+                    </div>
                     ${ICON_CHEVRON}
                 </div>`;
             }).join('');
@@ -2736,7 +3036,7 @@
             document.getElementById('talkie_panel').style.display = 'block';
 
             setupTalkieMediaSession();
-            await setupTalkiePushSubscription();
+            await setupPushSubscriptionForEvent();
             joinTalkieChannel(currentEvent);
 
             if (talkieBgSilenceInterval) clearInterval(talkieBgSilenceInterval);
@@ -3145,7 +3445,11 @@
             return Uint8Array.from([...rawData].map(c => c.charCodeAt(0)));
         }
 
-        async function setupTalkiePushSubscription() {
+        // Registra/renueva la suscripción push de currentUser para currentEvent.
+        // No es exclusiva del Talkie -pese al nombre de la VAPID key, que es
+        // única para toda la app-: también la usan las notificaciones de
+        // tareas asignadas (ver notifyAssignment).
+        async function setupPushSubscriptionForEvent() {
             if (!('serviceWorker' in navigator) || !('PushManager' in window)) {
                 console.warn('Este navegador no soporta notificaciones push.');
                 return;

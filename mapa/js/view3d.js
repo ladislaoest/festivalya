@@ -15,13 +15,14 @@ const DRUNK_WANDER_RADIUS = 2.5;
 let wanderingDrunks = [];
 
 // Secuencia animada del coche "gabry" (ver setupGabryAnimations/
-// updateGabryAnimations): coche que llega y aparca cerca de la barra, un
-// pasajero que se baja y camina hasta ella. Se reconstruye entera en cada
-// generate3DView().
+// updateGabryAnimations): coche que recorre el trayecto marcado a mano en
+// el mapa 2D (ver startGabryPathDrawing en elements.js) -o, si no se marcó
+// ninguno, va en línea recta desde donde se colocó- hasta aparcar cerca de
+// la barra más próxima al final de ese trayecto; luego un pasajero se baja
+// y va CORRIENDO hasta ella. Se reconstruye entera en cada generate3DView().
 let gabryAnimations = [];
-const GABRY_DRIVE_DURATION_MS = 4500;
 const GABRY_DISEMBARK_PAUSE_MS = 700;
-const GABRY_WALK_SPEED_MPS = 1.1; // metros/segundo, paso normal
+const GABRY_RUN_SPEED_MPS = 2.6; // metros/segundo, carrera ligera hasta la barra
 
 // "Tour automático": plano general del recinto y luego un recorrido por
 // todos los elementos, uno a uno (ver buildTourKeyframes/updateTour).
@@ -1062,56 +1063,86 @@ const GABRY_PARK_DISTANCE = 4; // metros de la barra donde para el coche
 const GABRY_WALK_STOP_DISTANCE = 1.4; // metros de la barra donde se detiene el pasajero
 const GABRY_DRIVE_SPEED_MPS = 3.2; // m/s, velocidad lenta dentro del recinto
 
-// Calcula, para cada coche "gabry" ya colocado (ver drawElements), a qué
-// barra dirigirse y dónde aparcar/detenerse: la barra MÁS CERCANA a donde
-// se colocó el coche en el mapa. Sin ninguna barra en el recinto no hay
-// dónde ir, así que se queda aparcado donde se puso (sin animar).
+// Calcula, para cada coche "gabry" ya colocado (ver drawElements), el
+// trayecto completo a recorrer y a qué barra dirigirse al final: la barra
+// MÁS CERCANA al final del trayecto (o a donde se colocó el coche, si no se
+// marcó ningún trayecto en el mapa 2D -ver startGabryPathDrawing-). Sin
+// ninguna barra en el recinto no hay dónde ir, así que se queda aparcado
+// donde se puso (sin animar).
 function setupGabryAnimations(elementsList) {
 	if (!gabryAnimations.length) return;
 	const bars = elementsList.filter(el => el.type === 'bar' && el._threeObj);
 	gabryAnimations.forEach(entry => {
 		if (!bars.length) return;
+
+		const start = entry.car.position.clone();
+		// Puntos intermedios del trayecto dibujado a mano, si lo hay: el
+		// coche pasa por cada uno en vez de ir en línea recta desde donde
+		// se colocó (ver drawElements, que ya los convirtió a coordenadas
+		// del plano 3D en "pathPlane").
+		const routePoints = [start];
+		if (entry.pathPlane) {
+			entry.pathPlane.slice(1).forEach(p => routePoints.push(new THREE.Vector3(p.x, start.y, p.z)));
+		}
+		const lastPoint = routePoints[routePoints.length - 1];
+
 		let nearestBar = null, nearestDist = Infinity;
 		bars.forEach(bar => {
-			const d = entry.car.position.distanceTo(bar._threeObj.position);
+			const d = lastPoint.distanceTo(bar._threeObj.position);
 			if (d < nearestDist) { nearestDist = d; nearestBar = bar; }
 		});
 		if (!nearestBar) return;
 
 		const barPos = nearestBar._threeObj.position;
-		const start = entry.car.position.clone();
-		const toBar = new THREE.Vector3(barPos.x - start.x, 0, barPos.z - start.z);
+		const toBar = new THREE.Vector3(barPos.x - lastPoint.x, 0, barPos.z - lastPoint.z);
 		const totalDist = toBar.length();
-		// Coche ya prácticamente encima de la barra: no hay trayecto real
-		// que animar (y calcular una dirección con un vector casi nulo daría
-		// un rumbo sin sentido).
-		if (totalDist < 0.5) return;
-		const dir = toBar.normalize();
+		// Coche ya prácticamente encima de la barra Y sin ningún trayecto
+		// dibujado: no hay nada real que animar (y calcular una dirección
+		// con un vector casi nulo daría un rumbo sin sentido).
+		if (totalDist < 0.5 && routePoints.length < 2) return;
+		const dir = totalDist > 0.001 ? toBar.normalize() : new THREE.Vector3(1, 0, 0);
 
 		const parkDist = Math.min(GABRY_PARK_DISTANCE, Math.max(0, totalDist - 0.5));
 		const target = new THREE.Vector3(barPos.x - dir.x * parkDist, start.y, barPos.z - dir.z * parkDist);
 		const walkStopDist = Math.min(GABRY_WALK_STOP_DISTANCE, Math.max(0, totalDist - 0.3));
 		const walkTarget = new THREE.Vector3(barPos.x - dir.x * walkStopDist, start.y, barPos.z - dir.z * walkStopDist);
-		// Rumbo (rotation.y) que hace que el morro del coche -su eje local
-		// +X, ver createGabryCarModel- apunte en la dirección "dir".
+		// Rumbo (rotation.y) del último tramo, el que hace que el morro del
+		// coche -su eje local +X, ver createGabryCarModel- apunte hacia la
+		// barra al aparcar.
 		const heading = Math.atan2(-dir.z, dir.x);
 
-		const driveDist = start.distanceTo(target);
+		if (target.distanceTo(lastPoint) > 0.05) routePoints.push(target);
+		if (routePoints.length < 2) return;
+
+		// Distancia acumulada de cada tramo, para recorrer TODO el trayecto
+		// (no solo el último tramo) a velocidad constante -ver
+		// updateGabryAnimations-, en vez de un único lerp de A a B que
+		// ignoraría los puntos intermedios.
+		let totalRouteDist = 0;
+		const cumDist = [0];
+		for (let i = 1; i < routePoints.length; i++) {
+			totalRouteDist += routePoints[i - 1].distanceTo(routePoints[i]);
+			cumDist.push(totalRouteDist);
+		}
+
 		entry.phase = 'driving';
-		entry.driveStart = start;
-		entry.driveTarget = target;
+		entry.routePoints = routePoints;
+		entry.cumDist = cumDist;
+		entry.totalRouteDist = totalRouteDist;
 		entry.driveStartTime = performance.now();
-		entry.driveDuration = Math.min(12000, Math.max(1800, (driveDist / GABRY_DRIVE_SPEED_MPS) * 1000));
+		entry.driveDuration = Math.min(20000, Math.max(1800, (totalRouteDist / GABRY_DRIVE_SPEED_MPS) * 1000));
 		entry.heading = heading;
 		entry.walkTarget = walkTarget;
 	});
 }
 
-// Anima la secuencia completa de cada coche "gabry": conduce hasta su
-// punto de aparcamiento (ver setupGabryAnimations), espera un momento,
-// hace aparecer a un pasajero junto a la puerta y lo anima caminando hasta
-// la barra -con el mismo balanceo de piernas/brazos que "updateWandering-
-// Drunks", para no reinventar la animación de caminar.
+// Anima la secuencia completa de cada coche "gabry": recorre el trayecto
+// hasta su punto de aparcamiento (ver setupGabryAnimations) -tramo a tramo,
+// a velocidad constante, si se marcó un trayecto con varios puntos-, espera
+// un momento, hace aparecer a un pasajero junto a la puerta y lo anima
+// CORRIENDO hasta la barra -con el mismo balanceo de piernas/brazos que
+// "updateWanderingDrunks" pero a zancada más rápida, para no reinventar la
+// animación de caminar/correr desde cero.
 function updateGabryAnimations() {
 	if (!gabryAnimations.length) return;
 	const now = performance.now();
@@ -1120,8 +1151,18 @@ function updateGabryAnimations() {
 
 		if (entry.phase === 'driving') {
 			const t = Math.min(1, (now - entry.driveStartTime) / entry.driveDuration);
-			entry.car.position.lerpVectors(entry.driveStart, entry.driveTarget, easeInOutQuad(t));
-			entry.car.rotation.y = entry.heading;
+			const pts = entry.routePoints, cum = entry.cumDist;
+			const distAlong = t * entry.totalRouteDist;
+			let segIdx = 1;
+			while (segIdx < cum.length - 1 && cum[segIdx] < distAlong) segIdx++;
+			const segStart = pts[segIdx - 1], segEnd = pts[segIdx];
+			const segLen = cum[segIdx] - cum[segIdx - 1];
+			const segT = segLen > 0.0001 ? (distAlong - cum[segIdx - 1]) / segLen : 1;
+			entry.car.position.lerpVectors(segStart, segEnd, segT);
+
+			const segDir = new THREE.Vector3(segEnd.x - segStart.x, 0, segEnd.z - segStart.z);
+			if (segDir.lengthSq() > 0.0001) entry.car.rotation.y = Math.atan2(-segDir.z, segDir.x);
+
 			if (entry.element._threeLabel) {
 				entry.element._threeLabel.position.x = entry.car.position.x;
 				entry.element._threeLabel.position.z = entry.car.position.z;
@@ -1139,28 +1180,30 @@ function updateGabryAnimations() {
 				const spawnPos = entry.car.position.clone().add(doorOffset);
 				spawnPos.y = entry.groundY;
 
-				const walkDir = new THREE.Vector3(entry.walkTarget.x - spawnPos.x, 0, entry.walkTarget.z - spawnPos.z);
-				const walkHeadingDeg = walkDir.lengthSq() > 0.0001
-					? -(Math.atan2(-walkDir.normalize().z, walkDir.x) * 180) / Math.PI
+				const runDir = new THREE.Vector3(entry.walkTarget.x - spawnPos.x, 0, entry.walkTarget.z - spawnPos.z);
+				const runHeadingDeg = runDir.lengthSq() > 0.0001
+					? -(Math.atan2(-runDir.normalize().z, runDir.x) * 180) / Math.PI
 					: -(entry.heading * 180) / Math.PI;
 
-				entry.passenger = createCasualPersonFigure(spawnPos, walkHeadingDeg, threeScene);
+				entry.passenger = createCasualPersonFigure(spawnPos, runHeadingDeg, threeScene);
 				entry.walkStart = spawnPos.clone();
 				entry.walkStartTime = now;
-				const walkDist = spawnPos.distanceTo(entry.walkTarget);
-				entry.walkDuration = Math.max(400, (walkDist / GABRY_WALK_SPEED_MPS) * 1000);
-				entry.phase = 'walking';
+				const runDist = spawnPos.distanceTo(entry.walkTarget);
+				entry.walkDuration = Math.max(300, (runDist / GABRY_RUN_SPEED_MPS) * 1000);
+				entry.phase = 'running';
 			}
-		} else if (entry.phase === 'walking') {
+		} else if (entry.phase === 'running') {
 			const t = Math.min(1, (now - entry.walkStartTime) / entry.walkDuration);
 			entry.passenger.position.lerpVectors(entry.walkStart, entry.walkTarget, t);
 
-			const stride = Math.sin((now / 1000) * 7);
+			// Zancada más rápida y amplia que el paso normal de
+			// "updateWanderingDrunks" -misma idea, ritmo de carrera.
+			const stride = Math.sin((now / 1000) * 11);
 			const ud = entry.passenger.userData;
-			if (ud.legL) ud.legL.rotation.x = stride * 0.5;
-			if (ud.legR) ud.legR.rotation.x = -stride * 0.5;
-			if (ud.armL) ud.armL.rotation.x = -stride * 0.4;
-			if (ud.armR) ud.armR.rotation.x = stride * 0.4;
+			if (ud.legL) ud.legL.rotation.x = stride * 0.9;
+			if (ud.legR) ud.legR.rotation.x = -stride * 0.9;
+			if (ud.armL) ud.armL.rotation.x = -stride * 0.7;
+			if (ud.armR) ud.armR.rotation.x = stride * 0.7;
 
 			if (t >= 1) entry.phase = 'arrived';
 		}
@@ -1640,8 +1683,13 @@ function drawElements(elements, threeScene) {
             // después de dibujar TODOS los elementos (ver
             // setupGabryAnimations): aquí solo puede conocerse el punto de
             // partida, no dónde está la barra -puede que aún no se haya
-            // creado si el bucle no ha llegado a ella todavía.
-            gabryAnimations.push({ element, car: obj3d, groundY, phase: 'parked' });
+            // creado si el bucle no ha llegado a ella todavía. El trayecto
+            // dibujado a mano en 2D (ver startGabryPathDrawing en
+            // elements.js) sí puede convertirse ya al plano 3D.
+            const pathPlane = (element.pathCoords && element.pathCoords.length > 1)
+                ? element.pathCoords.map(ll => latLngToPlane(ll.lat, ll.lng, bbox))
+                : null;
+            gabryAnimations.push({ element, car: obj3d, groundY, phase: 'parked', pathPlane });
         } else if (element.type === 'fence') {
             obj3d = createConstructionFenceSegment(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'panic-fence') {
@@ -1833,55 +1881,149 @@ function createFoodTruckModel(pos, element, scene) {
 // deportivo, faros). No es la réplica exacta de ningún modelo -geometría
 // procedural simple-, pero la silueta baja y deportiva evoca un cupé
 // compacto de finales de los 2000.
+// Silueta en PLANTA (vista de pájaro, que es como más se ve con la cámara
+// por defecto de esta app): morro redondeado y más estrecho, ensanche
+// máximo a la altura de las puertas, aleta trasera ancha que se cierra en
+// una cola redondeada -evoca el cupé Megane II (2002-2008): morro afilado,
+// caderas anchas, trasera corta y redondeada-, en vez del rectángulo liso
+// de antes. "y" del shape se usa como Z del mundo tras el rotateX (mismo
+// truco que la extrusión de edificios reales, ver applyMapFeatures).
+function carPlanShape(length, width, noseSharpness = 1) {
+	const hl = length / 2, hw = width / 2;
+	const shape = new THREE.Shape();
+	shape.moveTo(hl * 0.5, hw * 0.78);
+	shape.quadraticCurveTo(hl * (0.9 + 0.08 * noseSharpness), hw * 0.7, hl, 0);
+	shape.quadraticCurveTo(hl * (0.9 + 0.08 * noseSharpness), -hw * 0.7, hl * 0.5, -hw * 0.78);
+	shape.lineTo(-hl * 0.4, -hw);
+	shape.quadraticCurveTo(-hl * 0.94, -hw * 0.82, -hl, -hw * 0.3);
+	shape.quadraticCurveTo(-hl * 1.02, 0, -hl, hw * 0.3);
+	shape.quadraticCurveTo(-hl * 0.94, hw * 0.82, -hl * 0.4, hw);
+	shape.lineTo(hl * 0.5, hw * 0.78);
+	return shape;
+}
+
+function extrudeCarShape(shape, height, material) {
+	const geometry = new THREE.ExtrudeGeometry(shape, { depth: height, bevelEnabled: true, bevelThickness: 0.03, bevelSize: 0.025, bevelSegments: 2 });
+	geometry.rotateX(-Math.PI / 2);
+	return new THREE.Mesh(geometry, material);
+}
+
+// Perfil LATERAL de la cabina (plano X=largo/Y=alto de la propia cabina,
+// extruido después a lo largo de Z=ancho): parabrisas muy inclinado hacia
+// atrás, techo curvo y luna trasera con caída marcada -la silueta que de
+// verdad lee como "cupé" al mirarlo de lado-. La carrocería usa la
+// silueta en PLANTA (carPlanShape) porque así se ve mejor desde la cámara
+// por defecto de esta app (bastante cenital), pero la cabina puesta en
+// planta se veía como un bidón/lata sin ninguna pendiente real -por eso
+// esta usa perfil lateral en su lugar, aunque sea una extrusión distinta.
+function cabinSideProfileShape(cabinLength, cabinHeight) {
+	const shape = new THREE.Shape();
+	const hl = cabinLength / 2;
+	shape.moveTo(hl, 0);
+	shape.quadraticCurveTo(hl * 0.7, cabinHeight * 0.6, hl * 0.32, cabinHeight * 0.94);
+	shape.quadraticCurveTo(hl * 0.02, cabinHeight, -hl * 0.28, cabinHeight * 0.88);
+	shape.quadraticCurveTo(-hl * 0.78, cabinHeight * 0.62, -hl, cabinHeight * 0.08);
+	shape.lineTo(-hl, 0);
+	shape.lineTo(hl, 0);
+	return shape;
+}
+
+function extrudeCabinProfile(shape, depth, material) {
+	const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: true, bevelThickness: 0.02, bevelSize: 0.02, bevelSegments: 2 });
+	geometry.translate(0, 0, -depth / 2); // centra la extrusión en su propio eje Z (ancho)
+	return new THREE.Mesh(geometry, material);
+}
+
+// "GABRY": cupé amarillo inspirado en el Renault Megane II Coupé
+// (2002-2008) -morro puntiagudo, caderas anchas, techo curvo retrasado y
+// cola corta y redondeada-. Sigue siendo geometría procedural (no hay
+// modelo/textura real del coche), pero con siluetas curvas en vez de cajas
+// para acercarse mucho más a esa silueta real que una caja lisa.
 function createGabryCarModel(pos, element, scene) {
 	const group = new THREE.Group();
 	const length = element.length || 4.35;
 	const width = element.width || 1.75;
-	const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf1c40f, metalness: 0.35, roughness: 0.35 });
-	const glassMat = new THREE.MeshStandardMaterial({ color: 0x1a2530, metalness: 0.6, roughness: 0.2 });
+	const bodyMat = new THREE.MeshStandardMaterial({ color: 0xf7d117, metalness: 0.4, roughness: 0.3 });
+	const glassMat = new THREE.MeshStandardMaterial({ color: 0x151c22, metalness: 0.5, roughness: 0.15 });
 	const darkMat = new THREE.MeshStandardMaterial({ color: 0x1a1a1a });
+	const chromeMat = new THREE.MeshStandardMaterial({ color: 0xcfd2d4, metalness: 0.8, roughness: 0.25 });
 
-	const groundClearance = 0.28;
-	const bodyHeight = 0.55;
-	const body = new THREE.Mesh(new THREE.BoxGeometry(length, bodyHeight, width), bodyMat);
-	body.position.set(0, groundClearance + bodyHeight / 2, 0);
+	const groundClearance = 0.27;
+	const bodyHeight = 0.58;
+
+	// Carrocería principal: caderas anchas a la altura de las puertas, cola
+	// corta y redondeada, morro puntiagudo (noseSharpness alto).
+	const body = extrudeCarShape(carPlanShape(length, width, 1.3), bodyHeight, bodyMat);
+	body.position.y = groundClearance;
 	group.add(body);
 
-	// Cabina de cristal, más corta que el cuerpo y desplazada hacia atrás
-	// -silueta de cupé, no de berlina-, con una ligera inclinación hacia
-	// atrás del parabrisas.
-	const cabinLength = length * 0.48;
-	const cabinHeight = 0.46;
-	const cabin = new THREE.Mesh(new THREE.BoxGeometry(cabinLength, cabinHeight, width * 0.9), glassMat);
-	cabin.position.set(-length * 0.06, groundClearance + bodyHeight + cabinHeight / 2, 0);
-	cabin.rotation.z = -0.06;
+	// Cabina/parabrisas: perfil lateral real (parabrisas inclinado, techo
+	// curvo, luna trasera con caída), no una silueta en planta apilada -esa
+	// se veía como un bidón sin pendiente ninguna-. Retrasada respecto al
+	// centro, como el habitáculo corto de un cupé real.
+	const cabinLength = length * 0.56;
+	const cabinWidth = width * 0.86;
+	const cabinHeight = 0.62;
+	const cabin = extrudeCabinProfile(cabinSideProfileShape(cabinLength, cabinHeight), cabinWidth, glassMat);
+	cabin.position.set(-length * 0.1, groundClearance + bodyHeight, 0);
 	group.add(cabin);
 
-	const roof = new THREE.Mesh(new THREE.BoxGeometry(cabinLength * 0.82, 0.07, width * 0.78), bodyMat);
-	roof.position.set(-length * 0.06, groundClearance + bodyHeight + cabinHeight + 0.035, 0);
-	group.add(roof);
+	// Fino borde de techo pintado por encima del cristal -el mismo perfil,
+	// escalado y aplanado a una franja estrecha junto al pico del techo.
+	const roofCapShape = cabinSideProfileShape(cabinLength * 0.88, cabinHeight * 0.14);
+	const roofCap = extrudeCabinProfile(roofCapShape, cabinWidth * 0.9, bodyMat);
+	roofCap.position.set(-length * 0.1, groundClearance + bodyHeight + cabinHeight * 0.84, 0);
+	group.add(roofCap);
 
-	// Morro deportivo: más bajo que el resto del cuerpo, remata la silueta.
-	const nose = new THREE.Mesh(new THREE.BoxGeometry(length * 0.14, bodyHeight * 0.65, width * 0.94), bodyMat);
-	nose.position.set(length / 2 - length * 0.07, groundClearance + bodyHeight * 0.32, 0);
-	group.add(nose);
+	// Parachoques trasero: remata la cola redondeada -sin esto la silueta
+	// se leía como una única pieza sin remates, poco realista.
+	const bumperMat = new THREE.MeshStandardMaterial({ color: 0x2c2f31 });
+	const rearBumper = new THREE.Mesh(new THREE.BoxGeometry(length * 0.1, bodyHeight * 0.5, width * 0.92), bumperMat);
+	rearBumper.position.set(-length / 2 + length * 0.05, groundClearance + bodyHeight * 0.3, 0);
+	group.add(rearBumper);
 
-	const headlightMat = new THREE.MeshStandardMaterial({ color: 0xfffbe6, emissive: 0xfff2b0, emissiveIntensity: 0.4 });
+	// Rejilla frontal
+	const grille = new THREE.Mesh(new THREE.BoxGeometry(0.06, bodyHeight * 0.4, width * 0.42), darkMat);
+	grille.position.set(length / 2 - 0.06, groundClearance + bodyHeight * 0.5, 0);
+	group.add(grille);
+
+	// Faros delanteros (forma alargada tipo "ojo", inclinados hacia atrás
+	// como en el Megane II) y pilotos traseros.
+	const headlightMat = new THREE.MeshStandardMaterial({ color: 0xfffbe6, emissive: 0xfff0a0, emissiveIntensity: 0.5 });
+	const taillightMat = new THREE.MeshStandardMaterial({ color: 0xb3251f, emissive: 0x8a1712, emissiveIntensity: 0.4 });
 	[-1, 1].forEach(side => {
-		const headlight = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.13, 0.3), headlightMat);
-		headlight.position.set(length / 2 - 0.04, groundClearance + bodyHeight * 0.55, side * width * 0.32);
+		const headlight = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.11, 0.22), headlightMat);
+		headlight.position.set(length / 2 - 0.18, groundClearance + bodyHeight * 0.62, side * width * 0.34);
+		headlight.rotation.y = side * 0.35;
 		group.add(headlight);
+
+		const taillight = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.16, 0.2), taillightMat);
+		taillight.position.set(-length / 2 + 0.08, groundClearance + bodyHeight * 0.65, side * width * 0.4);
+		group.add(taillight);
+
+		// Retrovisores, junto al pilar A de la cabina.
+		const mirror = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.1, 0.08), bodyMat);
+		mirror.position.set(-length * 0.07 + cabinLength * 0.42, groundClearance + bodyHeight + cabinHeight * 0.75, side * (width / 2 + 0.06));
+		group.add(mirror);
 	});
 
-	const wheelGeom = new THREE.CylinderGeometry(groundClearance, groundClearance, 0.22, 16);
+	// Llantas: banda cromada sobre la rueda oscura, más creíble que un
+	// cilindro negro liso.
+	const wheelGeom = new THREE.CylinderGeometry(groundClearance, groundClearance, 0.22, 20);
+	const rimGeom = new THREE.CylinderGeometry(groundClearance * 0.55, groundClearance * 0.55, 0.225, 12);
 	[
-		[length / 2 - 0.7, width / 2 - 0.03], [length / 2 - 0.7, -width / 2 + 0.03],
-		[-length / 2 + 0.7, width / 2 - 0.03], [-length / 2 + 0.7, -width / 2 + 0.03]
+		[length / 2 - 0.78, width / 2 - 0.02], [length / 2 - 0.78, -width / 2 + 0.02],
+		[-length / 2 + 0.68, width / 2 - 0.02], [-length / 2 + 0.68, -width / 2 + 0.02]
 	].forEach(([x, z]) => {
 		const wheel = new THREE.Mesh(wheelGeom, darkMat);
 		wheel.rotation.x = Math.PI / 2;
 		wheel.position.set(x, groundClearance, z);
 		group.add(wheel);
+
+		const rim = new THREE.Mesh(rimGeom, chromeMat);
+		rim.rotation.x = Math.PI / 2;
+		rim.position.set(x, groundClearance, z);
+		group.add(rim);
 	});
 
 	group.position.copy(pos);
@@ -2257,6 +2399,7 @@ function createGeometricElement(element, pos, scene, groundY = 0) {
         'zone-parking': 0x3498db
 	};
 	const color = colorMap[element.type] || 0x7f8c8d;
+	const isSignal = element.type.startsWith('signal');
 
 	if (element.type === 'bar') {
         // Modelo de barra compuesta: base + mostrador
@@ -2277,6 +2420,22 @@ function createGeometricElement(element, pos, scene, groundY = 0) {
         const roof = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.1, 1.4), new THREE.MeshStandardMaterial({ color: 0xeeeeee }));
         roof.position.set(0, 2.5, 0);
         group.add(roof);
+    } else if (isSignal) {
+        // Señal (parking, minusválidos, salida, WC...): no es ninguna
+        // estructura del recinto -antes se dibujaba como el mismo bloque
+        // sólido de 2m que una barra o un baño, un cubo gris flotando sin
+        // sentido-, solo la simbología pintada en el propio suelo.
+        const signalPlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(element.length || 4, element.width || 4),
+            new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide })
+        );
+        signalPlane.rotation.x = -Math.PI / 2;
+        signalPlane.position.y = 0.02; // ligeramente por encima del suelo, evita z-fighting
+        group.add(signalPlane);
+        new THREE.TextureLoader().load(element.iconUrl, (texture) => {
+            signalPlane.material.map = texture;
+            signalPlane.material.needsUpdate = true;
+        });
     } else {
         const isZone = element.type.startsWith('zone');
         const mesh = new THREE.Mesh(
@@ -2287,16 +2446,21 @@ function createGeometricElement(element, pos, scene, groundY = 0) {
         group.add(mesh);
     }
 
-	const iconPlane = new THREE.Mesh(
-		new THREE.PlaneGeometry(3, 3),
-		new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide })
-	);
-	iconPlane.position.set(0, 5, 0);
-	group.add(iconPlane);
-	new THREE.TextureLoader().load(element.iconUrl, (texture) => {
-		iconPlane.material.map = texture;
-		iconPlane.material.needsUpdate = true;
-	});
+	// Icono flotante encima del elemento: para las señales ya está la
+	// simbología plana en el suelo (ver arriba), así que aquí sobraría un
+	// segundo icono repetido en el aire.
+	if (!isSignal) {
+		const iconPlane = new THREE.Mesh(
+			new THREE.PlaneGeometry(3, 3),
+			new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide })
+		);
+		iconPlane.position.set(0, 5, 0);
+		group.add(iconPlane);
+		new THREE.TextureLoader().load(element.iconUrl, (texture) => {
+			iconPlane.material.map = texture;
+			iconPlane.material.needsUpdate = true;
+		});
+	}
 
 	group.position.set(pos.x, groundY, pos.z);
 	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;

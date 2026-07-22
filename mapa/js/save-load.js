@@ -64,7 +64,8 @@ function getProjectData() {
             length: el.length,
             width: el.width,
             color: el.color,
-            illustratedHidden: el.illustratedHidden || false
+            illustratedHidden: el.illustratedHidden || false,
+            pathCoords: el.pathCoords || null
         }))
     };
 }
@@ -173,7 +174,7 @@ function loadProjectData(data) {
             ? festivalConfig['drunk'].label
             : el.name;
         if (el.isRectangle) {
-            element = addRectangleToMap(elName, el.type, el.coords, el.length, el.width);
+            element = addRectangleToMap(elName, el.type, el.coords, el.length, el.width, el.rotation || 0, el.pathCoords || null);
             group.addLayer(element.rectangle);
         } else {
             // El tipo real (valla de obra vs. antipánico) se pasaba antes

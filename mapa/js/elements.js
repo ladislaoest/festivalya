@@ -72,11 +72,12 @@ function saveHistory() {
         id: el.id, type: el.type, name: el.name,
         coords: el.moveMarker.getLatLng(),
         rotation: el.rotation,
-        length: el.length, width: el.width, color: el.color
+        length: el.length, width: el.width, color: el.color,
+        pathCoords: el.pathCoords || null
     })));
-    
+
     if (history.length > 0 && history[history.length - 1] === state) return;
-    
+
     history.push(state);
     if (history.length > MAX_HISTORY) history.shift();
 }
@@ -85,14 +86,14 @@ function undo() {
     if (history.length <= 1) return;
     history.pop(); // Eliminar estado actual
     const lastState = JSON.parse(history[history.length - 1]);
-    
+
     clearAllElements();
     lastState.forEach(el => {
         let element;
         if (isFenceType(el.type)) {
             element = addFixedFenceToMap(el.length, el.coords, el.rotation, el.type);
         } else {
-            element = addRectangleToMap(el.name, el.type, el.coords, el.length, el.width, el.rotation);
+            element = addRectangleToMap(el.name, el.type, el.coords, el.length, el.width, el.rotation, el.pathCoords);
         }
         element.id = el.id;
         element.name = el.name;
@@ -139,9 +140,11 @@ function toggleFestivalMode() {
         if (isFestivalMode) {
             if (el.moveMarker) map.removeLayer(el.moveMarker);
             if (el.rotateMarker) map.removeLayer(el.rotateMarker);
+            if (el.routeLine) map.removeLayer(el.routeLine);
         } else {
             if (el.moveMarker) el.moveMarker.addTo(map);
             if (el.rotateMarker) el.rotateMarker.addTo(map);
+            if (el.routeLine) el.routeLine.addTo(map);
         }
     });
 }
@@ -525,6 +528,8 @@ function setupElementEvents() {
 			const isFence = isFenceType(this.value);
 			document.getElementById('dimension-controls').style.display = isFence ? 'none' : 'block';
             document.getElementById('fence-controls').style.display = isFence ? 'block' : 'none';
+            const gabryControls = document.getElementById('gabry-controls');
+            if (gabryControls) gabryControls.style.display = (this.value === 'gabry') ? 'block' : 'none';
             const config = festivalConfig[this.value];
 			if (config && config.defaultLen) {
 				document.getElementById('element-length').value = config.defaultLen;
@@ -544,6 +549,11 @@ function setupElementEvents() {
 		const type = elemType.value;
 		if (isFenceType(type) && document.getElementById('fence-mode').value === 'draw') {
             startFenceDrawing(type);
+        } else if (type === 'gabry') {
+            const name = document.getElementById('element-name').value || festivalConfig[type].label;
+            const length = parseFloat(document.getElementById('element-length').value);
+            const width = parseFloat(document.getElementById('element-width').value) || 5;
+            startGabryPathDrawing(name, length, width);
         } else {
             const config = festivalConfig[type], name = document.getElementById('element-name').value || config.label;
             const length = isFenceType(type) ? parseFloat(document.getElementById('fence-fixed-length').value) : parseFloat(document.getElementById('element-length').value);
@@ -570,6 +580,7 @@ function setupElementEvents() {
 		if (editingElement) {
 			if (editingElement.isRectangle) map.removeLayer(editingElement.rectangle); else if (editingElement.isLine) map.removeLayer(editingElement.line);
             map.removeLayer(editingElement.labelMarker); map.removeLayer(editingElement.moveMarker);
+            if (editingElement.routeLine) map.removeLayer(editingElement.routeLine);
 			document.getElementById(`element-card-${editingElement.id}`).remove();
 			elements = elements.filter(el => el.id !== editingElement.id);
 			document.getElementById('edit-panel').style.display = 'none'; editingElement = null;
@@ -577,6 +588,80 @@ function setupElementEvents() {
             saveHistory();
 		}
 	};
+}
+
+let gabryDrawPoints = [], gabryTempPolyline = null, gabryTempMarkers = [];
+
+// Trayecto del coche "gabry": a diferencia de la valla (línea recta de dos
+// clics, ver startFenceDrawing), aquí se admiten VARIOS puntos -uno por
+// clic-, para poder rodear otros elementos del recinto en vez de ir en
+// línea recta. Se termina con doble clic, Enter o Escape; con un único
+// punto (o ninguno) se comporta como antes: el coche va directo a la barra
+// más cercana desde donde se colocó (ver setupGabryAnimations en view3d.js).
+function startGabryPathDrawing(name, length, width) {
+    gabryDrawPoints = [];
+    map.dragging.disable();
+    map.doubleClickZoom.disable();
+    map.getContainer().style.cursor = 'crosshair';
+
+    const addPoint = (latlng) => {
+        gabryDrawPoints.push(latlng);
+        gabryTempMarkers.push(L.circleMarker(latlng, { radius: 4, color: '#fff', weight: 2, fillColor: '#f1c40f', fillOpacity: 1, interactive: false }).addTo(map));
+        if (!gabryTempPolyline) {
+            gabryTempPolyline = L.polyline(gabryDrawPoints, { color: 'white', weight: 3, dashArray: '5, 10', interactive: false }).addTo(map);
+        } else {
+            gabryTempPolyline.setLatLngs(gabryDrawPoints);
+        }
+    };
+
+    const onClick = (e) => addPoint(e.latlng);
+
+    const onDblClick = (e) => {
+        // El segundo clic del propio doble clic ya añadió un punto de más
+        // (Leaflet dispara "click" antes que "dblclick"): se descarta antes
+        // de terminar, si no el trayecto acababa siempre con un punto
+        // sobrante justo donde se hizo doble clic para finalizar.
+        if (gabryDrawPoints.length) gabryDrawPoints.pop();
+        finish();
+    };
+
+    const onKeyDown = (e) => {
+        if (e.key === 'Escape' || e.key === 'Enter') finish();
+    };
+
+    function finish() {
+        map.off('click', onClick);
+        map.off('dblclick', onDblClick);
+        document.removeEventListener('keydown', onKeyDown);
+        map.dragging.enable();
+        map.doubleClickZoom.enable();
+        map.getContainer().style.cursor = '';
+        if (gabryTempPolyline) { map.removeLayer(gabryTempPolyline); gabryTempPolyline = null; }
+        gabryTempMarkers.forEach(m => map.removeLayer(m));
+        gabryTempMarkers = [];
+
+        const center = gabryDrawPoints.length ? gabryDrawPoints[0] : map.getCenter();
+        const pathCoords = gabryDrawPoints.length > 1 ? gabryDrawPoints.slice() : null;
+
+        // Rumbo inicial del primer tramo, solo para orientar el icono en el
+        // mapa 2D -el rumbo real durante la conducción en 3D lo marca cada
+        // tramo del propio trayecto, ver setupGabryAnimations-.
+        let rotation = 0;
+        if (pathCoords) {
+            const p1 = map.project(pathCoords[0]);
+            const p2 = map.project(pathCoords[1]);
+            rotation = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI + (map.getBearing ? map.getBearing() : 0) + 360) % 360;
+        }
+
+        const element = addRectangleToMap(name, 'gabry', center, length, width, rotation, pathCoords);
+        elements.push(element); updateElementCard(element); bindMarkerEvents(element);
+        updateStats();
+        saveHistory();
+    }
+
+    map.on('click', onClick);
+    map.on('dblclick', onDblClick);
+    document.addEventListener('keydown', onKeyDown);
 }
 
 function startFenceDrawing(type = 'fence') {
@@ -681,35 +766,53 @@ function addFixedFenceToMap(len, center = map.getCenter(), rotation = 0, type = 
 
 function updateDimensionsFromEdit() { if (editingElement) { editingElement.length = parseFloat(document.getElementById('edit-element-length').value) || 1; if (editingElement.isRectangle) editingElement.width = parseFloat(document.getElementById('edit-element-width').value) || 1; updateElementShape(editingElement, true); } }
 
-function addRectangleToMap(name, type, center, length, width, rotation = 0) {
+function addRectangleToMap(name, type, center, length, width, rotation = 0, pathCoords = null) {
 	const config = festivalConfig[type], rectangle = L.polygon([], { color: config.color, fillColor: config.color, weight: 2, fillOpacity: 0.6, interactive: true, bubblingMouseEvents: false }).addTo(map);
     const moveMarker = L.marker(center, { icon: moveHandleIcon, draggable: true, zIndexOffset: 2000 });
     const labelMarker = L.marker(center, { icon: L.divIcon({ className: 'rectangle-label', html: '' }), draggable: true, zIndexOffset: 1000 });
-    
+
     if (!isFestivalMode) {
         moveMarker.addTo(map);
         labelMarker.addTo(map);
     }
 
     const element = { id: Date.now(), type, name, rectangle, labelMarker, moveMarker, length, width, rotation: rotation, isRectangle: true, color: config.color, iconUrl: getGenericIconUrl(config.icon) };
+
+    // Trayecto dibujado a mano (solo "gabry" por ahora, ver
+    // startGabryPathDrawing): línea guía en el propio mapa 2D, aparte de la
+    // huella/rectángulo del coche, que la vista 3D recorre punto a punto en
+    // vez de ir en línea recta (ver drawElements/setupGabryAnimations).
+    if (pathCoords && pathCoords.length > 1) {
+        element.pathCoords = pathCoords;
+        element.routeLine = L.polyline(pathCoords, { color: config.color, weight: 3, dashArray: '6, 8', opacity: 0.85, interactive: false });
+        if (!isFestivalMode) element.routeLine.addTo(map);
+    }
+
     addRotateHandle(element);
 
     function onDragStart(e) {
         element.lastPos = e.target.getLatLng ? e.target.getLatLng() : moveMarker.getLatLng();
     }
-    
+
     function onDrag(e) {
         const newPos = e.target.getLatLng ? e.target.getLatLng() : e.latlng;
         const oldPos = element.lastPos || center;
         const dLat = newPos.lat - oldPos.lat;
         const dLng = newPos.lng - oldPos.lng;
-        
+
         const curMovePos = moveMarker.getLatLng();
         if (e.target !== moveMarker) moveMarker.setLatLng([curMovePos.lat + dLat, curMovePos.lng + dLng]);
-        
+
         const curLabelPos = labelMarker.getLatLng();
         labelMarker.setLatLng([curLabelPos.lat + dLat, curLabelPos.lng + dLng]);
-        
+
+        // El trayecto entero viaja con el coche: si no, arrastrarlo lo
+        // separaba de su propio camino dibujado.
+        if (element.pathCoords) {
+            element.pathCoords = element.pathCoords.map(p => L.latLng(p.lat + dLat, p.lng + dLng));
+            if (element.routeLine) element.routeLine.setLatLngs(element.pathCoords);
+        }
+
         element.lastPos = newPos;
         updateElementShape(element, false);
     }
@@ -889,6 +992,7 @@ function deleteElement(element) {
 	if (element.isRectangle) map.removeLayer(element.rectangle); else if (element.isLine) map.removeLayer(element.line);
     map.removeLayer(element.labelMarker); map.removeLayer(element.moveMarker);
     if (element.rotateMarker) map.removeLayer(element.rotateMarker);
+    if (element.routeLine) map.removeLayer(element.routeLine);
 	const card = document.getElementById(`element-card-${element.id}`);
     if (card) card.remove();
 	elements = elements.filter(el => el.id !== element.id);

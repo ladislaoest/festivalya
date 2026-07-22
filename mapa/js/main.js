@@ -26,6 +26,7 @@ function clearAllElements() {
         map.removeLayer(el.labelMarker);
         map.removeLayer(el.moveMarker);
         if (el.rotateMarker) map.removeLayer(el.rotateMarker);
+        if (el.routeLine) map.removeLayer(el.routeLine);
     });
     elements = [];
     const list = document.getElementById('elements-list');

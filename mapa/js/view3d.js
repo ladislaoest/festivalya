@@ -2390,6 +2390,7 @@ function createGeometricElement(element, pos, scene, groundY = 0) {
 	const colorMap = {
 		'bar': 0xf1c40f,
 		'wc': 0x3498db,
+		'signal-wc': 0x3498db,
 		'rest-area': 0x27ae60,
 		'main-stage': 0x27ae60,
 		'secondary-stage': 0xe67e22,
@@ -2399,7 +2400,12 @@ function createGeometricElement(element, pos, scene, groundY = 0) {
         'zone-parking': 0x3498db
 	};
 	const color = colorMap[element.type] || 0x7f8c8d;
-	const isSignal = element.type.startsWith('signal');
+	// "signal-wc" queda fuera del trato de señal plana (ver más abajo): a
+	// diferencia de un cartel de parking o de una flecha de salida, un WC sí
+	// ocupa sitio de verdad en el recinto, así que se dibuja como la misma
+	// cabina física que el elemento "wc" -no como un simple símbolo pintado
+	// en el suelo-.
+	const isSignal = element.type.startsWith('signal') && element.type !== 'signal-wc';
 
 	if (element.type === 'bar') {
         // Modelo de barra compuesta: base + mostrador
@@ -2410,7 +2416,7 @@ function createGeometricElement(element, pos, scene, groundY = 0) {
         const top = new THREE.Mesh(new THREE.BoxGeometry(element.length + 0.5, 0.2, element.width + 0.5), new THREE.MeshStandardMaterial({ color: 0x333333 }));
         top.position.set(0, 2.1, 0);
         group.add(top);
-    } else if (element.type === 'wc') {
+    } else if (element.type === 'wc' || element.type === 'signal-wc') {
         // Modelo de cabina de baño
         const mesh = new THREE.Mesh(new THREE.BoxGeometry(1.2, 2.5, 1.2), new THREE.MeshStandardMaterial({ color: color }));
         mesh.position.set(0, 1.25, 0);
@@ -2421,10 +2427,10 @@ function createGeometricElement(element, pos, scene, groundY = 0) {
         roof.position.set(0, 2.5, 0);
         group.add(roof);
     } else if (isSignal) {
-        // Señal (parking, minusválidos, salida, WC...): no es ninguna
-        // estructura del recinto -antes se dibujaba como el mismo bloque
-        // sólido de 2m que una barra o un baño, un cubo gris flotando sin
-        // sentido-, solo la simbología pintada en el propio suelo.
+        // Señal (parking, minusválidos, salida, prohibido el paso...): no es
+        // ninguna estructura del recinto -antes se dibujaba como el mismo
+        // bloque sólido de 2m que una barra o un baño, un cubo gris flotando
+        // sin sentido-, solo la simbología pintada en el propio suelo.
         const signalPlane = new THREE.Mesh(
             new THREE.PlaneGeometry(element.length || 4, element.width || 4),
             new THREE.MeshBasicMaterial({ transparent: true, side: THREE.DoubleSide })

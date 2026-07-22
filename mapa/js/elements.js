@@ -15,6 +15,7 @@ const festivalConfig = {
     'signal-disabled': { label: 'MINUSVÁLIDOS', color: '#3498db', icon: 'disabled', defaultLen: 4, defaultWid: 4 },
     'signal-no-parking': { label: 'PROHIBIDO APARCAR', color: '#e74c3c', icon: 'noparking', defaultLen: 4, defaultWid: 4 },
     'signal-exit': { label: 'SALIDA EMERGENCIA', color: '#27ae60', icon: 'exit', defaultLen: 4, defaultWid: 4 },
+    'signal-no-entry': { label: 'PROHIBIDO EL PASO', color: '#e74c3c', icon: 'no-entry', defaultLen: 4, defaultWid: 4 },
     'signal-wc': { label: 'WC', color: '#3498db', icon: 'wc', defaultLen: 4, defaultWid: 4 },
     'entrance': { label: 'ENTRADA', color: '#f1c40f', icon: 'entrance', defaultLen: 6, defaultWid: 2 },
     'zone-vip': { label: 'ZONA VIP', color: '#f1c40f', icon: 'star', defaultLen: 20, defaultWid: 20 },
@@ -516,7 +517,7 @@ function setupElementEvents() {
                 'stage': 'main-stage', 'food': 'food-truck', 'bar': 'bar',
                 'wc': 'signal-wc', 'fence': 'fence', 'panic-fence': 'panic-fence', 'custom': 'generator',
                 'parking': 'signal-parking', 'disabled': 'signal-disabled', 'noparking': 'signal-no-parking',
-                'exit': 'signal-exit', 'security': 'security', 'entrance': 'entrance', 'drunk': 'drunk',
+                'exit': 'signal-exit', 'no-entry': 'signal-no-entry', 'security': 'security', 'entrance': 'entrance', 'drunk': 'drunk',
                 'gabry': 'gabry'
             };
 			if (elemType) { elemType.value = mapIconToType[this.dataset.icon]; elemType.dispatchEvent(new Event('change')); }
@@ -1062,6 +1063,7 @@ function getPinIconSVG(iconKey) {
         'parking': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M10 16V8h3.2a2.4 2.4 0 0 1 0 4.8H10"/></svg>`,
         'disabled': `<svg viewBox="0 0 24 24" ${S}><circle cx="12" cy="4.5" r="1.6" fill="white"/><path d="M12 7.5v4l4 2.5"/><path d="M8.5 11.5h7"/><circle cx="10" cy="17" r="4"/></svg>`,
         'noparking': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/></svg>`,
+        'no-entry': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><line x1="6" y1="12" x2="18" y2="12"/></svg>`,
         'exit': `<svg viewBox="0 0 24 24" ${S}><path d="M10 3H5v18h5"/><path d="M14 12h7m0 0-3-3m3 3-3 3"/></svg>`,
         'star': `<svg viewBox="0 0 24 24" fill="white" stroke="none"><path d="M12 2l2.9 6.9L22 9.6l-5.5 4.8L18 22l-6-3.9L6 22l1.5-7.6L2 9.6l7.1-.7L12 2z"/></svg>`,
         'tent': `<svg viewBox="0 0 24 24" ${S}><path d="M2 20 12 4l10 16"/><path d="M8.5 20 12 13l3.5 7"/></svg>`,
@@ -1084,7 +1086,8 @@ function getGenericIconUrl(type) {
         'wc': 'assets/icons/wc.svg', 
         'rest': 'assets/icons/rest.svg', 
         'first-aid': 'assets/icons/first-aid.svg', 
-        'parking': 'assets/icons/parking.svg', 
+        'parking': 'assets/icons/parking.svg',
+        'no-entry': 'assets/icons/no-entry.svg',
         'fence': 'assets/icons/fence.svg',
         'panic-fence': 'assets/icons/panic-fence.svg',
         'tent': 'assets/icons/tent.svg',

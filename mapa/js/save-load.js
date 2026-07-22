@@ -168,10 +168,16 @@ function loadProjectData(data) {
     // con cualquiera de los nombres viejos se corrige solo al cargar, en
     // vez de dejar que dependa de editarlo a mano elemento por elemento.
     const OLD_DRUNK_NAMES = new Set(['BORRACHO', 'Bread&Water']);
+    // Igual que con el "borracho": el cartel de la señal de WC se llamaba
+    // "SEÑAL WC" y pasó a llamarse solo "WC" -un proyecto guardado con el
+    // nombre viejo se corrige solo al cargar.
+    const OLD_SIGNAL_WC_NAMES = new Set(['SEÑAL WC']);
     elementsData.forEach(el => {
         let element;
         const elName = (el.type === 'drunk' && OLD_DRUNK_NAMES.has(el.name))
             ? festivalConfig['drunk'].label
+            : (el.type === 'signal-wc' && OLD_SIGNAL_WC_NAMES.has(el.name))
+            ? festivalConfig['signal-wc'].label
             : el.name;
         if (el.isRectangle) {
             element = addRectangleToMap(elName, el.type, el.coords, el.length, el.width, el.rotation || 0, el.pathCoords || null);

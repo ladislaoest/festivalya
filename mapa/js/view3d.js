@@ -30,6 +30,34 @@ const TIBURON_ARC_RANGE = (260 * Math.PI / 180) / 2; // amplitud a cada lado del
 // cuerpo -así el abanico de billetes en la mano queda bien a la vista en vez
 // de escondido junto al torso-. Signo +/- por brazo, ver createTiburonFigure.
 const TIBURON_ARM_RAISE_ANGLE = 2.2;
+const TIBURON_BILL_POOL_SIZE = 7; // billetes cayendo simultáneos, reciclados en rueda
+const TIBURON_BILL_SPAWN_INTERVAL = 0.3; // segundos entre cada billete nuevo
+const TIBURON_BILL_FALL_GRAVITY = 2.0; // m/s² reducida a propósito: caída lenta/vistosa, no realista
+const TIBURON_BILL_LIFETIME = 3; // tope de segundos por si nunca "toca suelo" (terreno raro/():
+
+// Textura compartida (un único canvas para todos los "Tiburón" de la
+// escena) con un billete verde y el símbolo "$" bien grande, para el fajo en
+// la mano y para los billetes que caen -ver buildBillFan/spawnFallingBill.
+let tiburonBillTexture = null;
+function getTiburonBillTexture() {
+	if (tiburonBillTexture) return tiburonBillTexture;
+	const canvas = document.createElement('canvas');
+	canvas.width = 128;
+	canvas.height = 64;
+	const ctx = canvas.getContext('2d');
+	ctx.fillStyle = '#3fae5c';
+	ctx.fillRect(0, 0, 128, 64);
+	ctx.strokeStyle = '#f4e8b8';
+	ctx.lineWidth = 5;
+	ctx.strokeRect(5, 5, 118, 54);
+	ctx.fillStyle = '#f4e8b8';
+	ctx.font = 'bold 42px Arial';
+	ctx.textAlign = 'center';
+	ctx.textBaseline = 'middle';
+	ctx.fillText('$', 64, 35);
+	tiburonBillTexture = new THREE.CanvasTexture(canvas);
+	return tiburonBillTexture;
+}
 
 // Porteros ("security") con un recorrido dibujado a mano en el mapa 2D (ver
 // startPathDrawing en elements.js): patrullan ese trayecto de ida y vuelta,
@@ -1153,6 +1181,48 @@ function updateMoneyWalkers() {
 		if (ud.billsL) ud.billsL.rotation.x = spray * 0.5;
 		if (ud.billsR) ud.billsR.rotation.x = -spray * 0.5;
 
+		// Billetes cayendo (ver createTiburonFigure): uno nuevo desde una mano
+		// al azar cada cierto intervalo, reciclando la piscina en rueda -hay
+		// que actualizar las matrices YA (los rotation.z de arriba son de este
+		// mismo frame) para leer la posición real de la mano, no la del frame
+		// anterior.
+		entry.group.updateMatrixWorld(true);
+		const spawnSlot = Math.floor((t + entry.phase * 3) / TIBURON_BILL_SPAWN_INTERVAL);
+		if (spawnSlot !== ud.lastBillSlot) {
+			ud.lastBillSlot = spawnSlot;
+			const handGroup = (spawnSlot % 2 === 0) ? ud.billsL : ud.billsR;
+			const handPos = new THREE.Vector3();
+			handGroup.getWorldPosition(handPos);
+			const slot = ud.fallingBills[ud.nextBillIdx];
+			ud.nextBillIdx = (ud.nextBillIdx + 1) % ud.fallingBills.length;
+			slot.active = true;
+			slot.spawnTime = t;
+			slot.spawnX = handPos.x; slot.spawnY = handPos.y; slot.spawnZ = handPos.z;
+			slot.vx = (Math.random() - 0.5) * 0.7;
+			slot.vz = (Math.random() - 0.5) * 0.7;
+			slot.spinX = (Math.random() - 0.5) * 5;
+			slot.spinZ = (Math.random() - 0.5) * 5;
+			slot.baseRotX = Math.random() * Math.PI;
+			slot.baseRotZ = Math.random() * Math.PI;
+			slot.mesh.visible = true;
+		}
+
+		ud.fallingBills.forEach(slot => {
+			if (!slot.active) return;
+			const elapsed = t - slot.spawnTime;
+			const bx = slot.spawnX + slot.vx * elapsed;
+			const bz = slot.spawnZ + slot.vz * elapsed;
+			const by = slot.spawnY - 0.5 * TIBURON_BILL_FALL_GRAVITY * elapsed * elapsed;
+			const ground = getTerrainHeight(bx, -bz);
+			if (by <= ground || elapsed > TIBURON_BILL_LIFETIME) {
+				slot.active = false;
+				slot.mesh.visible = false;
+				return;
+			}
+			slot.mesh.position.set(bx, by, bz);
+			slot.mesh.rotation.set(slot.baseRotX + slot.spinX * elapsed, elapsed * 2, slot.baseRotZ + slot.spinZ * elapsed);
+		});
+
 		if (entry.element._threeLabel) {
 			entry.element._threeLabel.position.x = x;
 			entry.element._threeLabel.position.z = z;
@@ -2185,8 +2255,10 @@ function createTiburonFigure(pos, rotation, scene) {
 	const suitMat = new THREE.MeshStandardMaterial({ color: 0x1f8a4c });
 	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x14432a });
 	const glassesMat = new THREE.MeshStandardMaterial({ color: 0x101010 });
-	const billMat = new THREE.MeshStandardMaterial({ color: 0x3fae5c });
-	const billStripeMat = new THREE.MeshStandardMaterial({ color: 0xf4e8b8 });
+	// Billete real (textura "$" compartida, ver getTiburonBillTexture): a
+	// dos caras, para que no desaparezca al girar mientras cae.
+	const billGeom = new THREE.PlaneGeometry(0.26, 0.13);
+	const billMat = new THREE.MeshStandardMaterial({ map: getTiburonBillTexture(), side: THREE.DoubleSide });
 
 	const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), skinMat);
 	head.position.set(0, 1.55, 0);
@@ -2216,14 +2288,10 @@ function createTiburonFigure(pos, rotation, scene) {
 	function buildBillFan() {
 		const fan = new THREE.Group();
 		for (let i = 0; i < 4; i++) {
-			const bill = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.012, 0.12), billMat);
+			const bill = new THREE.Mesh(billGeom, billMat);
 			bill.position.set(0.05 * i, -0.03 * i, 0.015 * i);
 			bill.rotation.z = (i - 1.5) * 0.22;
 			fan.add(bill);
-			const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.013, 0.03), billStripeMat);
-			stripe.position.copy(bill.position);
-			stripe.rotation.copy(bill.rotation);
-			fan.add(stripe);
 		}
 		return fan;
 	}
@@ -2263,6 +2331,21 @@ function createTiburonFigure(pos, rotation, scene) {
 	group.userData.armR = armRGroup;
 	group.userData.billsL = billsL;
 	group.userData.billsR = billsR;
+
+	// Billetes que caen "haciendo llover dinero" (ver updateMoneyWalkers):
+	// piscina fija de mallas en el propio "scene" -en espacio de mundo, no
+	// colgando del personaje, para que caigan rectos sin heredar su rotación
+	// al caminar-, recicladas en rueda en vez de crear/destruir cada vez.
+	const fallingBills = [];
+	for (let i = 0; i < TIBURON_BILL_POOL_SIZE; i++) {
+		const bill = new THREE.Mesh(billGeom, billMat);
+		bill.visible = false;
+		scene.add(bill);
+		fallingBills.push({ mesh: bill, active: false, spawnTime: 0, spawnX: 0, spawnY: 0, spawnZ: 0, vx: 0, vz: 0, spinX: 0, spinZ: 0, baseRotX: 0, baseRotZ: 0 });
+	}
+	group.userData.fallingBills = fallingBills;
+	group.userData.nextBillIdx = 0;
+	group.userData.lastBillSlot = -1;
 
 	group.scale.set(TIBURON_FIGURE_SCALE, TIBURON_FIGURE_SCALE, TIBURON_FIGURE_SCALE);
 	group.position.copy(pos);

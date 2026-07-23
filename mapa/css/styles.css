@@ -180,9 +180,10 @@ select.form-control option {
     border-color: var(--danger);
 }
 
-/* Estilo del mapa ilustrado: fondo de "césped" plano en vez del mapa real
-   (calles/edificios reales nunca leen como ilustración, por realista que
-   se filtre), con las mismas coordenadas/escala de siempre debajo. */
+/* Estilo del mapa ilustrado: los iconos/burbujas a todo color van ENCIMA
+   del mapa real (con un filtro suave para que luzca menos "foto" y más
+   "plano"), no sobre un fondo plano inventado -eso no dejaba distinguir
+   nada del recinto real debajo de los iconos-. */
 .illustrated-style {
     /* Sin "pointer-events: none" aquí: hay que poder arrastrar (mover) y
        rotar el mapa. Los elementos individuales (iconos/etiquetas/formas) ya
@@ -190,18 +191,10 @@ select.form-control option {
        así que el propio mapa sigue recibiendo el gesto de arrastre/rotación. */
     cursor: grab !important;
     user-select: none !important;
-    background-color: #7cbf4e;
-    background-image:
-        radial-gradient(ellipse at 20% 15%, rgba(255,255,255,0.14), transparent 55%),
-        radial-gradient(ellipse at 80% 75%, rgba(0,0,0,0.07), transparent 60%),
-        radial-gradient(rgba(255,255,255,0.16) 9%, transparent 10%),
-        radial-gradient(rgba(0,0,0,0.06) 9%, transparent 10%);
-    background-position: 0 0, 0 0, 0 0, 16px 16px;
-    background-size: auto, auto, 32px 32px, 32px 32px;
 }
 
 .illustrated-style .leaflet-tile-pane {
-    display: none;
+    filter: saturate(1.5) contrast(1.05) brightness(1.06) hue-rotate(-2deg);
 }
 
 .label-bubble {

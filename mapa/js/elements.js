@@ -8,7 +8,7 @@ const festivalConfig = {
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
     'security': { label: 'SEGURIDAD', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
     'drunk': { label: 'BREAD & WATHER', color: '#d9a441', icon: 'drunk', defaultLen: 1, defaultWid: 1 },
-    'gabry': { label: 'GABRY', color: '#f1c40f', icon: 'gabry', defaultLen: 4.35, defaultWid: 1.75 },
+    'tiburon': { label: 'TIBURÓN', color: '#1f8a4c', icon: 'tiburon', defaultLen: 1, defaultWid: 1 },
     'fence': { label: 'VALLA DE OBRA', color: '#f39c12', icon: 'fence' },
     'panic-fence': { label: 'VALLA ANTIPÁNICO', color: '#95a5a6', icon: 'panic-fence' },
     'signal-parking': { label: 'PARKING', color: '#3498db', icon: 'parking', defaultLen: 4, defaultWid: 4 },
@@ -380,13 +380,13 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
                 }));
             } else {
-                // Elementos puntuales: insignia cuadrada redondeada con
-                // icono, más una burbuja con el nombre encima (como en un
-                // mapa ilustrado de festival). La burbuja respeta el
-                // toggle "OCULTAR TEXTOS" para evitar que se amontonen.
-                const badgeSize = element.type === 'main-stage' ? 56 : 40;
+                // Elementos puntuales: sticker ilustrado a todo color (sin
+                // caja/cuadrado de fondo), más una burbuja con el nombre
+                // encima (como en un mapa ilustrado de festival). La burbuja
+                // respeta el toggle "OCULTAR TEXTOS" para evitar que se amontonen.
+                const badgeSize = element.type === 'main-stage' ? 72 : 52;
                 const bg = element.color || '#7f8c8d';
-                const iconSvg = getPinIconSVG(iconKey);
+                const iconSvg = getPinIconSVG(iconKey, bg);
                 // La burbuja con el nombre solo aparece en el Mapa Ilustrado;
                 // fuera de él (caso "security" siempre con insignia) se deja
                 // como antes, solo el icono, para no ensuciar la edición.
@@ -396,7 +396,7 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
 
                 const iconHTML = `<div class="map-pin" style="width:${boxW}px;" title="${displayName}">
                     ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
-                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;background:${bg};">${iconSvg}</div>
+                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;">${iconSvg}</div>
                 </div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
@@ -455,7 +455,7 @@ function updateStats() {
                     const item = document.createElement('div');
                     item.className = 'legend-item';
                     const iconHTML = isIllustratedMode
-                        ? `<div class="legend-pin" style="background:${config.color};">${getPinIconSVG(config.icon)}</div>`
+                        ? `<div class="legend-pin">${getPinIconSVG(config.icon, config.color)}</div>`
                         : `<img src="${getGenericIconUrl(config.icon)}" class="legend-icon">`;
                     item.innerHTML = `
                         ${iconHTML}
@@ -528,7 +528,7 @@ function setupElementEvents() {
                 'wc': 'signal-wc', 'fence': 'fence', 'panic-fence': 'panic-fence', 'custom': 'generator',
                 'parking': 'signal-parking', 'disabled': 'signal-disabled', 'noparking': 'signal-no-parking',
                 'exit': 'signal-exit', 'no-entry': 'signal-no-entry', 'security': 'security', 'entrance': 'entrance', 'drunk': 'drunk',
-                'gabry': 'gabry'
+                'tiburon': 'tiburon'
             };
 			if (elemType) { elemType.value = mapIconToType[this.dataset.icon]; elemType.dispatchEvent(new Event('change')); }
 		};
@@ -539,8 +539,7 @@ function setupElementEvents() {
 			const isFence = isFenceType(this.value);
 			document.getElementById('dimension-controls').style.display = isFence ? 'none' : 'block';
             document.getElementById('fence-controls').style.display = isFence ? 'block' : 'none';
-            const gabryControls = document.getElementById('gabry-controls');
-            if (gabryControls) gabryControls.style.display = (this.value === 'gabry') ? 'block' : 'none';
+            document.getElementById('patrol-controls').style.display = (this.value === 'security') ? 'block' : 'none';
             const config = festivalConfig[this.value];
 			if (config && config.defaultLen) {
 				document.getElementById('element-length').value = config.defaultLen;
@@ -560,11 +559,9 @@ function setupElementEvents() {
 		const type = elemType.value;
 		if (isFenceType(type) && document.getElementById('fence-mode').value === 'draw') {
             startFenceDrawing(type);
-        } else if (type === 'gabry') {
+        } else if (type === 'security' && document.getElementById('patrol-mode').value === 'draw') {
             const name = document.getElementById('element-name').value || festivalConfig[type].label;
-            const length = parseFloat(document.getElementById('element-length').value);
-            const width = parseFloat(document.getElementById('element-width').value) || 5;
-            startGabryPathDrawing(name, length, width);
+            startPatrolPathDrawing(type, name);
         } else {
             const config = festivalConfig[type], name = document.getElementById('element-name').value || config.label;
             const length = isFenceType(type) ? parseFloat(document.getElementById('fence-fixed-length').value) : parseFloat(document.getElementById('element-length').value);
@@ -601,27 +598,26 @@ function setupElementEvents() {
 	};
 }
 
-let gabryDrawPoints = [], gabryTempPolyline = null, gabryTempMarkers = [];
+let patrolDrawPoints = [], patrolTempPolyline = null, patrolTempMarkers = [];
 
-// Trayecto del coche "gabry": a diferencia de la valla (línea recta de dos
-// clics, ver startFenceDrawing), aquí se admiten VARIOS puntos -uno por
-// clic-, para poder rodear otros elementos del recinto en vez de ir en
-// línea recta. Se termina con doble clic, Enter o Escape; con un único
-// punto (o ninguno) se comporta como antes: el coche va directo a la barra
-// más cercana desde donde se colocó (ver setupGabryAnimations en view3d.js).
-function startGabryPathDrawing(name, length, width) {
-    gabryDrawPoints = [];
+// Recorrido a pie de un portero: a diferencia de la valla (línea recta de
+// dos clics, ver startFenceDrawing), aquí se admiten VARIOS puntos -uno por
+// clic-, para poder marcar una ronda con vueltas en vez de un tramo recto.
+// Se termina con doble clic, Enter o Escape; con un único punto (o ninguno)
+// se queda plantado ahí -sin recorrido, hace de guardia fijo como siempre-.
+function startPatrolPathDrawing(type, name) {
+    patrolDrawPoints = [];
     map.dragging.disable();
     map.doubleClickZoom.disable();
     map.getContainer().style.cursor = 'crosshair';
 
     const addPoint = (latlng) => {
-        gabryDrawPoints.push(latlng);
-        gabryTempMarkers.push(L.circleMarker(latlng, { radius: 4, color: '#fff', weight: 2, fillColor: '#f1c40f', fillOpacity: 1, interactive: false }).addTo(map));
-        if (!gabryTempPolyline) {
-            gabryTempPolyline = L.polyline(gabryDrawPoints, { color: 'white', weight: 3, dashArray: '5, 10', interactive: false }).addTo(map);
+        patrolDrawPoints.push(latlng);
+        patrolTempMarkers.push(L.circleMarker(latlng, { radius: 4, color: '#fff', weight: 2, fillColor: '#e74c3c', fillOpacity: 1, interactive: false }).addTo(map));
+        if (!patrolTempPolyline) {
+            patrolTempPolyline = L.polyline(patrolDrawPoints, { color: 'white', weight: 3, dashArray: '5, 10', interactive: false }).addTo(map);
         } else {
-            gabryTempPolyline.setLatLngs(gabryDrawPoints);
+            patrolTempPolyline.setLatLngs(patrolDrawPoints);
         }
     };
 
@@ -630,9 +626,9 @@ function startGabryPathDrawing(name, length, width) {
     const onDblClick = (e) => {
         // El segundo clic del propio doble clic ya añadió un punto de más
         // (Leaflet dispara "click" antes que "dblclick"): se descarta antes
-        // de terminar, si no el trayecto acababa siempre con un punto
+        // de terminar, si no el recorrido acababa siempre con un punto
         // sobrante justo donde se hizo doble clic para finalizar.
-        if (gabryDrawPoints.length) gabryDrawPoints.pop();
+        if (patrolDrawPoints.length) patrolDrawPoints.pop();
         finish();
     };
 
@@ -647,24 +643,15 @@ function startGabryPathDrawing(name, length, width) {
         map.dragging.enable();
         map.doubleClickZoom.enable();
         map.getContainer().style.cursor = '';
-        if (gabryTempPolyline) { map.removeLayer(gabryTempPolyline); gabryTempPolyline = null; }
-        gabryTempMarkers.forEach(m => map.removeLayer(m));
-        gabryTempMarkers = [];
+        if (patrolTempPolyline) { map.removeLayer(patrolTempPolyline); patrolTempPolyline = null; }
+        patrolTempMarkers.forEach(m => map.removeLayer(m));
+        patrolTempMarkers = [];
 
-        const center = gabryDrawPoints.length ? gabryDrawPoints[0] : map.getCenter();
-        const pathCoords = gabryDrawPoints.length > 1 ? gabryDrawPoints.slice() : null;
+        const config = festivalConfig[type];
+        const center = patrolDrawPoints.length ? patrolDrawPoints[0] : map.getCenter();
+        const pathCoords = patrolDrawPoints.length > 1 ? patrolDrawPoints.slice() : null;
 
-        // Rumbo inicial del primer tramo, solo para orientar el icono en el
-        // mapa 2D -el rumbo real durante la conducción en 3D lo marca cada
-        // tramo del propio trayecto, ver setupGabryAnimations-.
-        let rotation = 0;
-        if (pathCoords) {
-            const p1 = map.project(pathCoords[0]);
-            const p2 = map.project(pathCoords[1]);
-            rotation = (Math.atan2(p2.y - p1.y, p2.x - p1.x) * 180 / Math.PI + (map.getBearing ? map.getBearing() : 0) + 360) % 360;
-        }
-
-        const element = addRectangleToMap(name, 'gabry', center, length, width, rotation, pathCoords);
+        const element = addRectangleToMap(name, type, center, config.defaultLen, config.defaultWid, 0, pathCoords);
         elements.push(element); updateElementCard(element); bindMarkerEvents(element);
         updateStats();
         saveHistory();
@@ -789,10 +776,8 @@ function addRectangleToMap(name, type, center, length, width, rotation = 0, path
 
     const element = { id: Date.now(), type, name, rectangle, labelMarker, moveMarker, length, width, rotation: rotation, isRectangle: true, color: config.color, iconUrl: getGenericIconUrl(config.icon) };
 
-    // Trayecto dibujado a mano (solo "gabry" por ahora, ver
-    // startGabryPathDrawing): línea guía en el propio mapa 2D, aparte de la
-    // huella/rectángulo del coche, que la vista 3D recorre punto a punto en
-    // vez de ir en línea recta (ver drawElements/setupGabryAnimations).
+    // Trayecto dibujado a mano opcional: línea guía en el propio mapa 2D,
+    // aparte de la huella/rectángulo del elemento.
     if (pathCoords && pathCoords.length > 1) {
         element.pathCoords = pathCoords;
         element.routeLine = L.polyline(pathCoords, { color: config.color, weight: 3, dashArray: '6, 8', opacity: 0.85, interactive: false });
@@ -817,7 +802,7 @@ function addRectangleToMap(name, type, center, length, width, rotation = 0, path
         const curLabelPos = labelMarker.getLatLng();
         labelMarker.setLatLng([curLabelPos.lat + dLat, curLabelPos.lng + dLng]);
 
-        // El trayecto entero viaja con el coche: si no, arrastrarlo lo
+        // El trayecto entero viaja con el elemento: si no, arrastrarlo lo
         // separaba de su propio camino dibujado.
         if (element.pathCoords) {
             element.pathCoords = element.pathCoords.map(p => L.latLng(p.lat + dLat, p.lng + dLng));
@@ -1060,33 +1045,122 @@ function bindMarkerEvents(element) {
         });
     }
 }
-// Iconos dibujados (SVG en línea, no emoji) para las insignias del Mapa
-// Ilustrado. Trazo blanco simple sobre el color propio de cada tipo.
-function getPinIconSVG(iconKey) {
-    const S = 'fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"';
+// Iconos dibujados (SVG en línea, no emoji) para el Mapa Ilustrado: cada
+// uno es un pequeño "sticker" a todo color (no un trazo blanco sobre una
+// insignia cuadrada), con un fondo elíptico de sombra para que floten sobre
+// el césped como en un mapa de festival ilustrado.
+function getPinIconSVG(iconKey, color) {
+    const bg = color || '#7f8c8d';
+    const D = '#242424'; // trazo oscuro común a todos los iconos
+    const shadow = '<ellipse cx="32" cy="57" rx="18" ry="4" fill="rgba(0,0,0,0.22)"/>';
     const icons = {
-        'stage': `<svg viewBox="0 0 24 24" ${S}><path d="M12 2v3"/><path d="M12 5 4 13h16L12 5Z" fill="white" fill-opacity="0.85" stroke="white"/><path d="M4 13v7h16v-7"/><path d="M12 13v7"/></svg>`,
-        'bar': `<svg viewBox="0 0 24 24" ${S}><path d="M5 4h14l-7 8v6"/><path d="M9 20h6"/></svg>`,
-        'food': `<svg viewBox="0 0 24 24" ${S}><path d="M2 8h11v8H2z"/><path d="M13 11h4l3 3v2h-7z"/><circle cx="6" cy="18" r="1.5" fill="white"/><circle cx="17" cy="18" r="1.5" fill="white"/></svg>`,
-        'custom': `<svg viewBox="0 0 24 24" fill="white" stroke="none"><path d="M13 2 4 14h6l-1 8 9-12h-6l1-8z"/></svg>`,
-        'wc': `<svg viewBox="0 0 24 24" ${S}><circle cx="8" cy="5" r="1.8"/><path d="M8 8v5m-3 8 3-8m0 0 3 8"/><circle cx="16" cy="5" r="1.8"/><path d="M13 21v-8a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v8"/></svg>`,
-        'parking': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M10 16V8h3.2a2.4 2.4 0 0 1 0 4.8H10"/></svg>`,
-        'disabled': `<svg viewBox="0 0 24 24" ${S}><circle cx="12" cy="4.5" r="1.6" fill="white"/><path d="M12 7.5v4l4 2.5"/><path d="M8.5 11.5h7"/><circle cx="10" cy="17" r="4"/></svg>`,
-        'noparking': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><line x1="6.5" y1="6.5" x2="17.5" y2="17.5"/></svg>`,
-        'no-entry': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.2" stroke-linecap="round"><circle cx="12" cy="12" r="8.5"/><line x1="6" y1="12" x2="18" y2="12"/></svg>`,
-        'exit': `<svg viewBox="0 0 24 24" ${S}><path d="M10 3H5v18h5"/><path d="M14 12h7m0 0-3-3m3 3-3 3"/></svg>`,
-        'star': `<svg viewBox="0 0 24 24" fill="white" stroke="none"><path d="M12 2l2.9 6.9L22 9.6l-5.5 4.8L18 22l-6-3.9L6 22l1.5-7.6L2 9.6l7.1-.7L12 2z"/></svg>`,
-        'tent': `<svg viewBox="0 0 24 24" ${S}><path d="M2 20 12 4l10 16"/><path d="M8.5 20 12 13l3.5 7"/></svg>`,
-        'rest': `<svg viewBox="0 0 24 24" ${S}><path d="M12 3v18"/><path d="M3 12a9 9 0 0 1 18 0z"/><path d="M12 21c-1.5 0-2-1-2-2"/></svg>`,
-        'first-aid': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8v8M8 12h8"/></svg>`,
+        'stage': `<svg viewBox="0 0 64 64">${shadow}
+            <rect x="14" y="34" width="36" height="20" rx="3" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
+            <path d="M10 34 32 12 54 34Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M32 12v22" stroke="${D}" stroke-width="2"/>
+            <circle cx="20" cy="23" r="3.2" fill="#fff6df" stroke="${D}" stroke-width="1.6"/>
+            <circle cx="44" cy="23" r="3.2" fill="#fff6df" stroke="${D}" stroke-width="1.6"/>
+            <rect x="20" y="39" width="24" height="12" rx="2" fill="${D}" opacity="0.25"/>
+            <path d="M27 51v-9M32 51v-11M37 51v-9" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+        </svg>`,
+        'bar': `<svg viewBox="0 0 64 64">${shadow}
+            <path d="M16 14h32L35 35v15h5v4H24v-4h5V35Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M20 18h24" stroke="#fff" stroke-width="2" opacity="0.65"/>
+            <circle cx="41" cy="16" r="3" fill="#e74c3c" stroke="${D}" stroke-width="1.4"/>
+        </svg>`,
+        'food': `<svg viewBox="0 0 64 64">${shadow}
+            <path d="M12 28c0-9 9-16 20-16s20 7 20 16H12Z" fill="#e8b656" stroke="${D}" stroke-width="2.5"/>
+            <circle cx="22" cy="18" r="1.6" fill="#fff"/><circle cx="32" cy="15" r="1.6" fill="#fff"/><circle cx="42" cy="18" r="1.6" fill="#fff"/>
+            <rect x="11" y="28" width="42" height="6" fill="${bg}" stroke="${D}" stroke-width="2"/>
+            <path d="M10 34c2 4 8 5 22 5s20-1 22-5" fill="#6b3f22" stroke="${D}" stroke-width="2.5"/>
+            <rect x="12" y="42" width="40" height="9" rx="4" fill="#e8b656" stroke="${D}" stroke-width="2.5"/>
+        </svg>`,
+        'custom': `<svg viewBox="0 0 64 64">${shadow}
+            <rect x="14" y="12" width="36" height="40" rx="10" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
+            <path d="M35 18 20 38h10l-3 14 18-22H35Z" fill="#fff6df" stroke="${D}" stroke-width="2" stroke-linejoin="round"/>
+        </svg>`,
+        'wc': `<svg viewBox="0 0 64 64">${shadow}
+            <circle cx="20" cy="14" r="6" fill="${bg}" stroke="${D}" stroke-width="2.2"/>
+            <path d="M11 42 14 24h12l3 18Z" fill="${bg}" stroke="${D}" stroke-width="2.2" stroke-linejoin="round"/>
+            <rect x="14" y="42" width="4" height="14" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
+            <rect x="22" y="42" width="4" height="14" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
+            <circle cx="44" cy="14" r="6" fill="#e88ec4" stroke="${D}" stroke-width="2.2"/>
+            <path d="M34 44c0-11 4.5-20 10-20s10 9 10 20Z" fill="#e88ec4" stroke="${D}" stroke-width="2.2"/>
+            <rect x="38" y="44" width="4" height="12" rx="2" fill="#e88ec4" stroke="${D}" stroke-width="2"/>
+            <rect x="46" y="44" width="4" height="12" rx="2" fill="#e88ec4" stroke="${D}" stroke-width="2"/>
+        </svg>`,
+        'parking': `<svg viewBox="0 0 64 64">${shadow}
+            <circle cx="32" cy="32" r="22" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
+            <text x="32" y="42" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#fff" text-anchor="middle">P</text>
+        </svg>`,
+        'disabled': `<svg viewBox="0 0 64 64">${shadow}
+            <circle cx="32" cy="32" r="22" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
+            <circle cx="30" cy="16" r="4" fill="#fff"/>
+            <path d="M30 22v10l8 5M30 32h-9M23 46l7-10M40 46l-6-9" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <circle cx="26" cy="41" r="9" fill="none" stroke="#fff" stroke-width="3"/>
+        </svg>`,
+        'noparking': `<svg viewBox="0 0 64 64">${shadow}
+            <circle cx="32" cy="32" r="22" fill="#3498db" stroke="${D}" stroke-width="2.5"/>
+            <circle cx="32" cy="32" r="22" fill="none" stroke="#e74c3c" stroke-width="6"/>
+            <line x1="18" y1="18" x2="46" y2="46" stroke="#e74c3c" stroke-width="6" stroke-linecap="round"/>
+        </svg>`,
+        'no-entry': `<svg viewBox="0 0 64 64">${shadow}
+            <circle cx="32" cy="32" r="22" fill="#e74c3c" stroke="${D}" stroke-width="2.5"/>
+            <rect x="16" y="28" width="32" height="8" rx="2" fill="#fff"/>
+        </svg>`,
+        'exit': `<svg viewBox="0 0 64 64">${shadow}
+            <rect x="8" y="14" width="48" height="34" rx="4" fill="#1e8f4e" stroke="${D}" stroke-width="2.5"/>
+            <circle cx="20" cy="22" r="3" fill="#fff"/>
+            <path d="M20 27v8l6 4M20 35h-6M14 45l6-9M27 45l-4-6" stroke="#fff" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+            <path d="M32 30h18m0 0-6-6m6 6-6 6" stroke="#fff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>`,
+        'star': `<svg viewBox="0 0 64 64">${shadow}<path d="M32 8l7.6 17.8L58 27.6l-14.4 12.6L48 58l-16-10.4L16 58l4.4-17.8L6 27.6l18.4-1.8Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/></svg>`,
+        'tent': `<svg viewBox="0 0 64 64">${shadow}
+            <path d="M6 50 32 10 58 50Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M20 50 32 28 44 50Z" fill="${D}" opacity="0.28"/>
+            <path d="M32 10v40" stroke="${D}" stroke-width="2"/>
+        </svg>`,
+        'rest': `<svg viewBox="0 0 64 64">${shadow}<path d="M32 8v48" stroke="${D}" stroke-width="3"/><path d="M8 32a24 24 0 0 1 48 0Z" fill="${bg}" stroke="${D}" stroke-width="2.5"/></svg>`,
+        'first-aid': `<svg viewBox="0 0 64 64">${shadow}
+            <rect x="10" y="10" width="44" height="44" rx="10" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
+            <path d="M32 20v24M20 32h24" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
+        </svg>`,
         'fence': `<svg viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round"><path d="M4 4v16M9 4v16M15 4v16M20 4v16"/><path d="M2 9h20M2 15h20"/></svg>`,
-        'panic-fence': `<svg viewBox="0 0 24 24" ${S}><path d="M4 9h16M4 15h16"/><path d="M6 6v12M18 6v12"/></svg>`,
-        'security': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="5" r="2.2" fill="white" stroke="none"/><path d="M12 8v6"/><path d="M12 10 6 6"/><path d="M12 10l6-4"/><path d="M12 14l-5 7"/><path d="M12 14l5 7"/></svg>`,
-        'entrance': `<svg viewBox="0 0 24 24" ${S}><path d="M4 21V11a8 8 0 0 1 16 0v10"/><path d="M4 21h4M16 21h4"/></svg>`,
-        'drunk': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="5" r="2.2" fill="white" stroke="none"/><path d="M11 8v6" transform="rotate(-8 11 11)"/><path d="M11 10 7 8"/><path d="M11 10l5-1"/><rect x="15" y="7.5" width="2.6" height="2.4" fill="white" stroke="none"/><path d="M10 14 6 21"/><path d="M11 14l6 6"/></svg>`,
-        'gabry': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"><path d="M3 15h18l-2-5.5a2 2 0 0 0-1.9-1.3H6.9A2 2 0 0 0 5 9.5z"/><path d="M7 10.5l1-3.5h8l1 3.5"/><circle cx="7.5" cy="16" r="1.8" fill="white" stroke="none"/><circle cx="16.5" cy="16" r="1.8" fill="white" stroke="none"/></svg>`
+        'panic-fence': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16"/><path d="M6 6v12M18 6v12"/></svg>`,
+        'security': `<svg viewBox="0 0 64 64">${shadow}
+            <path d="M32 8 52 16v16c0 14-9 22-20 26C21 54 12 46 12 32V16Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M23 32l6 6 12-14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>`,
+        'entrance': `<svg viewBox="0 0 64 64">${shadow}
+            <path d="M12 54V26a20 20 0 0 1 40 0v28" fill="none" stroke="${bg}" stroke-width="7" stroke-linecap="round"/>
+            <rect x="8" y="50" width="10" height="8" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
+            <rect x="46" y="50" width="10" height="8" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
+            <path d="M22 14l3 6h6l-5 4 2 6-6-4-6 4 2-6-5-4h6Z" fill="#ffd75e" stroke="${D}" stroke-width="1.6" stroke-linejoin="round"/>
+        </svg>`,
+        'drunk': `<svg viewBox="0 0 64 64">${shadow}
+            <circle cx="28" cy="14" r="6" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>
+            <path d="M28 20v16" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
+            <path d="M28 24 18 20" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
+            <path d="M28 24 40 20" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
+            <rect x="38" y="14" width="8" height="8" fill="${bg}" stroke="${D}" stroke-width="2"/>
+            <path d="M24 36 16 54" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
+            <path d="M28 36 36 54" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
+        </svg>`,
+        'tiburon': `<svg viewBox="0 0 64 64">${shadow}
+            <circle cx="32" cy="14" r="6.5" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>
+            <rect x="24" y="12" width="16" height="4" rx="1" fill="${D}"/>
+            <path d="M32 21v14" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+            <path d="M32 24 18 16" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+            <path d="M32 24 46 16" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+            <path d="M27 35 20 54" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+            <path d="M32 35 39 54" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+            <g transform="translate(13,10) rotate(-15)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
+            <g transform="translate(11,15) rotate(-25)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
+            <g transform="translate(41,10) rotate(15)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
+            <g transform="translate(43,15) rotate(25)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
+        </svg>`
     };
-    return icons[iconKey] || `<svg viewBox="0 0 24 24" fill="white" stroke="#333" stroke-width="1"><circle cx="12" cy="12" r="5"/></svg>`;
+    return icons[iconKey] || `<svg viewBox="0 0 64 64">${shadow}<circle cx="32" cy="30" r="18" fill="${bg}" stroke="${D}" stroke-width="2.5"/></svg>`;
 }
 function getGenericIconUrl(type) {
     const genericIcons = { 
@@ -1104,7 +1178,6 @@ function getGenericIconUrl(type) {
         'security': 'assets/icons/security.svg',
         'entrance': 'assets/icons/entrance.svg',
         'drunk': 'assets/icons/drunk.svg',
-        'gabry': 'assets/icons/gabry.svg',
         'disabled': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Wheelchair_symbol.svg',
         'noparking': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzM0OThkYiIgc3Ryb2tlPSIjZTc0YzNjIiBzdHJva2Utd2lkdGg9IjEwIi8+PGxpbmUgeDE9IjE4IiB5MT0iMTgiIHgyPSI4MiIgeTI9IjgyIiBzdHJva2U9IiNlNzRjM2MiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=',
         'exit': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMjdhZTYwIi8+PHBhdGggZD0iTTMwIDIwaDQwdjYwSDMwek03NSA1MGwtMTUgMTBNNzUgNTBsLTE1LTEwIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjgiLz48L3N2Zz4=',

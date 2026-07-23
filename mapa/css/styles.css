@@ -266,21 +266,17 @@ select.form-control option {
     border-top: 6px solid #fff;
     z-index: 1;
 }
-/* Insignia cuadrada redondeada con un icono dibujado dentro (SVG). */
+/* Sticker ilustrado a todo color (sin caja/cuadrado de fondo): el icono
+   SVG ya trae su propio color, sombra elíptica y contorno. */
 .map-pin-badge {
-    width: 40px;
-    height: 40px;
-    border-radius: 11px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 3px solid #fff;
-    box-shadow: 0 4px 10px rgba(0,0,0,0.4);
+    filter: drop-shadow(0 3px 4px rgba(0,0,0,0.3));
 }
 .map-pin-badge svg {
-    width: 55%;
-    height: 55%;
-    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.35));
+    width: 100%;
+    height: 100%;
 }
 .map-pin-area-label {
     background: rgba(255,255,255,0.92);
@@ -407,19 +403,16 @@ select.form-control option {
     object-fit: contain;
 }
 .legend-pin {
-    width: 22px;
-    height: 22px;
-    border-radius: 7px;
+    width: 26px;
+    height: 26px;
     display: flex;
     align-items: center;
     justify-content: center;
-    border: 2px solid #fff;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.35);
     flex-shrink: 0;
 }
 .legend-pin svg {
-    width: 13px;
-    height: 13px;
+    width: 100%;
+    height: 100%;
 }
 
 /* Header del panel */

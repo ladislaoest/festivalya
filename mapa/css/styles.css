@@ -181,9 +181,9 @@ select.form-control option {
 }
 
 /* Estilo del mapa ilustrado: los iconos/burbujas a todo color van ENCIMA
-   del mapa real (con un filtro suave para que luzca menos "foto" y más
-   "plano"), no sobre un fondo plano inventado -eso no dejaba distinguir
-   nada del recinto real debajo de los iconos-. */
+   del mapa real (calles, nombres de sitios reales, etc. tal cual los trae
+   el propio proveedor de mapas -Carto Voyager-, sin filtro que los lave o
+   los haga menos legibles), no sobre un fondo plano inventado. */
 .illustrated-style {
     /* Sin "pointer-events: none" aquí: hay que poder arrastrar (mover) y
        rotar el mapa. Los elementos individuales (iconos/etiquetas/formas) ya
@@ -191,10 +191,6 @@ select.form-control option {
        así que el propio mapa sigue recibiendo el gesto de arrastre/rotación. */
     cursor: grab !important;
     user-select: none !important;
-}
-
-.illustrated-style .leaflet-tile-pane {
-    filter: saturate(2.1) contrast(1.15) brightness(1.1) hue-rotate(-4deg);
 }
 
 .label-bubble {
@@ -263,25 +259,16 @@ select.form-control option {
     z-index: 1;
 }
 /* Sticker ilustrado a todo color (sin caja/cuadrado de fondo): el icono
-   SVG ya trae su propio color, sombra elíptica y contorno. Flota con un
-   balanceo suave (mapPinFloat) para que el mapa no se vea estático -cada
-   uno con su propio "animation-delay" (ver updateElementShape) para que no
-   floten todos a la vez, en sincro, como en un metrónomo-. */
+   SVG ya trae su propio color, sombra elíptica y contorno. */
 .map-pin-badge {
     display: flex;
     align-items: center;
     justify-content: center;
     filter: drop-shadow(0 3px 4px rgba(0,0,0,0.3));
-    animation: mapPinFloat 2.6s ease-in-out infinite;
-    transform-origin: center bottom;
 }
 .map-pin-badge svg {
     width: 100%;
     height: 100%;
-}
-@keyframes mapPinFloat {
-    0%, 100% { transform: translateY(0) scale(1); }
-    50% { transform: translateY(-5px) scale(1.03); }
 }
 .map-pin-area-label {
     background: rgba(255,255,255,0.92);

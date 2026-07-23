@@ -522,15 +522,10 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 const bubbleH = isIllustratedMode ? 20 : 0;
                 const boxW = isIllustratedMode ? Math.max(50, Math.min(160, displayName.length * 5 + 18)) : badgeSize;
                 const totalH = bubbleH + badgeSize;
-                // Retraso de animación estable por elemento (derivado de su
-                // id, no de Math.random(): así no "salta" de fase cada vez
-                // que se vuelve a renderizar, p.ej. al arrastrarlo), para que
-                // los iconos floten desincronizados entre sí.
-                const floatDelay = -((element.id % 27) / 10);
 
                 const iconHTML = `<div class="map-pin" style="width:${boxW}px;" title="${displayName}">
                     ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
-                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;animation-delay:${floatDelay}s;">${iconSvg}</div>
+                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;">${iconSvg}</div>
                 </div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',

@@ -1141,6 +1141,8 @@
             </select>
         </div>
 
+        <div id="design_assign_widgets"></div>
+
         <div id="design_needed_box" class="conditional-box" style="padding:0; background:transparent; border-left:none; display:none;">
             <div class="form-card" style="margin-bottom: 10px;">
                 <label>Comentarios</label>
@@ -1617,6 +1619,16 @@
             log_camerinos: { label: 'Camerinos', tab: 'tab_logistica' }
         };
 
+        // Las categorías de Diseños (Dossier, Impresión...) también se
+        // pueden asignar (ver injectDesignAssignWidgets/renderDesignAssignWidget),
+        // con el mismo mecanismo genérico que el resto de campos -field_id
+        // "design_<categoría>", en vez de vivir en "allFields" (que solo
+        // sirve para las columnas de la tabla "events", no para
+        // "event_design_status").
+        DESIGN_CATEGORIES.forEach(c => {
+            FIELD_META['design_' + c.key] = { label: c.label, tab: 'tab_disenos' };
+        });
+
         async function loadAllData() {
             const [{ data: users, error: usersErr }, { data: events, error: eventsErr }, { data: escenarios, error: escErr }] = await Promise.all([
                 sb.from('app_users').select('*'),
@@ -1679,6 +1691,7 @@
                 overlay.style.display = 'none';
                 setupUIByRole();
                 injectAssignWidgets();
+                injectDesignAssignWidgets();
                 updateEventSelect();
                 if (currentEvent) loadEventData();
                 renderAdminPanel();
@@ -2075,29 +2088,35 @@
             return !!(user.allowedEvents && user.allowedEvents.includes(eventId));
         }
 
-        // Un único bloque de checkbox "Asignar" + selector de usuario +
-        // checkbox "Resuelto" por campo, insertado una sola vez dentro de
-        // cada .form-card -su estado (a qué evento/campo pertenece) se
-        // repuebla en cada renderFieldAssignments(), no hace falta volver a
-        // insertarlo.
-        function buildAssignWidgetHTML(fieldId) {
+        // Checkbox "Asignar" + selector de usuario + checkbox "Resuelto":
+        // el contenido interno es el mismo para un campo normal (dentro de
+        // su .form-card, ver buildAssignWidgetHTML) y para una categoría de
+        // Diseños (su propia .form-card completa, ver injectDesignAssignWidgets
+        // -esa pestaña no tiene un elemento fijo por categoría con el que
+        // enganchar el widget, a diferencia de "allFields"-).
+        function buildAssignFieldsHTML(fieldId) {
             return `
-                <div class="assign-widget">
+                <label class="checkbox-row">
+                    <input type="checkbox" id="assign_chk_${fieldId}" onchange="onAssignToggle('${fieldId}')">
+                    Asignar
+                </label>
+                <div id="assign_box_${fieldId}" class="assign-box">
+                    <select id="assign_user_${fieldId}" onchange="onAssignUserChange('${fieldId}')">
+                        <option value="">-- Elegir usuario --</option>
+                    </select>
                     <label class="checkbox-row">
-                        <input type="checkbox" id="assign_chk_${fieldId}" onchange="onAssignToggle('${fieldId}')">
-                        Asignar a alguien
+                        <input type="checkbox" id="assign_resolved_${fieldId}" onchange="onAssignResolvedChange('${fieldId}')">
+                        Resuelto
                     </label>
-                    <div id="assign_box_${fieldId}" class="assign-box">
-                        <select id="assign_user_${fieldId}" onchange="onAssignUserChange('${fieldId}')">
-                            <option value="">-- Elegir usuario --</option>
-                        </select>
-                        <label class="checkbox-row">
-                            <input type="checkbox" id="assign_resolved_${fieldId}" onchange="onAssignResolvedChange('${fieldId}')">
-                            Resuelto
-                        </label>
-                    </div>
                 </div>
             `;
+        }
+
+        // Insertado una sola vez dentro de cada .form-card -su estado (a qué
+        // evento/campo pertenece) se repuebla en cada populateAssignWidget(),
+        // no hace falta volver a insertarlo.
+        function buildAssignWidgetHTML(fieldId) {
+            return `<div class="assign-widget" id="assign_widget_${fieldId}">${buildAssignFieldsHTML(fieldId)}</div>`;
         }
 
         function injectAssignWidgets() {
@@ -2109,37 +2128,70 @@
             });
         }
 
-        function renderFieldAssignments() {
+        // Una tarjeta por categoría de Diseños (Dossier, Impresión...),
+        // todas ocultas salvo la activa -ver renderDesignAssignWidget-, para
+        // poder reutilizar el mismo mecanismo genérico de asignación que el
+        // resto de campos con field_id "design_<categoría>".
+        function injectDesignAssignWidgets() {
+            const container = document.getElementById('design_assign_widgets');
+            if (!container || container.dataset.injected) return;
+            container.dataset.injected = '1';
+            container.innerHTML = DESIGN_CATEGORIES.map(c => {
+                const fieldId = 'design_' + c.key;
+                return `<div class="form-card" id="assign_widget_${fieldId}" style="display:none;">
+                    <label>Asignar ${escapeHtml(c.label)}</label>
+                    ${buildAssignFieldsHTML(fieldId)}
+                </div>`;
+            }).join('');
+        }
+
+        // Repuebla el estado (asignado a quién, resuelto o no) de UN widget
+        // ya insertado, a partir de fieldAssignments -reutilizada tanto por
+        // renderFieldAssignments (todos los campos normales) como por
+        // renderDesignAssignWidget (solo la categoría de Diseños activa).
+        function populateAssignWidget(fieldId) {
             if (!currentEvent) return;
-            const assignmentsForEvent = fieldAssignments[currentEvent] || {};
+            const chk = document.getElementById(`assign_chk_${fieldId}`);
+            const box = document.getElementById(`assign_box_${fieldId}`);
+            const userSelect = document.getElementById(`assign_user_${fieldId}`);
+            const resolvedChk = document.getElementById(`assign_resolved_${fieldId}`);
+            if (!chk || !box || !userSelect || !resolvedChk) return;
+
             const usersWithAccess = getUsersWithEventAccess(currentEvent);
-            const userOptions = '<option value="">-- Elegir usuario --</option>' +
+            userSelect.innerHTML = '<option value="">-- Elegir usuario --</option>' +
                 usersWithAccess.map(u => `<option value="${escapeHtml(u)}">${escapeHtml(u)}</option>`).join('');
 
-            allFields.forEach(f => {
-                const chk = document.getElementById(`assign_chk_${f}`);
-                const box = document.getElementById(`assign_box_${f}`);
-                const userSelect = document.getElementById(`assign_user_${f}`);
-                const resolvedChk = document.getElementById(`assign_resolved_${f}`);
-                if (!chk || !box || !userSelect || !resolvedChk) return;
+            const a = (fieldAssignments[currentEvent] || {})[fieldId];
+            if (a) {
+                chk.checked = true;
+                box.style.display = 'flex';
+                userSelect.value = a.assigned_to;
+                resolvedChk.checked = !!a.resolved;
+            } else {
+                chk.checked = false;
+                box.style.display = 'none';
+                userSelect.value = '';
+                resolvedChk.checked = false;
+            }
+        }
 
-                userSelect.innerHTML = userOptions;
-
-                const a = assignmentsForEvent[f];
-                if (a) {
-                    chk.checked = true;
-                    box.style.display = 'flex';
-                    userSelect.value = a.assigned_to;
-                    resolvedChk.checked = !!a.resolved;
-                } else {
-                    chk.checked = false;
-                    box.style.display = 'none';
-                    userSelect.value = '';
-                    resolvedChk.checked = false;
-                }
-            });
-
+        function renderFieldAssignments() {
+            if (!currentEvent) return;
+            allFields.forEach(populateAssignWidget);
+            renderDesignAssignWidget();
             renderAssignmentSummaryPanel();
+        }
+
+        // Muestra solo la tarjeta de la categoría de Diseños activa (las
+        // otras 4 quedan ocultas pero ya en el DOM) y repuebla su estado.
+        // La llama tanto renderFieldAssignments (al abrir el evento) como
+        // setDesignCategory (al cambiar de categoría sin cambiar de evento).
+        function renderDesignAssignWidget() {
+            DESIGN_CATEGORIES.forEach(c => {
+                const wrap = document.getElementById(`assign_widget_design_${c.key}`);
+                if (wrap) wrap.style.display = (c.key === activeDesignCategory) ? 'block' : 'none';
+            });
+            populateAssignWidget('design_' + activeDesignCategory);
         }
 
         // Resumen de tareas al abrir el evento (tab_produccion, la pestaña
@@ -2184,19 +2236,24 @@
         }
 
         // Lleva a la pestaña del campo asignado y lo resalta un momento, para
-        // no tener que ir buscándolo a mano tras verlo en el resumen.
+        // no tener que ir buscándolo a mano tras verlo en el resumen. Si es
+        // una categoría de Diseños, además hay que cambiar a esa categoría
+        // -la pestaña por sí sola no basta, solo una está visible a la vez.
         function focusAssignedField(fieldId) {
             const meta = FIELD_META[fieldId];
             switchTab(meta ? meta.tab : 'tab_produccion');
 
+            const isDesign = fieldId.startsWith('design_');
+            if (isDesign) setDesignCategory(fieldId.slice('design_'.length));
+
             setTimeout(() => {
-                const el = document.getElementById(fieldId);
-                const target = (el && el.closest('.form-card')) || el;
+                const widget = document.getElementById(`assign_widget_${fieldId}`);
+                const target = (widget && widget.closest('.form-card')) || widget;
                 if (!target) return;
                 target.scrollIntoView({ behavior: 'smooth', block: 'center' });
                 target.classList.add('assign-flash');
                 setTimeout(() => target.classList.remove('assign-flash'), 1200);
-            }, 60);
+            }, isDesign ? 100 : 60);
         }
 
         async function onAssignToggle(fieldId) {
@@ -2610,8 +2667,16 @@
         // "Finalizado" = no le queda ninguna -incluye los eventos sin
         // ninguna tarea asignada todavía, no solo los que ya se resolvieron
         // todas-.
+        function isPastEvent(event) {
+            if (!event.event_date) return false;
+            const now = new Date();
+            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+            return event.event_date < todayStr;
+        }
+
         function eventMatchesStatusFilter(event) {
             if (eventsStatusFilter === 'all') return true;
+            if (isPastEvent(event)) return eventsStatusFilter === 'finished';
             const summary = getAssignmentSummary(event.id);
             const hasPending = !!summary && summary.pending > 0;
             return eventsStatusFilter === 'pending' ? hasPending : !hasPending;
@@ -3881,6 +3946,7 @@
             renderDesignCategoryTabs();
             loadDesignStatus();
             loadDesignFiles();
+            renderDesignAssignWidget();
         }
 
         function updateDesignNeededVisibility() {

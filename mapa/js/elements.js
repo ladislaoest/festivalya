@@ -380,18 +380,28 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
                 }));
             } else {
-                // Elementos puntuales: insignia cuadrada redondeada de tamaño
-                // fijo con un icono dibujado (sin nombre; con muchos elementos
-                // juntos las burbujas de texto tapaban todo el mapa).
-                const badgeSize = 40;
+                // Elementos puntuales: insignia cuadrada redondeada con
+                // icono, más una burbuja con el nombre encima (como en un
+                // mapa ilustrado de festival). La burbuja respeta el
+                // toggle "OCULTAR TEXTOS" para evitar que se amontonen.
+                const badgeSize = element.type === 'main-stage' ? 56 : 40;
                 const bg = element.color || '#7f8c8d';
                 const iconSvg = getPinIconSVG(iconKey);
+                // La burbuja con el nombre solo aparece en el Mapa Ilustrado;
+                // fuera de él (caso "security" siempre con insignia) se deja
+                // como antes, solo el icono, para no ensuciar la edición.
+                const bubbleH = isIllustratedMode ? 34 : 0;
+                const boxW = isIllustratedMode ? Math.max(90, Math.min(220, displayName.length * 7 + 34)) : badgeSize;
+                const totalH = bubbleH + badgeSize;
 
-                const iconHTML = `<div class="map-pin-badge" style="background:${bg};" title="${displayName}">${iconSvg}</div>`;
+                const iconHTML = `<div class="map-pin" style="width:${boxW}px;" title="${displayName}">
+                    ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
+                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;background:${bg};">${iconSvg}</div>
+                </div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
-                    iconSize: [badgeSize, badgeSize], iconAnchor: [badgeSize / 2, badgeSize / 2]
+                    iconSize: [boxW, totalH], iconAnchor: [boxW / 2, bubbleH + badgeSize / 2]
                 }));
             }
         } else {

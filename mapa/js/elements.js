@@ -178,10 +178,13 @@ function toggleIllustratedMode() {
     const mapContainer = document.getElementById('map');
     if (isIllustratedMode) {
         mapContainer.classList.add('illustrated-style');
+        // Foto satélite real (Esri World Imagery, la misma que la vista
+        // normal) como base, no el mapa de calles Voyager: se pidió
+        // explícitamente que fuera sobre la satelital, tipo Google Maps.
         map.removeLayer(currentMapLayer);
-        currentMapLayer = mapLayers['cartodb-voyager'];
+        currentMapLayer = mapLayers['esri-satellite'];
         currentMapLayer.addTo(map);
-        
+
         // Se puede mover (arrastrar) y rotar el mapa para orientar y encuadrar
         // el diseño; solo se desactiva el zoom y la edición de elementos.
         map.dragging.enable();

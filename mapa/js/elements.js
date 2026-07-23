@@ -516,7 +516,7 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 // caja/cuadrado de fondo), más una burbuja con el nombre
                 // encima (como en un mapa ilustrado de festival). La burbuja
                 // respeta el toggle "OCULTAR TEXTOS" para evitar que se amontonen.
-                const badgeSize = element.type === 'main-stage' ? 72 : 52;
+                const badgeSize = element.type === 'main-stage' ? 104 : 52;
                 const bg = element.color || '#7f8c8d';
                 const iconSvg = getPinIconSVG(iconKey, bg);
                 // La burbuja con el nombre solo aparece en el Mapa Ilustrado;
@@ -1189,18 +1189,37 @@ function getPinIconSVG(iconKey, color) {
     const shadow = '<ellipse cx="32" cy="57" rx="18" ry="4" fill="rgba(0,0,0,0.22)"/>';
     const icons = {
         'stage': `<svg viewBox="0 0 64 64">${shadow}
-            <rect x="14" y="34" width="36" height="20" rx="3" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
-            <path d="M10 34 32 12 54 34Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
-            <path d="M32 12v22" stroke="${D}" stroke-width="2"/>
-            <circle cx="20" cy="23" r="3.2" fill="#fff6df" stroke="${D}" stroke-width="1.6"/>
-            <circle cx="44" cy="23" r="3.2" fill="#fff6df" stroke="${D}" stroke-width="1.6"/>
-            <rect x="20" y="39" width="24" height="12" rx="2" fill="${D}" opacity="0.25"/>
-            <path d="M27 51v-9M32 51v-11M37 51v-9" stroke="#fff" stroke-width="2" stroke-linecap="round" opacity="0.75"/>
+            <rect x="3" y="10" width="58" height="6" rx="1.5" fill="#2b2b2b" stroke="${D}" stroke-width="1.5"/>
+            <rect x="3" y="14" width="7" height="36" fill="#2b2b2b" stroke="${D}" stroke-width="1.5"/>
+            <rect x="54" y="14" width="7" height="36" fill="#2b2b2b" stroke="${D}" stroke-width="1.5"/>
+            <rect x="1" y="30" width="11" height="21" rx="1.5" fill="#1b1b1b" stroke="${D}" stroke-width="1.6"/>
+            <rect x="52" y="30" width="11" height="21" rx="1.5" fill="#1b1b1b" stroke="${D}" stroke-width="1.6"/>
+            <circle cx="4.5" cy="35" r="2.2" fill="#3a3a3a"/><circle cx="8.5" cy="35" r="2.2" fill="#3a3a3a"/>
+            <circle cx="4.5" cy="43" r="2.2" fill="#3a3a3a"/><circle cx="8.5" cy="43" r="2.2" fill="#3a3a3a"/>
+            <circle cx="55.5" cy="35" r="2.2" fill="#3a3a3a"/><circle cx="59.5" cy="35" r="2.2" fill="#3a3a3a"/>
+            <circle cx="55.5" cy="43" r="2.2" fill="#3a3a3a"/><circle cx="59.5" cy="43" r="2.2" fill="#3a3a3a"/>
+            <rect x="14" y="19" width="36" height="23" rx="2" fill="#17181c" stroke="${D}" stroke-width="2"/>
+            <rect x="17" y="22" width="30" height="17" rx="1" fill="${bg}"/>
+            <path d="M20 39 26 27h4l-3 6h5l-8 12 2-9z" fill="#fff6df" opacity="0.9"/>
+            <rect x="10" y="42" width="44" height="10" rx="2" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
+            <circle cx="9" cy="13" r="2.6" fill="#ffe27a" stroke="${D}" stroke-width="1.2"/>
+            <circle cx="20" cy="13" r="2.6" fill="#ffe27a" stroke="${D}" stroke-width="1.2"/>
+            <circle cx="32" cy="13" r="2.6" fill="#ffe27a" stroke="${D}" stroke-width="1.2"/>
+            <circle cx="44" cy="13" r="2.6" fill="#ffe27a" stroke="${D}" stroke-width="1.2"/>
+            <circle cx="55" cy="13" r="2.6" fill="#ffe27a" stroke="${D}" stroke-width="1.2"/>
         </svg>`,
         'bar': `<svg viewBox="0 0 64 64">${shadow}
-            <path d="M16 14h32L35 35v15h5v4H24v-4h5V35Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
-            <path d="M20 18h24" stroke="#fff" stroke-width="2" opacity="0.65"/>
-            <circle cx="41" cy="16" r="3" fill="#e74c3c" stroke="${D}" stroke-width="1.4"/>
+            <path d="M6 20 32 8 58 20 58 27 6 27Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M11 21h8l2.6 6h-8ZM24.6 21h8l2.6 6h-8ZM38.2 21h8l2.6 6h-8Z" fill="#fff6df"/>
+            <rect x="11" y="27" width="3" height="19" fill="${D}"/>
+            <rect x="50" y="27" width="3" height="19" fill="${D}"/>
+            <rect x="16" y="29" width="4" height="13" fill="#3fae5c" stroke="${D}" stroke-width="1"/>
+            <rect x="23" y="27" width="4" height="15" fill="#c0392b" stroke="${D}" stroke-width="1"/>
+            <rect x="30" y="30" width="4" height="12" fill="#f4c430" stroke="${D}" stroke-width="1"/>
+            <rect x="37" y="28" width="4" height="14" fill="#3498db" stroke="${D}" stroke-width="1"/>
+            <rect x="44" y="30" width="4" height="12" fill="#8e44ad" stroke="${D}" stroke-width="1"/>
+            <rect x="7" y="42" width="50" height="12" rx="1.5" fill="#8a5a34" stroke="${D}" stroke-width="2.5"/>
+            <rect x="7" y="42" width="50" height="4" rx="1.5" fill="#a97a4d"/>
         </svg>`,
         'food': `<svg viewBox="0 0 64 64">${shadow}
             <path d="M12 28c0-9 9-16 20-16s20 7 20 16H12Z" fill="#e8b656" stroke="${D}" stroke-width="2.5"/>

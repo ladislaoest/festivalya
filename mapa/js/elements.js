@@ -200,12 +200,19 @@ function toggleIllustratedMode() {
             if (!c.classList.contains('leaflet-control-rotate')) c.style.display = 'none';
         });
 
+        // Nombres de lugares reales cercanos (campo de fútbol, colegio,
+        // parque...), para dar contexto de dónde cae el recinto -no son
+        // parte del diseño del festival, así que no usan fieldAssignments
+        // ni se guardan con el proyecto, se piden a demanda.
+        loadNearbyPlaceNames();
+
     } else {
         mapContainer.classList.remove('illustrated-style');
         map.removeLayer(currentMapLayer);
         currentMapLayer = mapLayers['esri-satellite'];
         currentMapLayer.addTo(map);
-        
+        if (nearbyPlacesLayer) map.removeLayer(nearbyPlacesLayer);
+
         // Reactivar navegación total
         map.dragging.enable();
         map.touchZoom.enable();
@@ -268,6 +275,114 @@ function toggleIllustratedMode() {
     });
 }
 
+// Lugares reales cercanos (campo de fútbol, colegio, parque, hospital...)
+// para dar contexto de dónde cae el recinto en el Mapa Ilustrado -reutiliza
+// OVERPASS_ENDPOINTS/queryOverpassMirror/raceFirstNonEmpty ya definidos en
+// view3d.js (mismo patrón que fetchMapFeatures: directo desde el navegador
+// primero, proxy propio /api/nearby-places si eso falla).
+let nearbyPlacesLayer = null;
+let nearbyPlacesFetchKey = null;
+
+function nearbyPlacesBboxKey(bbox) {
+    const r = n => Math.round(n * 1000) / 1000; // ~110m, de sobra para no repetir la consulta al mover un pelín el mapa
+    return `${r(bbox.minLat)},${r(bbox.minLng)},${r(bbox.maxLat)},${r(bbox.maxLng)}`;
+}
+
+function nearbyPlacesQuery(bboxStr) {
+    return `[out:json][timeout:20];(
+        node["leisure"]["name"](${bboxStr});
+        way["leisure"]["name"](${bboxStr});
+        node["amenity"~"^(school|university|hospital|place_of_worship)$"]["name"](${bboxStr});
+        way["amenity"~"^(school|university|hospital|place_of_worship)$"]["name"](${bboxStr});
+        way["landuse"="recreation_ground"]["name"](${bboxStr});
+        way["natural"="water"]["name"](${bboxStr});
+        node["tourism"]["name"](${bboxStr});
+    );out center;`;
+}
+
+async function loadNearbyPlaceNames() {
+    if (!map) return;
+    const b = map.getBounds();
+    // Margen extra sobre el encuadre actual: "cercano" incluye algo más allá
+    // de lo que se ve justo al activar el modo (sobre todo si se hizo zoom
+    // para diseñar el recinto), sin disparar el área a lo bestia.
+    const latPad = (b.getNorth() - b.getSouth()) * 0.6;
+    const lngPad = (b.getEast() - b.getWest()) * 0.6;
+    const bbox = {
+        minLat: b.getSouth() - latPad, maxLat: b.getNorth() + latPad,
+        minLng: b.getWest() - lngPad, maxLng: b.getEast() + lngPad
+    };
+    const key = nearbyPlacesBboxKey(bbox);
+    if (nearbyPlacesFetchKey === key) {
+        // Ya se pidió para esta misma zona: solo falta volver a mostrarla.
+        if (nearbyPlacesLayer && isIllustratedMode) nearbyPlacesLayer.addTo(map);
+        return;
+    }
+
+    const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    let elements = null;
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        elements = await raceFirstNonEmpty(
+            OVERPASS_ENDPOINTS.map(endpoint => () => queryOverpassMirror(endpoint, nearbyPlacesQuery(bboxStr), controller.signal)),
+            20000
+        );
+        clearTimeout(timeoutId);
+    } catch (err) {
+        console.warn('[Mapa Ilustrado] Fallo consultando Overpass directo para lugares cercanos, se prueba el proxy propio.', err);
+    }
+
+    if (!elements) {
+        try {
+            const res = await fetch('/api/nearby-places', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bbox })
+            });
+            if (res.ok) {
+                const json = await res.json();
+                if (Array.isArray(json.elements)) elements = json.elements;
+            }
+        } catch (err) {
+            console.warn('[Mapa Ilustrado] No se pudieron obtener lugares cercanos reales (ni directo ni por el proxy), se omiten.', err);
+        }
+    }
+    if (!elements) return;
+
+    if (nearbyPlacesLayer) map.removeLayer(nearbyPlacesLayer);
+    nearbyPlacesLayer = L.layerGroup();
+    const seenNames = new Set();
+    let count = 0;
+    for (const el of elements) {
+        if (count >= 25) break; // tope para no saturar el mapa de texto
+        const name = el.tags && el.tags.name;
+        if (!name || seenNames.has(name)) continue;
+        const lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
+        const lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+        if (!isFinite(lat) || !isFinite(lon)) continue;
+        seenNames.add(name);
+        count++;
+        const marker = L.marker([lat, lon], {
+            icon: L.divIcon({
+                className: 'nearby-place-label',
+                html: `<div class="nearby-place-pill">${escapeHtmlText(name)}</div>`,
+                iconSize: [1, 1]
+            }),
+            interactive: false
+        });
+        nearbyPlacesLayer.addLayer(marker);
+    }
+    nearbyPlacesFetchKey = key;
+    if (isIllustratedMode) nearbyPlacesLayer.addTo(map);
+}
+
+function escapeHtmlText(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
 function updateElementShape(element, updateLabel = false, onlyLabel = false) {
 	const center = element.moveMarker.getLatLng();
     const length = element.length, width = element.width || 0, rotation = element.rotation || 0;
@@ -327,7 +442,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
         const sectionsText = element.isLine ? `<br>${element.numVallas} vallas` : '';
 		
         const hasBadgeIcon = isIllustratedMode || element.type === 'security';
-        if (isIllustratedMode && element.illustratedHidden) {
+        // El Mapa Ilustrado es un plano "de cara al público" -escenarios,
+        // barras, zonas...-, no un plano técnico de producción: seguridad,
+        // Tiburón, el generador y las vallas no pintan nada ahí (si hace
+        // falta verlos, para eso está la vista normal/3D).
+        const alwaysHiddenInIllustrated = ['security', 'tiburon', 'generator', 'fence', 'panic-fence'];
+        if (isIllustratedMode && (element.illustratedHidden || alwaysHiddenInIllustrated.includes(element.type))) {
             element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
         } else if (hasBadgeIcon) {
             const displayName = element.name !== config.label ? element.name : config.label;
@@ -449,7 +569,9 @@ function updateStats() {
         if (elements.length > 0) {
             legend.style.display = 'block';
             legendItems.innerHTML = '';
+            const legendHiddenTypes = ['security', 'tiburon', 'generator', 'fence', 'panic-fence'];
             Array.from(typesPresent).sort().forEach(type => {
+                if (isIllustratedMode && legendHiddenTypes.includes(type)) return;
                 const config = festivalConfig[type];
                 if (config) {
                     const item = document.createElement('div');

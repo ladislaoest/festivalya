@@ -286,6 +286,24 @@ select.form-control option {
     white-space: nowrap;
 }
 
+/* Nombres de lugares reales cercanos (campo de fútbol, colegio, parque...)
+   en el Mapa Ilustrado: discretos a propósito -son contexto, no elementos
+   del festival- para no competir con los iconos/burbujas de arriba. */
+.nearby-place-label {
+    pointer-events: none;
+}
+.nearby-place-pill {
+    background: rgba(255,255,255,0.75);
+    color: #4a4a4a;
+    font-size: 10px;
+    font-style: italic;
+    font-weight: 600;
+    padding: 2px 7px;
+    border-radius: 9px;
+    white-space: nowrap;
+    transform: translate(-50%, -50%);
+}
+
 /* Mejora del Popup de Edición */
 .edit-popup-container {
     padding: 10px;

@@ -133,6 +133,71 @@ app.post('/api/map-features', async (req, res) => {
     res.json({ elements: data, cached: false });
 });
 
+// Proxy de lugares cercanos con nombre real (campo de fútbol, colegio,
+// parque, hospital...) para el Mapa Ilustrado: mismo patrón que
+// /api/map-features (caché + reintento por espejo), pero con su propia
+// consulta y su propio caché -sirven para cosas distintas y no tiene
+// sentido que una invalide o comparta la caché de la otra-.
+const nearbyPlacesCache = new Map(); // misma clave que mapFeaturesCacheKey
+
+app.post('/api/nearby-places', async (req, res) => {
+    const { bbox } = req.body || {};
+    if (!bbox || !isFinite(bbox.minLat) || !isFinite(bbox.minLng) || !isFinite(bbox.maxLat) || !isFinite(bbox.maxLng)) {
+        return res.status(400).json({ message: 'bbox {minLat, minLng, maxLat, maxLng} requerido.' });
+    }
+
+    const cacheKey = mapFeaturesCacheKey(bbox);
+    const cached = nearbyPlacesCache.get(cacheKey);
+    if (cached && (Date.now() - cached.at) < MAP_FEATURES_CACHE_TTL_MS) {
+        return res.json({ elements: cached.data, cached: true });
+    }
+
+    const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    const query = `[out:json][timeout:20];(
+        node["leisure"]["name"](${bboxStr});
+        way["leisure"]["name"](${bboxStr});
+        node["amenity"~"^(school|university|hospital|place_of_worship)$"]["name"](${bboxStr});
+        way["amenity"~"^(school|university|hospital|place_of_worship)$"]["name"](${bboxStr});
+        way["landuse"="recreation_ground"]["name"](${bboxStr});
+        way["natural"="water"]["name"](${bboxStr});
+        node["tourism"]["name"](${bboxStr});
+    );out center;`;
+
+    let data = null;
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+            const r = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'data=' + encodeURIComponent(query),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!r.ok) continue;
+            const json = await r.json();
+            if (!Array.isArray(json.elements)) continue;
+            if (json.elements.length > 0) { data = json.elements; break; }
+            if (data === null) data = json.elements;
+        } catch (err) {
+            console.warn(`[nearby-places] Fallo consultando ${endpoint}, se prueba el siguiente:`, err.message);
+        }
+    }
+
+    if (!data) {
+        if (cached) return res.json({ elements: cached.data, cached: true, stale: true });
+        return res.status(502).json({ message: 'No se pudieron obtener lugares cercanos (todos los servidores de Overpass fallaron).' });
+    }
+
+    if (nearbyPlacesCache.size >= MAP_FEATURES_CACHE_MAX_ENTRIES) {
+        const oldestKey = nearbyPlacesCache.keys().next().value;
+        nearbyPlacesCache.delete(oldestKey);
+    }
+    nearbyPlacesCache.set(cacheKey, { data, at: Date.now() });
+    res.json({ elements: data, cached: false });
+});
+
 // Proxy de elevación real del terreno: el propio navegador ya podía llamar
 // directo a Open-Elevation (y de hecho así era antes), pero eso ata la vista
 // 3D a que ESE único servicio gratuito y sin SLA esté arriba en ese momento

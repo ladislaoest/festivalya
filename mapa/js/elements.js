@@ -257,6 +257,15 @@ function toggleIllustratedMode() {
             }
         }
 
+        // Línea del recorrido a pie (porteros con ronda dibujada, ver
+        // startPatrolPathDrawing): es una guía de edición, no algo que
+        // pintar en el Mapa Ilustrado -y ahí ese tipo ni siquiera se
+        // muestra, ver updateElementShape-.
+        if (el.routeLine) {
+            if (isIllustratedMode || isFestivalMode) map.removeLayer(el.routeLine);
+            else if (!map.hasLayer(el.routeLine)) el.routeLine.addTo(map);
+        }
+
         if (el.isRectangle) {
             el.rectangle.setStyle({
                 fillOpacity: isIllustratedMode ? 0 : 0.6,
@@ -510,13 +519,18 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 // La burbuja con el nombre solo aparece en el Mapa Ilustrado;
                 // fuera de él (caso "security" siempre con insignia) se deja
                 // como antes, solo el icono, para no ensuciar la edición.
-                const bubbleH = isIllustratedMode ? 34 : 0;
-                const boxW = isIllustratedMode ? Math.max(90, Math.min(220, displayName.length * 7 + 34)) : badgeSize;
+                const bubbleH = isIllustratedMode ? 20 : 0;
+                const boxW = isIllustratedMode ? Math.max(50, Math.min(160, displayName.length * 5 + 18)) : badgeSize;
                 const totalH = bubbleH + badgeSize;
+                // Retraso de animación estable por elemento (derivado de su
+                // id, no de Math.random(): así no "salta" de fase cada vez
+                // que se vuelve a renderizar, p.ej. al arrastrarlo), para que
+                // los iconos floten desincronizados entre sí.
+                const floatDelay = -((element.id % 27) / 10);
 
                 const iconHTML = `<div class="map-pin" style="width:${boxW}px;" title="${displayName}">
                     ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
-                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;">${iconSvg}</div>
+                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;animation-delay:${floatDelay}s;">${iconSvg}</div>
                 </div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',

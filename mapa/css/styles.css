@@ -184,8 +184,11 @@ select.form-control option {
    (calles/edificios reales nunca leen como ilustración, por realista que
    se filtre), con las mismas coordenadas/escala de siempre debajo. */
 .illustrated-style {
-    pointer-events: none !important;
-    cursor: default !important;
+    /* Sin "pointer-events: none" aquí: hay que poder arrastrar (mover) y
+       rotar el mapa. Los elementos individuales (iconos/etiquetas/formas) ya
+       se vuelven no interactivos por su cuenta -ver toggleIllustratedMode-,
+       así que el propio mapa sigue recibiendo el gesto de arrastre/rotación. */
+    cursor: grab !important;
     user-select: none !important;
     background-color: #7cbf4e;
     background-image:

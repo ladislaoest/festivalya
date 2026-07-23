@@ -182,9 +182,9 @@ function toggleIllustratedMode() {
         currentMapLayer = mapLayers['cartodb-voyager'];
         currentMapLayer.addTo(map);
         
-        // Desactivar navegación total absoluta (pero dejamos rotar el mapa,
-        // así se puede orientar el diseño mejor en el Mapa Ilustrado)
-        map.dragging.disable();
+        // Se puede mover (arrastrar) y rotar el mapa para orientar y encuadrar
+        // el diseño; solo se desactiva el zoom y la edición de elementos.
+        map.dragging.enable();
         map.touchZoom.disable();
         map.doubleClickZoom.disable();
         map.scrollWheelZoom.disable();

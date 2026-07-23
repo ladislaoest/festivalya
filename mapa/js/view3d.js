@@ -25,6 +25,11 @@ const TIBURON_FIGURE_SCALE = 1.5;
 const TIBURON_FIGURE_HEIGHT = 1.85 * TIBURON_FIGURE_SCALE;
 const TIBURON_WALK_RADIUS = 3.2;
 const TIBURON_ARC_RANGE = (260 * Math.PI / 180) / 2; // amplitud a cada lado del "frente" de la barra
+// Ángulo de brazo levantado (0 = colgando, PI = totalmente hacia arriba):
+// con este valor el brazo queda en diagonal, hacia arriba Y hacia afuera del
+// cuerpo -así el abanico de billetes en la mano queda bien a la vista en vez
+// de escondido junto al torso-. Signo +/- por brazo, ver createTiburonFigure.
+const TIBURON_ARM_RAISE_ANGLE = 2.2;
 
 // Porteros ("security") con un recorrido dibujado a mano en el mapa 2D (ver
 // startPathDrawing en elements.js): patrullan ese trayecto de ida y vuelta,
@@ -1093,7 +1098,15 @@ function setupMoneyWalkers(elementsList) {
 		entry.hasBar = true;
 		entry.centerX = nearestBar._threeObj.position.x;
 		entry.centerZ = nearestBar._threeObj.position.z;
-		entry.frontAngle = -((nearestBar.rotation || 0) * Math.PI / 180) + Math.PI / 2;
+		// El "frente" se toma de dónde se colocó Tiburón respecto a la barra
+		// -mucho más fiable que adivinarlo a partir de la rotación de la
+		// barra, que no distingue el lado del público del de detrás de la
+		// barra-: si se colocó pegado al centro (caso degenerado), se cae de
+		// vuelta a la perpendicular de la rotación.
+		const dx = entry.startX - entry.centerX, dz = entry.startZ - entry.centerZ;
+		entry.frontAngle = (dx * dx + dz * dz > 0.01)
+			? Math.atan2(dz, dx)
+			: -((nearestBar.rotation || 0) * Math.PI / 180) + Math.PI / 2;
 		entry.radius = Math.max(nearestBar.length || 2, nearestBar.width || 2) / 2 + TIBURON_WALK_RADIUS;
 	});
 }
@@ -1111,10 +1124,10 @@ function updateMoneyWalkers() {
 
 		let angle, heading;
 		if (entry.hasBar) {
-			angle = entry.frontAngle + Math.sin(t * 0.3 + entry.phase) * TIBURON_ARC_RANGE;
-			heading = angle + Math.PI / 2 * Math.sign(Math.cos(t * 0.3 + entry.phase) || 1);
+			angle = entry.frontAngle + Math.sin(t * 0.12 + entry.phase) * TIBURON_ARC_RANGE;
+			heading = angle + Math.PI / 2 * Math.sign(Math.cos(t * 0.12 + entry.phase) || 1);
 		} else {
-			angle = t * 0.25 + entry.phase;
+			angle = t * 0.12 + entry.phase;
 			heading = angle + Math.PI / 2;
 		}
 		const cx = entry.hasBar ? entry.centerX : entry.startX;
@@ -1128,17 +1141,17 @@ function updateMoneyWalkers() {
 		entry.group.position.y = getTerrainHeight(x, -z);
 		entry.group.rotation.y = heading;
 
-		const stride = Math.sin(t * 6 + entry.phase);
+		const stride = Math.sin(t * 3 + entry.phase);
 		const ud = entry.group.userData;
-		if (ud.legL) ud.legL.rotation.x = stride * 0.45;
-		if (ud.legR) ud.legR.rotation.x = -stride * 0.45;
+		if (ud.legL) ud.legL.rotation.x = stride * 0.35;
+		if (ud.legR) ud.legR.rotation.x = -stride * 0.35;
 		// Brazos en alto abriéndose y cerrándose tipo "hace llover billetes",
 		// en vez del balanceo de caminar normal.
-		const spray = Math.abs(Math.sin(t * 5 + entry.phase));
-		if (ud.armL) ud.armL.rotation.z = -1.3 - spray * 0.4;
-		if (ud.armR) ud.armR.rotation.z = 1.3 + spray * 0.4;
-		if (ud.billsL) ud.billsL.rotation.x = spray * 0.6;
-		if (ud.billsR) ud.billsR.rotation.x = -spray * 0.6;
+		const spray = Math.abs(Math.sin(t * 3 + entry.phase));
+		if (ud.armL) ud.armL.rotation.z = TIBURON_ARM_RAISE_ANGLE + spray * 0.3;
+		if (ud.armR) ud.armR.rotation.z = -TIBURON_ARM_RAISE_ANGLE - spray * 0.3;
+		if (ud.billsL) ud.billsL.rotation.x = spray * 0.5;
+		if (ud.billsR) ud.billsR.rotation.x = -spray * 0.5;
 
 		if (entry.element._threeLabel) {
 			entry.element._threeLabel.position.x = x;
@@ -1944,26 +1957,21 @@ function createCasualPersonFigure(pos, rotation, scene) {
 	return group;
 }
 
-// Portero de uniforme CON piernas/brazo por separado -a diferencia del
-// "pelele" estático de siempre (ver createSecurityFigure)-, para poder
-// animar el paso al patrullar un recorrido dibujado a mano (ver
-// updateSecurityPatrols). Mismo esqueleto que createCasualPersonFigure, con
-// uniforme oscuro en vez de ropa de calle.
+// Portero CON piernas/brazo por separado -a diferencia del "pelele"
+// estático de siempre (ver createSecurityFigure)-, para poder animar el
+// paso al patrullar un recorrido dibujado a mano (ver
+// updateSecurityPatrols). Mismo esqueleto que createCasualPersonFigure,
+// pero todo en rojo, igual que el "pelele" fijo, para que ambos se vean
+// como el mismo personaje.
 function createSecurityWalkerFigure(pos, rotation, scene) {
 	const group = new THREE.Group();
-	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
-	const uniformMat = new THREE.MeshStandardMaterial({ color: 0x1c2b3a });
-	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x14181d });
+	const mat = new THREE.MeshStandardMaterial({ color: 0xe74c3c });
 
-	const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), skinMat);
+	const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), mat);
 	head.position.set(0, 1.55, 0);
 	group.add(head);
 
-	const cap = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.12, 0.4), pantsMat);
-	cap.position.set(0, 1.68, 0);
-	group.add(cap);
-
-	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.7, 8), uniformMat);
+	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.7, 8), mat);
 	torso.position.set(0, 1.15, 0);
 	group.add(torso);
 
@@ -1971,10 +1979,10 @@ function createSecurityWalkerFigure(pos, rotation, scene) {
 	const legGeom = new THREE.CylinderGeometry(0.08, 0.09, legHeight, 8);
 	legGeom.translate(0, -legHeight / 2, 0);
 	const hipY = 0.78;
-	const legL = new THREE.Mesh(legGeom, pantsMat);
+	const legL = new THREE.Mesh(legGeom, mat);
 	legL.position.set(0.1, hipY, 0);
 	group.add(legL);
-	const legR = new THREE.Mesh(legGeom.clone(), pantsMat);
+	const legR = new THREE.Mesh(legGeom.clone(), mat);
 	legR.position.set(-0.1, hipY, 0);
 	group.add(legR);
 
@@ -1982,10 +1990,10 @@ function createSecurityWalkerFigure(pos, rotation, scene) {
 	const armGeom = new THREE.CylinderGeometry(0.065, 0.075, armHeight, 8);
 	armGeom.translate(0, -armHeight / 2, 0);
 	const shoulderY = 1.4;
-	const armL = new THREE.Mesh(armGeom, uniformMat);
+	const armL = new THREE.Mesh(armGeom, mat);
 	armL.position.set(0.24, shoulderY, 0);
 	group.add(armL);
-	const armR = new THREE.Mesh(armGeom.clone(), uniformMat);
+	const armR = new THREE.Mesh(armGeom.clone(), mat);
 	armR.position.set(-0.24, shoulderY, 0);
 	group.add(armR);
 
@@ -2208,11 +2216,11 @@ function createTiburonFigure(pos, rotation, scene) {
 	function buildBillFan() {
 		const fan = new THREE.Group();
 		for (let i = 0; i < 4; i++) {
-			const bill = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.01, 0.08), billMat);
-			bill.position.set(0, -0.02 * i, 0.01 * i);
-			bill.rotation.z = (i - 1.5) * 0.18;
+			const bill = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.012, 0.12), billMat);
+			bill.position.set(0.05 * i, -0.03 * i, 0.015 * i);
+			bill.rotation.z = (i - 1.5) * 0.22;
 			fan.add(bill);
-			const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.011, 0.02), billStripeMat);
+			const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.013, 0.03), billStripeMat);
 			stripe.position.copy(bill.position);
 			stripe.rotation.copy(bill.rotation);
 			fan.add(stripe);
@@ -2231,7 +2239,7 @@ function createTiburonFigure(pos, rotation, scene) {
 	// (updateMoneyWalkers) se mueven juntos como una sola pieza.
 	const armLGroup = new THREE.Group();
 	armLGroup.position.set(0.24, shoulderY, 0);
-	armLGroup.rotation.z = -1.3;
+	armLGroup.rotation.z = TIBURON_ARM_RAISE_ANGLE;
 	const armL = new THREE.Mesh(armGeom, skinMat);
 	armLGroup.add(armL);
 	const billsL = buildBillFan();
@@ -2241,7 +2249,7 @@ function createTiburonFigure(pos, rotation, scene) {
 
 	const armRGroup = new THREE.Group();
 	armRGroup.position.set(-0.24, shoulderY, 0);
-	armRGroup.rotation.z = 1.3;
+	armRGroup.rotation.z = -TIBURON_ARM_RAISE_ANGLE;
 	const armR = new THREE.Mesh(armGeom.clone(), skinMat);
 	armRGroup.add(armR);
 	const billsR = buildBillFan();

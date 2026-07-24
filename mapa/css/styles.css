@@ -688,6 +688,11 @@ body {
         transition: left 0.3s ease;
         z-index: 1500;
         background: var(--bg-primary);
+        /* Sin esto el header (con los botones de guardar/pantallazo/regla)
+           quedaba pegado al borde físico de la pantalla -debajo del notch/
+           barra de estado en iPhone-, inaccesible por estar tapado. */
+        padding-top: calc(env(safe-area-inset-top, 0px) + 16px);
+        padding-bottom: env(safe-area-inset-bottom, 0px);
     }
     #panel.active {
         left: 0;

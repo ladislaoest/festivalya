@@ -2663,23 +2663,26 @@
             else renderEventsCalendarView();
         }
 
-        // "Pendiente" = le queda alguna tarea asignada sin resolver.
-        // "Finalizado" = no le queda ninguna -incluye los eventos sin
-        // ninguna tarea asignada todavía, no solo los que ya se resolvieron
-        // todas-.
+        // "Pendiente" = todavía no pasó (incluye eventos sin ninguna tarea
+        // asignada: un festival que aún no ocurrió sigue pendiente aunque no
+        // se le haya asignado nada todavía). "Finalizado" = ya pasó.
         function isPastEvent(event) {
             if (!event.event_date) return false;
-            const now = new Date();
-            const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            return event.event_date < todayStr;
+            // Muchos festivales empiezan de noche y terminan de madrugada
+            // del día siguiente (p.ej. arranca a las 23:30 del día 24 y
+            // acaba sobre las 6 de la mañana del 25): sigue vigente -no
+            // "pasado"- hasta bien entrada la mañana del día siguiente a la
+            // fecha marcada, no justo al dar la medianoche.
+            const cutoff = new Date(event.event_date + 'T00:00:00');
+            cutoff.setDate(cutoff.getDate() + 1);
+            cutoff.setHours(12, 0, 0, 0);
+            return new Date() >= cutoff;
         }
 
         function eventMatchesStatusFilter(event) {
             if (eventsStatusFilter === 'all') return true;
-            if (isPastEvent(event)) return eventsStatusFilter === 'finished';
-            const summary = getAssignmentSummary(event.id);
-            const hasPending = !!summary && summary.pending > 0;
-            return eventsStatusFilter === 'pending' ? hasPending : !hasPending;
+            const past = isPastEvent(event);
+            return eventsStatusFilter === 'finished' ? past : !past;
         }
 
         function setEventsStatusFilter(filter) {

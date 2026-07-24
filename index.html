@@ -607,10 +607,11 @@
         }
 
         .notif-item {
+            position: relative;
             background: var(--bg-elevated);
             border-left: 2px solid var(--accent-gold);
             border-radius: 6px;
-            padding: 10px 12px;
+            padding: 10px 34px 10px 12px;
             margin-bottom: 8px;
             cursor: pointer;
         }
@@ -618,6 +619,24 @@
         .notif-item .sr-field {
             display: flex;
             justify-content: space-between;
+        }
+
+        .notif-dismiss-btn {
+            position: absolute;
+            top: 6px;
+            right: 6px;
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 13px;
+            line-height: 1;
+            padding: 4px 6px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+        .notif-dismiss-btn:hover {
+            background: var(--bg-card);
+            color: var(--danger);
         }
 
         /* --- MODAL DE EVENTO (crear / gestionar accesos) --- */
@@ -665,6 +684,70 @@
             flex: 1;
             padding: 12px;
             text-align: center;
+        }
+
+        /* Cabecera fija dentro del modal (ver notif-modal-overlay): sin
+           esto, para cerrar había que bajar hasta el final de una lista
+           larga -el "Cerrar" de abajo scrollea junto con el contenido-. Los
+           márgenes/padding negativos "escapan" del padding del .modal-card
+           para que quede pegada de verdad al borde superior real. */
+        .modal-header-sticky {
+            position: sticky;
+            top: -24px;
+            margin: -24px -24px 18px -24px;
+            padding: 24px 24px 12px 24px;
+            background: var(--bg-card);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            z-index: 2;
+        }
+        .modal-header-sticky h3 {
+            margin-bottom: 0;
+        }
+        .modal-close-x {
+            background: none;
+            border: none;
+            color: var(--text-muted);
+            font-size: 18px;
+            line-height: 1;
+            padding: 4px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            flex-shrink: 0;
+        }
+        .modal-close-x:hover {
+            background: var(--bg-elevated);
+            color: var(--text-main);
+        }
+
+        /* Aviso breve de autoguardado (ver saveSingleField): al perder el
+           foco de un campo ya queda guardado solo, sin bajar a un botón. */
+        .autosave-toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(20px);
+            background: var(--bg-card);
+            border: 1px solid var(--border-soft);
+            color: var(--text-main);
+            padding: 10px 18px;
+            border-radius: 999px;
+            font-size: 13px;
+            font-weight: 600;
+            box-shadow: var(--shadow-lg);
+            z-index: 4000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.25s ease, transform 0.25s ease;
+        }
+        .autosave-toast.visible {
+            opacity: 1;
+            transform: translateX(-50%) translateY(0);
+        }
+        .autosave-toast.error {
+            border-color: var(--danger);
+            color: var(--danger);
         }
 
         /* --- CAMBIO DE CONTRASEÑA (panel admin) --- */
@@ -1445,13 +1528,18 @@
 
     <div id="notif-modal-overlay" class="modal-overlay">
         <div class="modal-card">
-            <h3>Notificaciones</h3>
+            <div class="modal-header-sticky">
+                <h3>Notificaciones</h3>
+                <button type="button" class="modal-close-x" onclick="closeNotificationsPanel()" title="Cerrar" aria-label="Cerrar">✕</button>
+            </div>
             <div id="notif_list" class="card-group"></div>
             <div class="modal-actions">
                 <button type="button" class="btn-logout" style="flex:1; justify-content:center;" onclick="closeNotificationsPanel()">Cerrar</button>
             </div>
         </div>
     </div>
+
+    <div id="autosave_toast" class="autosave-toast"></div>
 
     <div id="compose-modal-overlay" class="modal-overlay">
         <div class="modal-card">
@@ -2436,6 +2524,62 @@
             alert("¡Datos del evento guardados con éxito en FestivalYa!");
         }
 
+        // Autoguardado por campo: al perder el foco un campo del formulario
+        // ya queda guardado solo -no hace falta bajar hasta el botón
+        // "Guardar" del final-. El botón se deja igual, como guardado manual
+        // de respaldo (por si algo fallara con el autoguardado de un campo).
+        let autoSaveToastTimeout = null;
+        function showAutoSaveToast(message, isError) {
+            const el = document.getElementById('autosave_toast');
+            if (!el) return;
+            el.textContent = message;
+            el.classList.toggle('error', !!isError);
+            el.classList.add('visible');
+            clearTimeout(autoSaveToastTimeout);
+            autoSaveToastTimeout = setTimeout(() => el.classList.remove('visible'), 1800);
+        }
+
+        async function saveSingleField(fieldId) {
+            const currentId = currentEvent;
+            if (!currentId || !eventsCache[currentId]) return;
+            const element = document.getElementById(fieldId);
+            const column = fieldMap[fieldId];
+            if (!element || !column) return;
+
+            const newVal = element.value;
+            if ((eventsCache[currentId][column] || '') === (newVal || '')) return; // sin cambios reales
+
+            const { error } = await sb.from('events').update({ [column]: newVal }).eq('id', currentId);
+            if (error) {
+                console.error('Error autoguardando campo', fieldId, error);
+                showAutoSaveToast('Error al guardar', true);
+                return;
+            }
+            eventsCache[currentId][column] = newVal;
+            showAutoSaveToast('Guardado ✓');
+
+            const label = FIELD_META[fieldId] ? FIELD_META[fieldId].label : fieldId;
+            await logActivity(currentId, eventsCache[currentId].name, 'update', 'Modificó: ' + label);
+
+            const mentioned = extractMentions(newVal);
+            if (mentioned.length > 0) {
+                const tab = FIELD_META[fieldId] ? FIELD_META[fieldId].tab : 'tab_produccion';
+                await notifyMentions(mentioned, `${label} — ${eventsCache[currentId].name}`, newVal, currentId, tab, fieldId, null);
+            }
+        }
+
+        // Delegado en el propio form (no un listener por campo) para no
+        // tener que tocar cada input/select/textarea uno a uno -algunos ya
+        // traen su propio onchange (p.ej. prod_escenario/prod_rider) y este
+        // listener adicional convive con ellos sin pisarlo, "change" es el
+        // evento correcto (no "input"): se dispara al perder el foco con el
+        // valor confirmado, no en cada tecla.
+        document.getElementById('festivalForm').addEventListener('change', (e) => {
+            if (e.target && e.target.id && allFields.includes(e.target.id)) {
+                saveSingleField(e.target.id);
+            }
+        });
+
         // --- MODAL DE EVENTO (crear / gestionar accesos) ---
         function openCreateEventModal() {
             eventModalMode = 'create';
@@ -2564,8 +2708,34 @@
             return !!(entry.visible_to && entry.visible_to.includes(currentUser));
         }
 
+        // Clave estable por notificación: normalmente el id autogenerado de
+        // "activity_log", con un respaldo por si alguna fila llegara sin él.
+        function notifKey(entry) {
+            return entry.id != null ? `id:${entry.id}` : `f:${entry.created_at}|${entry.username}|${entry.event_id}`;
+        }
+
+        // Eliminar una notificación es solo "no quiero seguir viéndola YO":
+        // "activity_log" es compartida por todo el equipo (el registro de
+        // actividad de otros no debe desaparecer para ellos), así que se
+        // guarda un descarte por usuario en localStorage, no se borra la fila.
+        function getDismissedNotificationKeys() {
+            try {
+                const raw = localStorage.getItem(`dismissedNotifications_${currentUser}`);
+                return raw ? new Set(JSON.parse(raw)) : new Set();
+            } catch { return new Set(); }
+        }
+
+        function dismissNotification(key) {
+            const dismissed = getDismissedNotificationKeys();
+            dismissed.add(key);
+            localStorage.setItem(`dismissedNotifications_${currentUser}`, JSON.stringify([...dismissed]));
+            renderNotificationsList();
+            updateNotificationBadge();
+        }
+
         function getRelevantNotifications() {
-            return activityLog.filter(isNotificationRelevant);
+            const dismissed = getDismissedNotificationKeys();
+            return activityLog.filter(n => isNotificationRelevant(n) && !dismissed.has(notifKey(n)));
         }
 
         function updateNotificationBadge() {
@@ -2606,6 +2776,7 @@
 
             container.innerHTML = relevant.map(n => `
                 <div class="notif-item" onclick="openNotification('${n.event_id}')">
+                    <button type="button" class="notif-dismiss-btn" title="Eliminar" aria-label="Eliminar notificación" onclick="event.stopPropagation(); dismissNotification('${notifKey(n)}')">✕</button>
                     <div class="sr-event">${escapeHtml(n.event_name)}</div>
                     <div class="sr-field"><span>${escapeHtml(n.username)}</span><span>${timeAgo(n.created_at)}</span></div>
                     <div class="sr-snippet">${escapeHtml(n.detail || '')}</div>

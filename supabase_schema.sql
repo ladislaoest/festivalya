@@ -11,6 +11,7 @@
 CREATE TABLE IF NOT EXISTS public.events (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
+    ubicacion TEXT,
     escenario_id TEXT,
     rider TEXT DEFAULT 'no',
     rider_empresa TEXT,
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS public.events (
     seguridad TEXT,
     contenedores TEXT,
     limpieza TEXT,
+    anotaciones TEXT,
     media_video TEXT,
     media_foto TEXT,
     media_drone TEXT,
@@ -42,6 +44,8 @@ CREATE TABLE IF NOT EXISTS public.events (
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS event_date DATE;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS map_data JSONB;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS seguridad TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS anotaciones TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS ubicacion TEXT;
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$

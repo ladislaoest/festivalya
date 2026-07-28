@@ -116,6 +116,7 @@ document.addEventListener('keydown', (e) => {
 let isFestivalMode = false;
 let isIllustratedMode = false;
 let showLabels = true;
+let showFencesIllustrated = true;
 
 const moveHandleIcon = L.divIcon({
     className: 'move-handle',
@@ -165,6 +166,16 @@ function toggleLabelsMode() {
         }
         updateElementShape(el, true);
     });
+}
+
+function toggleFencesIllustrated() {
+    showFencesIllustrated = !showFencesIllustrated;
+    const btn = document.getElementById('toggle-fences-btn');
+    if (btn) {
+        btn.classList.toggle('active', !showFencesIllustrated);
+        btn.innerText = showFencesIllustrated ? 'OCULTAR VALLAS' : 'MOSTRAR VALLAS';
+    }
+    elements.forEach(el => updateElementShape(el, true));
 }
 
 function toggleIllustratedMode() {
@@ -456,10 +467,13 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
         const hasBadgeIcon = isIllustratedMode || element.type === 'security';
         // El Mapa Ilustrado es un plano "de cara al público" -escenarios,
         // barras, zonas...-, no un plano técnico de producción: seguridad,
-        // Tiburón, el generador y las vallas no pintan nada ahí (si hace
-        // falta verlos, para eso está la vista normal/3D).
-        const alwaysHiddenInIllustrated = ['security', 'tiburon', 'generator', 'fence', 'panic-fence'];
-        if (isIllustratedMode && (element.illustratedHidden || alwaysHiddenInIllustrated.includes(element.type))) {
+        // Tiburón y el generador no pintan nada ahí (si hace falta verlos,
+        // para eso está la vista normal/3D). Las vallas sí se muestran (fila
+        // de icono, ver más abajo), pero se pueden ocultar con el botón
+        // "OCULTAR VALLAS" (showFencesIllustrated) para no saturar el plano.
+        const alwaysHiddenInIllustrated = ['security', 'tiburon', 'generator'];
+        const isFenceHiddenByToggle = isFenceType(element.type) && !showFencesIllustrated;
+        if (isIllustratedMode && (element.illustratedHidden || isFenceHiddenByToggle || alwaysHiddenInIllustrated.includes(element.type))) {
             element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
         } else if (hasBadgeIcon) {
             const displayName = element.name !== config.label ? element.name : config.label;
@@ -642,6 +656,9 @@ function setupElementEvents() {
     const labelsBtn = document.getElementById('hide-labels-btn');
     if (labelsBtn) labelsBtn.onclick = toggleLabelsMode;
 
+    const fencesBtn = document.getElementById('toggle-fences-btn');
+    if (fencesBtn) fencesBtn.onclick = toggleFencesIllustrated;
+
     const measureBtn = document.getElementById('measure-btn');
     if (measureBtn) measureBtn.onclick = toggleMeasureMode;
 
@@ -745,6 +762,15 @@ function startPatrolPathDrawing(type, name) {
     map.doubleClickZoom.disable();
     map.getContainer().style.cursor = 'crosshair';
 
+    // En móvil no hay doble clic ni teclado (Enter/Escape) para terminar: el
+    // botón flotante es la única forma fiable de finalizar en cualquier
+    // dispositivo, por eso se muestra siempre, no solo en pantallas chicas.
+    const finishBtn = document.getElementById('finish-drawing-btn');
+    if (finishBtn) {
+        finishBtn.style.display = 'block';
+        finishBtn.onclick = () => finish();
+    }
+
     const addPoint = (latlng) => {
         patrolDrawPoints.push(latlng);
         patrolTempMarkers.push(L.circleMarker(latlng, { radius: 4, color: '#fff', weight: 2, fillColor: '#e74c3c', fillOpacity: 1, interactive: false }).addTo(map));
@@ -777,6 +803,7 @@ function startPatrolPathDrawing(type, name) {
         map.dragging.enable();
         map.doubleClickZoom.enable();
         map.getContainer().style.cursor = '';
+        if (finishBtn) { finishBtn.style.display = 'none'; finishBtn.onclick = null; }
         if (patrolTempPolyline) { map.removeLayer(patrolTempPolyline); patrolTempPolyline = null; }
         patrolTempMarkers.forEach(m => map.removeLayer(m));
         patrolTempMarkers = [];

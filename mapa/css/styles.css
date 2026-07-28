@@ -663,6 +663,28 @@ body {
 #stats-box p { margin: 5px 0; display: flex; justify-content: space-between; }
 #stats-box .stat-val { font-weight: bold; color: var(--accent-gold-bright); }
 
+/* Botón flotante para terminar un recorrido dibujado a mano (ver
+   startPatrolPathDrawing/startFenceDrawing en elements.js): en PC hay
+   doble clic/Enter/Escape para terminar, pero en móvil no hay ninguno de
+   los tres -el doble toque no es fiable en el mapa y no hay teclado-, así
+   que este botón es la única forma fiable de terminar en cualquier
+   dispositivo. Se muestra/oculta por JS mientras dura el dibujado. */
+#finish-drawing-btn {
+    display: none;
+    position: fixed;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 20px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 2000;
+    background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
+    border: none;
+    padding: 12px 22px;
+    border-radius: 999px;
+    color: #14120a;
+    font-weight: bold;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+}
+
 /* Adaptación Móvil (iPhone) */
 #mobile-menu-btn {
     display: none;

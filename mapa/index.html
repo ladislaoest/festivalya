@@ -11,11 +11,17 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="css/styles.css?v=3.42">
+  <link rel="stylesheet" href="css/styles.css?v=3.43">
 </head>
 <body>
   <!-- Botón Menú Móvil -->
   <button id="mobile-menu-btn">☰ MENÚ</button>
+
+  <!-- Botón para terminar un recorrido a pie (valla/portero) dibujado a
+       mano: en PC se termina con doble clic/Enter/Escape, pero en móvil no
+       hay ninguno de los tres (el doble toque no es fiable y no hay
+       teclado), así que hace falta un botón visible siempre disponible -->
+  <button id="finish-drawing-btn" style="display:none;">✓ Finalizar recorrido</button>
 
   <div id="panel">
     <div class="header">
@@ -45,6 +51,7 @@
         <button class="view-btn" data-view="3d-minimal">3D</button>
         <button class="view-btn" id="festival-mode-btn">MODO FESTIVAL</button>
         <button class="view-btn" id="hide-labels-btn">OCULTAR TEXTOS</button>
+        <button class="view-btn" id="toggle-fences-btn">OCULTAR VALLAS</button>
         <button class="view-btn" id="illustrated-map-btn">MAPA ILUSTRADO</button>
     </div>
 
@@ -97,7 +104,7 @@
                     <option value="fixed">Sin recorrido (se queda quieto)</option>
                     <option value="draw">Marcar recorrido a pie</option>
                   </select>
-                  <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">Con "Marcar recorrido": al pulsar "Añadir al mapa" clica cada punto de la ronda y termina con doble clic, Enter o Escape. El portero patrullará ese trayecto de ida y vuelta.</div>
+                  <div style="font-size:12px; color:var(--text-muted); margin-top:6px;">Con "Marcar recorrido": al pulsar "Añadir al mapa" clica cada punto de la ronda y termina con el botón "Finalizar recorrido" que aparece abajo (o con doble clic/Enter/Escape en PC). El portero patrullará ese trayecto de ida y vuelta.</div>
                 </div>
 
                 <div id="dimension-controls" class="form-group">
@@ -199,11 +206,11 @@
   <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
   <script src="https://html2canvas.hertzen.com/dist/html2canvas.min.js"></script>
-  <script src="js/map.js?v=3.42"></script>
-  <script src="js/elements.js?v=3.42"></script>
-  <script src="js/view3d.js?v=3.42"></script>
-  <script src="js/save-load.js?v=3.42"></script>
-  <script src="js/main.js?v=3.42"></script>
+  <script src="js/map.js?v=3.43"></script>
+  <script src="js/elements.js?v=3.43"></script>
+  <script src="js/view3d.js?v=3.43"></script>
+  <script src="js/save-load.js?v=3.43"></script>
+  <script src="js/main.js?v=3.43"></script>
 
   <div id="startup-modal" class="modal-overlay">
     <div class="modal-content">

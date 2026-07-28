@@ -105,12 +105,18 @@ ON CONFLICT (id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS public.event_files (
     id BIGSERIAL PRIMARY KEY,
     event_id TEXT NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
-    category TEXT NOT NULL CHECK (category IN ('dossier', 'impresion', 'lona', 'acreditaciones', 'otros')),
+    category TEXT NOT NULL CHECK (category IN ('dossier', 'impresion', 'lona', 'acreditaciones', 'otros', 'anotaciones')),
     file_name TEXT NOT NULL,
     storage_path TEXT NOT NULL,
     uploaded_by TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+-- Por si la tabla ya existía sin la categoría "anotaciones" (adjuntos del
+-- campo de Anotaciones en Producción, ver migracion_anotaciones_archivos.sql)
+ALTER TABLE public.event_files DROP CONSTRAINT IF EXISTS event_files_category_check;
+ALTER TABLE public.event_files ADD CONSTRAINT event_files_category_check
+    CHECK (category IN ('dossier', 'impresion', 'lona', 'acreditaciones', 'otros', 'anotaciones'));
 
 -- ¿Este evento necesita Dossier/Impresión/Lona/...? + comentarios por categoría
 CREATE TABLE IF NOT EXISTS public.event_design_status (

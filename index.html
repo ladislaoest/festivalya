@@ -1428,6 +1428,11 @@
                 <div class="form-card">
                     <label>Anotaciones</label>
                     <textarea id="prod_anotaciones" class="mention-field" rows="4" placeholder="Notas generales de producción, incidencias, recordatorios... (usá @ para mencionar a alguien)"></textarea>
+                    <div style="margin-top: 10px;">
+                        <label style="font-size: 12px; color: var(--text-muted); display:block; margin-bottom:6px;">Adjuntar archivo con explicaciones</label>
+                        <input type="file" id="anotaciones_file_input" onchange="uploadAnotacionesFile(this)">
+                    </div>
+                    <div id="anotaciones_files_list" class="card-group" style="margin-top: 10px;"></div>
                 </div>
 
             </div>
@@ -2214,6 +2219,9 @@
 
             if (document.getElementById('tab_mapa').classList.contains('active')) {
                 loadMapaIframe();
+            }
+            if (document.getElementById('tab_produccion').classList.contains('active')) {
+                loadAnotacionesFiles();
             }
             if (document.getElementById('tab_disenos').classList.contains('active')) {
                 loadDesignStatus();
@@ -4416,6 +4424,8 @@
 
             if (tabId === 'tab_mapa') {
                 loadMapaIframe();
+            } else if (tabId === 'tab_produccion') {
+                loadAnotacionesFiles();
             } else if (tabId === 'tab_disenos') {
                 renderDesignCategoryTabs();
                 loadDesignStatus();
@@ -4641,6 +4651,109 @@
             }
 
             await loadDesignFiles();
+        }
+
+        // --- Archivos adjuntos de Anotaciones (Producción) ---
+        // Mismo mecanismo que los Diseños (tabla event_files + bucket
+        // "event-designs"), con su propia categoría fija "anotaciones" en
+        // vez de una categoría elegible por el usuario.
+        const ANOTACIONES_FILE_CATEGORY = 'anotaciones';
+
+        async function loadAnotacionesFiles() {
+            const container = document.getElementById('anotaciones_files_list');
+            if (!container) return;
+
+            if (!currentEvent) {
+                container.innerHTML = '';
+                return;
+            }
+
+            const { data, error } = await sb.from('event_files')
+                .select('*')
+                .eq('event_id', currentEvent)
+                .eq('category', ANOTACIONES_FILE_CATEGORY)
+                .order('created_at', { ascending: false });
+
+            if (error) {
+                container.innerHTML = `<p class="empty-hint">Error cargando archivos: ${escapeHtml(error.message)}</p>`;
+                return;
+            }
+
+            if (!data || data.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = data.map(f => {
+                const url = sb.storage.from('event-designs').getPublicUrl(f.storage_path).data.publicUrl;
+                return `
+                    <div class="file-item">
+                        <div>
+                            <div class="file-item-name">${escapeHtml(f.file_name)}</div>
+                            <div class="file-item-meta">${escapeHtml(f.uploaded_by || '')} · ${timeAgo(f.created_at)}</div>
+                        </div>
+                        <div class="file-item-actions">
+                            <a class="btn-add-event" href="${url}" target="_blank" rel="noopener" style="text-decoration:none;">${ICON_DOWNLOAD}</a>
+                            <button type="button" class="btn-danger-sm" onclick="deleteAnotacionesFile(${f.id}, '${f.storage_path}')">${ICON_TRASH}</button>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        async function uploadAnotacionesFile(input) {
+            const file = input.files[0];
+            if (!file) return;
+
+            if (!currentEvent) {
+                alert("Seleccioná un evento primero.");
+                input.value = '';
+                return;
+            }
+
+            const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+            const storagePath = `${currentEvent}/${ANOTACIONES_FILE_CATEGORY}/${Date.now()}_${safeName}`;
+
+            const { error: uploadError } = await sb.storage.from('event-designs').upload(storagePath, file);
+            if (uploadError) {
+                alert("Error subiendo el archivo: " + uploadError.message);
+                input.value = '';
+                return;
+            }
+
+            const { error: insertError } = await sb.from('event_files').insert({
+                event_id: currentEvent,
+                category: ANOTACIONES_FILE_CATEGORY,
+                file_name: file.name,
+                storage_path: storagePath,
+                uploaded_by: currentUser
+            });
+
+            input.value = '';
+
+            if (insertError) {
+                alert("Error guardando el archivo: " + insertError.message);
+                return;
+            }
+
+            await loadAnotacionesFiles();
+
+            const eventName = eventsCache[currentEvent] ? eventsCache[currentEvent].name : '';
+            await logActivity(currentEvent, eventName, 'update', `Adjuntó un archivo en Anotaciones: ${file.name}`);
+        }
+
+        async function deleteAnotacionesFile(fileId, storagePath) {
+            if (!confirm("¿Eliminar este archivo?")) return;
+
+            await sb.storage.from('event-designs').remove([storagePath]);
+
+            const { error } = await sb.from('event_files').delete().eq('id', fileId);
+            if (error) {
+                alert("Error eliminando el archivo: " + error.message);
+                return;
+            }
+
+            await loadAnotacionesFiles();
         }
 
         // Arranque Inicial

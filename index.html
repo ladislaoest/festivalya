@@ -1056,6 +1056,46 @@
             color: var(--accent-gold-bright);
         }
 
+        /* --- BUSCADOR DE FESTIVAL A CLONAR --- */
+        #clone-search-dropdown {
+            display: none;
+            position: absolute;
+            z-index: 4000;
+            background: var(--bg-card);
+            border: 1px solid var(--accent-gold);
+            border-radius: 8px;
+            max-height: 220px;
+            overflow-y: auto;
+            box-shadow: var(--shadow-lg);
+        }
+
+        .clone-search-option {
+            padding: 10px 12px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-main);
+            cursor: pointer;
+        }
+
+        .clone-search-option small {
+            display: block;
+            font-weight: 400;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .clone-search-option.active,
+        .clone-search-option:hover {
+            background: var(--accent-gold-dim);
+            color: var(--accent-gold-bright);
+        }
+
+        .clone-search-empty {
+            padding: 10px 12px;
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
         #mapa_no_event {
             display: none;
             height: 100%;
@@ -1523,11 +1563,10 @@
                     <label>Fecha del Evento</label>
                     <input type="date" id="event_modal_date">
                 </div>
-                <div class="form-card" id="event_modal_clone_wrap">
+                <div class="form-card" id="event_modal_clone_wrap" style="position:relative;">
                     <label>Clonar producción de un festival existente (opcional)</label>
-                    <select id="event_modal_clone_source">
-                        <option value="">-- No clonar, empezar desde cero --</option>
-                    </select>
+                    <input type="text" id="event_modal_clone_search" placeholder="Buscá por nombre o ubicación..." autocomplete="off">
+                    <input type="hidden" id="event_modal_clone_source" value="">
                 </div>
                 <div class="form-card">
                     <label>Usuarios con acceso</label>
@@ -2610,21 +2649,122 @@
         });
 
         // --- MODAL DE EVENTO (crear / gestionar accesos) ---
-        // Lista desplegable para clonar un festival existente al crear uno
-        // nuevo: complementa la sugerencia automática (findSimilarEvents) con
-        // la opción de elegir directamente cualquier evento pasado, sin
-        // depender de que el nombre o la ubicación coincidan.
-        function renderCloneSourceSelect() {
-            const select = document.getElementById('event_modal_clone_source');
-            select.innerHTML = '<option value="">-- No clonar, empezar desde cero --</option>';
-            Object.values(eventsCache)
+        // Buscador con sugerencias para clonar un festival existente al crear
+        // uno nuevo: complementa la sugerencia automática (findSimilarEvents)
+        // con la opción de elegir directamente cualquier evento pasado, sin
+        // depender de que el nombre o la ubicación coincidan. Mismo patrón
+        // que el autocompletado de menciones (@usuario): dropdown flotante
+        // posicionado con getBoundingClientRect, navegación con flechas/Enter.
+        let cloneSourceOptions = [];
+        let cloneSearchSelectedIndex = 0;
+
+        function buildCloneSourceOptions() {
+            cloneSourceOptions = Object.values(eventsCache)
                 .sort((a, b) => (b.event_date || '').localeCompare(a.event_date || '') || a.name.localeCompare(b.name))
-                .forEach(ev => {
-                    const opt = document.createElement('option');
-                    opt.value = ev.id;
-                    opt.textContent = ev.name + (ev.ubicacion ? ` (${ev.ubicacion})` : '') + (ev.event_date ? ` — ${ev.event_date}` : '');
-                    select.appendChild(opt);
+                .map(ev => ({
+                    id: ev.id,
+                    name: ev.name,
+                    ubicacion: ev.ubicacion || '',
+                    event_date: ev.event_date || '',
+                    label: ev.name + (ev.ubicacion ? ` (${ev.ubicacion})` : '') + (ev.event_date ? ` — ${ev.event_date}` : '')
+                }));
+        }
+
+        function filterCloneSourceOptions(query) {
+            const q = normalizeForMatch(query).trim();
+            if (!q) return cloneSourceOptions.slice(0, 8);
+            return cloneSourceOptions
+                .filter(o => normalizeForMatch(o.name).includes(q) || normalizeForMatch(o.ubicacion).includes(q))
+                .slice(0, 8);
+        }
+
+        function renderCloneSearchDropdown(matches) {
+            let dropdown = document.getElementById('clone-search-dropdown');
+            if (!dropdown) {
+                dropdown = document.createElement('div');
+                dropdown.id = 'clone-search-dropdown';
+                document.body.appendChild(dropdown);
+            }
+
+            dropdown.innerHTML = matches.length > 0
+                ? matches.map((o, i) => `
+                    <div class="clone-search-option ${i === cloneSearchSelectedIndex ? 'active' : ''}" data-event-id="${o.id}">
+                        ${escapeHtml(o.name)}
+                        ${(o.ubicacion || o.event_date) ? `<small>${escapeHtml([o.ubicacion, o.event_date].filter(Boolean).join(' · '))}</small>` : ''}
+                    </div>
+                `).join('')
+                : '<div class="clone-search-empty">Sin resultados</div>';
+
+            const input = document.getElementById('event_modal_clone_search');
+            const rect = input.getBoundingClientRect();
+            dropdown.style.left = `${rect.left + window.scrollX}px`;
+            dropdown.style.top = `${rect.bottom + window.scrollY + 4}px`;
+            dropdown.style.width = `${rect.width}px`;
+            dropdown.style.display = 'block';
+
+            dropdown.querySelectorAll('[data-event-id]').forEach(opt => {
+                opt.addEventListener('mousedown', (ev) => {
+                    ev.preventDefault();
+                    selectCloneSource(opt.dataset.eventId);
                 });
+            });
+        }
+
+        function closeCloneSearchDropdown() {
+            const dropdown = document.getElementById('clone-search-dropdown');
+            if (dropdown) dropdown.style.display = 'none';
+        }
+
+        function selectCloneSource(eventId) {
+            const option = cloneSourceOptions.find(o => o.id === eventId);
+            if (!option) return;
+            document.getElementById('event_modal_clone_source').value = option.id;
+            document.getElementById('event_modal_clone_search').value = option.label;
+            closeCloneSearchDropdown();
+        }
+
+        function handleCloneSearchInput() {
+            // Cualquier retoque manual del texto invalida la selección
+            // anterior: solo se clona si se elige explícitamente una opción
+            // de la lista (así no se clona "por accidente" de un festival
+            // cuyo nombre ya no coincide con lo que quedó escrito).
+            document.getElementById('event_modal_clone_source').value = '';
+            cloneSearchSelectedIndex = 0;
+            renderCloneSearchDropdown(filterCloneSourceOptions(document.getElementById('event_modal_clone_search').value));
+        }
+
+        function handleCloneSearchKeydown(e) {
+            const dropdown = document.getElementById('clone-search-dropdown');
+            if (!dropdown || dropdown.style.display !== 'block') return;
+            const options = dropdown.querySelectorAll('[data-event-id]');
+            if (options.length === 0) return;
+
+            if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                cloneSearchSelectedIndex = (cloneSearchSelectedIndex + 1) % options.length;
+                options.forEach((opt, i) => opt.classList.toggle('active', i === cloneSearchSelectedIndex));
+            } else if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                cloneSearchSelectedIndex = (cloneSearchSelectedIndex - 1 + options.length) % options.length;
+                options.forEach((opt, i) => opt.classList.toggle('active', i === cloneSearchSelectedIndex));
+            } else if (e.key === 'Enter') {
+                e.preventDefault();
+                selectCloneSource(options[cloneSearchSelectedIndex].dataset.eventId);
+            } else if (e.key === 'Escape') {
+                closeCloneSearchDropdown();
+            }
+        }
+
+        function setupCloneSearch() {
+            const input = document.getElementById('event_modal_clone_search');
+            input.addEventListener('input', handleCloneSearchInput);
+            input.addEventListener('focus', handleCloneSearchInput);
+            input.addEventListener('keydown', handleCloneSearchKeydown);
+            document.addEventListener('click', (e) => {
+                if (!e.target.closest('#clone-search-dropdown') && e.target !== input) {
+                    closeCloneSearchDropdown();
+                }
+            });
         }
 
         function openCreateEventModal() {
@@ -2636,7 +2776,9 @@
             document.getElementById('event_modal_ubicacion').value = '';
             document.getElementById('event_modal_date').value = '';
             document.getElementById('event_modal_clone_wrap').style.display = 'block';
-            renderCloneSourceSelect();
+            document.getElementById('event_modal_clone_search').value = '';
+            document.getElementById('event_modal_clone_source').value = '';
+            buildCloneSourceOptions();
             renderEventModalUserList([]);
             document.getElementById('event-modal-overlay').style.display = 'flex';
         }
@@ -2662,6 +2804,7 @@
 
         function closeEventModal() {
             document.getElementById('event-modal-overlay').style.display = 'none';
+            closeCloneSearchDropdown();
         }
 
         function renderEventModalUserList(preselected) {
@@ -4502,6 +4645,7 @@
 
         // Arranque Inicial
         initMentionSystem();
+        setupCloneSearch();
         initTalkiePTTButton();
         if ('serviceWorker' in navigator) {
             navigator.serviceWorker.register('sw.js').catch(err => console.error('Error registrando el service worker:', err));

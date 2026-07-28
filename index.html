@@ -4589,12 +4589,44 @@
                             <div class="file-item-meta">${escapeHtml(f.uploaded_by || '')} · ${timeAgo(f.created_at)}</div>
                         </div>
                         <div class="file-item-actions">
-                            <a class="btn-add-event" href="${url}" target="_blank" rel="noopener" style="text-decoration:none;">${ICON_DOWNLOAD}</a>
+                            <button type="button" class="btn-add-event file-download-btn" data-url="${url}" data-filename="${escapeHtml(f.file_name)}">${ICON_DOWNLOAD}</button>
                             <button type="button" class="btn-danger-sm" onclick="deleteDesignFile(${f.id}, '${f.storage_path}')">${ICON_TRASH}</button>
                         </div>
                     </div>
                 `;
             }).join('');
+            bindFileDownloadButtons(container);
+        }
+
+        // Los archivos (JSON, TXT, CSV...) que el navegador puede renderizar
+        // como texto se abrían directamente en una pestaña en vez de
+        // descargarse: se trae el contenido con fetch y se fuerza la
+        // descarga vía blob: (funciona pase lo que pase con el tipo de
+        // archivo o su Content-Disposition, a diferencia de un simple
+        // <a href target=_blank> o del atributo "download", que el
+        // navegador ignora en URLs de otro origen como las de Supabase).
+        async function downloadEventFile(url, fileName) {
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('No se pudo descargar el archivo');
+                const blob = await res.blob();
+                const blobUrl = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = blobUrl;
+                link.download = fileName;
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                URL.revokeObjectURL(blobUrl);
+            } catch (err) {
+                alert("Error descargando el archivo: " + err.message);
+            }
+        }
+
+        function bindFileDownloadButtons(container) {
+            container.querySelectorAll('.file-download-btn').forEach(btn => {
+                btn.onclick = () => downloadEventFile(btn.dataset.url, btn.dataset.filename);
+            });
         }
 
         async function uploadDesignFile(input) {
@@ -4693,12 +4725,13 @@
                             <div class="file-item-meta">${escapeHtml(f.uploaded_by || '')} · ${timeAgo(f.created_at)}</div>
                         </div>
                         <div class="file-item-actions">
-                            <a class="btn-add-event" href="${url}" target="_blank" rel="noopener" style="text-decoration:none;">${ICON_DOWNLOAD}</a>
+                            <button type="button" class="btn-add-event file-download-btn" data-url="${url}" data-filename="${escapeHtml(f.file_name)}">${ICON_DOWNLOAD}</button>
                             <button type="button" class="btn-danger-sm" onclick="deleteAnotacionesFile(${f.id}, '${f.storage_path}')">${ICON_TRASH}</button>
                         </div>
                     </div>
                 `;
             }).join('');
+            bindFileDownloadButtons(container);
         }
 
         async function uploadAnotacionesFile(input) {

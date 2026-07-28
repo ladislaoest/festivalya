@@ -1523,6 +1523,12 @@
                     <label>Fecha del Evento</label>
                     <input type="date" id="event_modal_date">
                 </div>
+                <div class="form-card" id="event_modal_clone_wrap">
+                    <label>Clonar producción de un festival existente (opcional)</label>
+                    <select id="event_modal_clone_source">
+                        <option value="">-- No clonar, empezar desde cero --</option>
+                    </select>
+                </div>
                 <div class="form-card">
                     <label>Usuarios con acceso</label>
                     <div id="event_modal_users_list" class="permission-grid"></div>
@@ -2604,6 +2610,23 @@
         });
 
         // --- MODAL DE EVENTO (crear / gestionar accesos) ---
+        // Lista desplegable para clonar un festival existente al crear uno
+        // nuevo: complementa la sugerencia automática (findSimilarEvents) con
+        // la opción de elegir directamente cualquier evento pasado, sin
+        // depender de que el nombre o la ubicación coincidan.
+        function renderCloneSourceSelect() {
+            const select = document.getElementById('event_modal_clone_source');
+            select.innerHTML = '<option value="">-- No clonar, empezar desde cero --</option>';
+            Object.values(eventsCache)
+                .sort((a, b) => (b.event_date || '').localeCompare(a.event_date || '') || a.name.localeCompare(b.name))
+                .forEach(ev => {
+                    const opt = document.createElement('option');
+                    opt.value = ev.id;
+                    opt.textContent = ev.name + (ev.ubicacion ? ` (${ev.ubicacion})` : '') + (ev.event_date ? ` — ${ev.event_date}` : '');
+                    select.appendChild(opt);
+                });
+        }
+
         function openCreateEventModal() {
             eventModalMode = 'create';
             eventModalEditingId = null;
@@ -2612,6 +2635,8 @@
             document.getElementById('event_modal_name').value = '';
             document.getElementById('event_modal_ubicacion').value = '';
             document.getElementById('event_modal_date').value = '';
+            document.getElementById('event_modal_clone_wrap').style.display = 'block';
+            renderCloneSourceSelect();
             renderEventModalUserList([]);
             document.getElementById('event-modal-overlay').style.display = 'flex';
         }
@@ -2626,6 +2651,7 @@
             document.getElementById('event_modal_name_wrap').style.display = 'none';
             document.getElementById('event_modal_ubicacion').value = eventsCache[eventId].ubicacion || '';
             document.getElementById('event_modal_date').value = eventsCache[eventId].event_date || '';
+            document.getElementById('event_modal_clone_wrap').style.display = 'none';
 
             const allowedFor = Object.entries(usersCache)
                 .filter(([, u]) => u.role !== 'admin' && u.allowedEvents && u.allowedEvents.includes(eventId))
@@ -2686,9 +2712,10 @@
         }
 
         function findSimilarEvents(name, ubicacion, excludeId) {
-            const tokens = new Set(eventNameTokens(name));
+            const nameTokens = new Set(eventNameTokens(name));
+            const ubicacionTokens = new Set(eventNameTokens(ubicacion));
             const ubicacionNorm = normalizeForMatch(ubicacion).trim();
-            if (tokens.size === 0 && !ubicacionNorm) return [];
+            if (nameTokens.size === 0 && ubicacionTokens.size === 0 && !ubicacionNorm) return [];
             const matches = [];
             Object.values(eventsCache).forEach(ev => {
                 if (!ev || ev.id === excludeId) return;
@@ -2696,8 +2723,28 @@
                 // seguro el mismo festival): si coincide, es motivo suficiente
                 // aunque el nombre no comparta ninguna palabra (ej. cambió el
                 // nombre del cartel pero es en el mismo sitio de siempre).
-                const sameLocation = !!ubicacionNorm && ubicacionNorm === normalizeForMatch(ev.ubicacion).trim();
-                const shared = [...new Set(eventNameTokens(ev.name).filter(t => tokens.has(t)))];
+                const evNameTokens = eventNameTokens(ev.name);
+                const evUbicacionTokens = eventNameTokens(ev.ubicacion);
+
+                // Cruce con el NOMBRE del festival antiguo, no solo con su
+                // campo de ubicación: muchos eventos se crearon antes de que
+                // existiera este campo (o nunca lo rellenaron) y su nombre YA
+                // ES el sitio (ej. "Las Nieves"), así que la ubicación escrita
+                // ahora ("Las Nieves" para el nuevo "Requesound") tiene que
+                // poder matchear contra ese nombre también, no solo contra su
+                // ubicación (vacía en ese caso).
+                const sharedUbicVsName = ubicacionTokens.size > 0 ? evNameTokens.filter(t => ubicacionTokens.has(t)) : [];
+                const sharedNameVsUbic = evUbicacionTokens.length > 0 ? evUbicacionTokens.filter(t => nameTokens.has(t)) : [];
+                const sameLocation = (!!ubicacionNorm && ubicacionNorm === normalizeForMatch(ev.ubicacion).trim())
+                    || sharedUbicVsName.length > 0 || sharedNameVsUbic.length > 0;
+
+                // Coincidencia de nombre "pelada" (sin que medie ninguna
+                // señal de ubicación): más débil, solo entra como
+                // desempate/orden, no dispara el aviso "MISMA UBICACIÓN".
+                const sharedNameVsName = evNameTokens.filter(t => nameTokens.has(t));
+
+                const shared = [...new Set([...sharedNameVsName, ...sharedUbicVsName, ...sharedNameVsUbic])];
+
                 if (sameLocation || shared.length > 0) {
                     matches.push({ id: ev.id, name: ev.name, event_date: ev.event_date, ubicacion: ev.ubicacion, sameLocation, shared });
                 }
@@ -2778,6 +2825,7 @@
             const checkboxes = document.querySelectorAll('#event_modal_users_list input[type=checkbox]');
             let eventId = eventModalEditingId;
             let similarMatches = [];
+            let chosenCloneSourceId = '';
 
             const ubicacion = document.getElementById('event_modal_ubicacion').value.trim();
 
@@ -2790,7 +2838,13 @@
                 const { error } = await sb.from('events').insert(newEvent);
                 if (error) { alert("Error creando evento: " + error.message); return; }
 
-                similarMatches = findSimilarEvents(name, ubicacion, eventId);
+                // Si el usuario ya eligió explícitamente de qué festival
+                // clonar, se clona directo y no hace falta la sugerencia
+                // automática por nombre/ubicación (sería redundante).
+                chosenCloneSourceId = document.getElementById('event_modal_clone_source').value;
+                if (!chosenCloneSourceId) {
+                    similarMatches = findSimilarEvents(name, ubicacion, eventId);
+                }
             } else {
                 const { error } = await sb.from('events').update({ ubicacion: ubicacion || null, event_date: dateInput.value || null }).eq('id', eventId);
                 if (error) { alert("Error actualizando el evento: " + error.message); return; }
@@ -2815,7 +2869,10 @@
             renderAdminPanel();
             refreshEventsBrowser();
 
-            if (wasCreate && similarMatches.length > 0) {
+            if (wasCreate && chosenCloneSourceId) {
+                await cloneEventProduction(eventId, chosenCloneSourceId);
+                if (currentEvent === eventId) loadEventData();
+            } else if (wasCreate && similarMatches.length > 0) {
                 openCloneSuggestionModal(eventId, similarMatches);
             }
         }

@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Brad & Wather - El Escape del Festival</title>
+<link rel="icon" type="image/png" href="../icons/icon-32.png">
+<link rel="stylesheet" href="css/style.css?v=1">
+</head>
+<body>
+
+  <div id="game-wrap">
+    <div id="hud-top">
+      <div class="hud-pill" id="hud-score">🍹 0</div>
+      <div class="hud-pill" id="hud-best">🏆 0</div>
+    </div>
+
+    <canvas id="game-canvas"></canvas>
+
+    <!-- Pantalla de inicio -->
+    <div id="start-screen" class="overlay">
+      <div class="overlay-card">
+        <h1>BRAD &amp; WATHER</h1>
+        <p class="subtitle">El Escape del Festival</p>
+        <ul class="rules">
+          <li>🍹 Recogé cubatas por todo el recinto para sumar puntos.</li>
+          <li>💃 Las chavalas te persiguen: esquivalas o te agarran.</li>
+          <li>⚡ Cada vez que te agarran gastás energía. Si llega a cero, te pillan de verdad.</li>
+          <li>🛍️ Si encontrás una bolsita, corré al baño antes de que se acabe el tiempo: te recarga la energía entera.</li>
+        </ul>
+        <button id="btn-start" class="btn-play">JUGAR</button>
+        <p class="controls-hint">Movete con las flechas / WASD, o con el joystick en pantalla.</p>
+      </div>
+    </div>
+
+    <!-- Pantalla de fin de partida -->
+    <div id="gameover-screen" class="overlay hidden">
+      <div class="overlay-card">
+        <h1 id="gameover-title">¡TE PILLARON!</h1>
+        <p class="subtitle" id="gameover-reason">Las chavalas te han cazado en pleno festival.</p>
+        <div class="score-row">
+          <div><span class="score-label">Puntos</span><span class="score-value" id="final-score">0</span></div>
+          <div><span class="score-label">Récord</span><span class="score-value" id="final-best">0</span></div>
+        </div>
+        <button id="btn-retry" class="btn-play">JUGAR OTRA VEZ</button>
+      </div>
+    </div>
+
+    <!-- Controles táctiles (móvil) -->
+    <div id="touch-controls">
+      <div class="dpad">
+        <button class="dpad-btn dpad-up" data-dir="up" aria-label="Arriba">▲</button>
+        <button class="dpad-btn dpad-left" data-dir="left" aria-label="Izquierda">◀</button>
+        <button class="dpad-btn dpad-down" data-dir="down" aria-label="Abajo">▼</button>
+        <button class="dpad-btn dpad-right" data-dir="right" aria-label="Derecha">▶</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/game.js?v=1"></script>
+</body>
+</html>

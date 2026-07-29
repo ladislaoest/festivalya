@@ -210,7 +210,11 @@
     // Más arriba que antes: pegado del todo al borde inferior se solapaba
     // visualmente con la barra de energía (ver drawEnergyBar).
     const bathroom = { x: WORLD_W / 2 - 60, y: WORLD_H - 168, w: 120, h: 52, label: 'BAÑO' };
-    const stage = { x: WORLD_W / 2 - 110, y: 18, w: 220, h: 50 };
+    // El HUD (marcador/nivel/récord) se pinta ENCIMA del lienzo, con una
+    // altura fija en píxeles de pantalla; en un móvil muy ancho y bajo el
+    // lienzo se escala mucho, así que hace falta bastante margen en
+    // coordenadas de mundo para que no se lo coma.
+    const stage = { x: WORLD_W / 2 - 110, y: 95, w: 220, h: 50 };
 
     const solids = [...bars, bathroom];
 

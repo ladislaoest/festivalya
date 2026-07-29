@@ -388,3 +388,10 @@ body.touch-device #joystick-nub {
     .leaderboard-list { max-height: 90px; }
     .score-row { margin-bottom: 12px; }
 }
+
+/* HUD más pequeño en móvil bajo (para dejar más margen libre arriba del
+   lienzo, encima del escenario) */
+@media (max-height: 420px) {
+    #hud-top { top: 3px; gap: 6px; }
+    .hud-pill { padding: 3px 8px; font-size: 11px; }
+}

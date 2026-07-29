@@ -1720,12 +1720,16 @@
         // consola en el móvil para ver por qué no suena nada.
         const showAudioDebug = () => {
             const el = document.getElementById('audio-debug');
-            if (!el) return;
             const info = SFX.getDebugInfo();
-            el.textContent = `🔊 soportado:${info.supported} creado:${info.created} estado:${info.state} hz:${info.sampleRate} error:${info.error || 'ninguno'}`;
+            const text = `soportado:${info.supported} creado:${info.created} estado:${info.state} hz:${info.sampleRate} error:${info.error || 'ninguno'}`;
+            if (el) el.textContent = '🔊 ' + text;
+            return text;
         };
         showAudioDebug();
-        setTimeout(showAudioDebug, 400);
+        setTimeout(() => {
+            const text = showAudioDebug();
+            alert('DIAGNÓSTICO DE AUDIO:\n' + text);
+        }, 500);
     }
 
     function gameOver(reason) {

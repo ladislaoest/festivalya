@@ -111,6 +111,21 @@
         return { getSavedName, saveName, submitScore, refreshInto };
     })();
 
+    // Contador de "partidas jugadas" en la pantalla de fin de partida: es
+    // de broma, no un dato real -empieza en 30 y suma 2 por cada partida
+    // de verdad, para que el juego parezca más popular de lo que es-.
+    const GamesPlayedCounter = (() => {
+        const KEY = 'bradwather_games_played_fake';
+        let count = Number(localStorage.getItem(KEY)) || 30;
+        return {
+            bump() {
+                count += 2;
+                localStorage.setItem(KEY, String(count));
+                return count;
+            }
+        };
+    })();
+
     // --- Sprite real del personaje, partido en torso + piernas para poder
     // animar el andar (el recorte original es una única foto de pie, ver
     // juego/assets/player.png del que salen estas tres piezas) ---
@@ -1492,7 +1507,7 @@
         // A la altura de la entrepierna/bragueta (borde inferior de la
         // sudadera), no de la rodilla: ahí el mango queda tapado por la
         // tela y no se ve un hueco flotando aparte del cuerpo.
-        ctx.translate(2, -6);
+        ctx.translate(2, -29);
         ctx.rotate(angle);
         ctx.fillStyle = '#6b4423';
         ctx.fillRect(-6, -2.5, 15, 5);
@@ -1689,6 +1704,7 @@
         document.getElementById('final-score').textContent = score;
         document.getElementById('final-best').textContent = highScore;
         document.getElementById('gameover-screen').classList.remove('hidden');
+        document.getElementById('games-played-count').textContent = GamesPlayedCounter.bump();
         SFX.gameOver();
 
         Leaderboard.submitScore(currentPlayerName, score).then(() => {

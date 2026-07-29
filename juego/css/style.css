@@ -210,6 +210,13 @@ html, body {
     border-color: var(--danger);
 }
 
+.games-played {
+    margin-top: 14px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+}
+
 /* --- Marcador compartido --- */
 .leaderboard {
     margin-top: 20px;

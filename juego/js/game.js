@@ -525,7 +525,11 @@
                 });
             },
             pastillaFound() {
-                tone(200, 0.4, { type: 'sawtooth', sweepTo: 500, gain: 0.16 });
+                // Fanfarria alegre de "ta-chán", no solo un barrido serio.
+                tone(200, 0.15, { type: 'sawtooth', sweepTo: 500, gain: 0.14 });
+                [392, 494, 587, 784].forEach((f, i) => {
+                    setTimeout(() => tone(f, 0.22, { type: 'square', gain: 0.13, wet: true }), 90 + i * 90);
+                });
             },
             tiburonAlert() {
                 tone(90, 0.6, { type: 'sawtooth', sweepTo: 60, gain: 0.18 });
@@ -653,8 +657,10 @@
                 pastilla = null;
                 powerMode = true;
                 powerTimer = POWER_DURATION;
-                addParticle(player.x, player.y - 30, '¡Te comiste una viagra!', '#2f80ed');
-                setTimeout(() => addParticle(player.x, player.y - 30, '¡Estás en modo azote!', '#2f80ed'), 550);
+                addParticle(player.x, player.y - 46, '¡Te comiste una viagra!', '#2f80ed');
+                setTimeout(() => addParticle(player.x, player.y - 46, '¡Estás en modo azote!', '#2f80ed'), 550);
+                burst(player.x, player.y - 10, 24, ['#f2c85c', '#ff6b6b', '#6bc9ff', '#8affc1', '#c86bff'], { spread: 210, life: 0.8, upBias: 70, size: 5 });
+                flash('#f2c85c', 0.45);
                 SFX.pastillaFound();
                 SFX.setLoop('action');
             }
@@ -1108,12 +1114,27 @@
 
         ctx.restore();
 
-        const iconBob = Math.sin(elapsed * 3) * 3;
+        // Bocadillo con texto legible, siempre encima: un emoji suelto no
+        // se entendía a simple vista -esto deja claro de un vistazo que
+        // viene a cobrar, no solo a perseguir-.
+        const iconBob = Math.sin(elapsed * 3) * 2;
         ctx.save();
-        ctx.translate(ch.x, ch.y - 36 + iconBob);
-        ctx.font = '16px sans-serif';
+        ctx.translate(ch.x, ch.y - 42 + iconBob);
+        const bw = 54, bh = 18;
+        ctx.fillStyle = 'rgba(255,255,255,0.95)';
+        ctx.strokeStyle = '#16232a';
+        ctx.lineWidth = 1.2;
+        ctx.beginPath();
+        if (ctx.roundRect) ctx.roundRect(-bw / 2, -bh / 2, bw, bh, 5);
+        else ctx.rect(-bw / 2, -bh / 2, bw, bh);
+        ctx.fill(); ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(-4, bh / 2 - 1); ctx.lineTo(0, bh / 2 + 6); ctx.lineTo(4, bh / 2 - 1);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#16232a';
+        ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('🧾', 0, 0);
+        ctx.fillText('¡PAGA YA!', 0, 4);
         ctx.restore();
     }
 
@@ -1161,8 +1182,10 @@
     }
 
     // Bate de béisbol que empuña mientras dura el "modo azote" (pastilla):
-    // reposa inclinado junto a la cadera y da un latigazo rápido cada vez
-    // que se come a una chavala (ver player.batSwing).
+    // el mango arranca DENTRO de la silueta del cuerpo (x negativa), pegado
+    // a la bragueta, para que no se vea un hueco flotando aparte del
+    // personaje. Da un latigazo rápido cada vez que se come a una chavala
+    // (ver player.batSwing).
     function drawBat() {
         if (!powerMode) return;
         const swing = player.batSwing || 0;
@@ -1171,16 +1194,16 @@
         // da un latigazo hacia abajo-adelante.
         const angle = -0.1 - swing * 1.1;
         ctx.save();
-        ctx.translate(13, 4);
+        ctx.translate(4, 3);
         ctx.rotate(angle);
         ctx.fillStyle = '#6b4423';
-        ctx.fillRect(0, -2.5, 12, 5);
+        ctx.fillRect(-6, -2.5, 15, 5);
         ctx.fillStyle = '#c8935a';
         ctx.beginPath();
-        ctx.moveTo(12, -3.5);
-        ctx.quadraticCurveTo(28, -8, 40, -6);
-        ctx.lineTo(40, 6);
-        ctx.quadraticCurveTo(28, 8, 12, 3.5);
+        ctx.moveTo(9, -3.5);
+        ctx.quadraticCurveTo(24, -8, 36, -6);
+        ctx.lineTo(36, 6);
+        ctx.quadraticCurveTo(24, 8, 9, 3.5);
         ctx.closePath();
         ctx.fill();
         ctx.strokeStyle = '#8a5a30';

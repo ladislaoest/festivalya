@@ -81,6 +81,14 @@ html, body {
     backdrop-filter: blur(6px);
     z-index: 50;
     padding: 20px;
+    /* En móvil en horizontal el alto disponible es muy corto y el
+       contenido (nombre + reglas + marcador) no cabe entero: sin esto el
+       botón JUGAR quedaba fuera de la pantalla y no había forma de llegar
+       a él, porque html/body tienen overflow:hidden a propósito para el
+       juego (evita el rebote de scroll mientras se juega). */
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    touch-action: pan-y;
 }
 
 .overlay.hidden { display: none; }
@@ -332,4 +340,20 @@ body.touch-device #touch-zone { display: block; }
     height: 42px;
     background: rgba(217, 169, 53, 0.75);
     border: 2px solid rgba(255, 255, 255, 0.5);
+}
+
+/* --- Modo compacto: móvil en horizontal, poco alto disponible --- */
+@media (max-height: 480px) {
+    .overlay { align-items: flex-start; padding: 10px; }
+    .overlay-card { padding: 14px 18px; }
+    .overlay-card h1 { font-size: 19px; margin-bottom: 0; }
+    .subtitle { margin-bottom: 8px; font-size: 12px; }
+    .name-field { margin-bottom: 10px; }
+    .rules { font-size: 12px; line-height: 1.3; margin-bottom: 12px; }
+    .rules li { margin-bottom: 4px; }
+    .btn-play { padding: 10px; }
+    .controls-hint { margin: 8px 0 0; }
+    .leaderboard { margin-top: 10px; }
+    .leaderboard-list { max-height: 90px; }
+    .score-row { margin-bottom: 12px; }
 }

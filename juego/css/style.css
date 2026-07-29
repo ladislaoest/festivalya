@@ -63,6 +63,22 @@ html, body {
     pointer-events: none;
 }
 
+/* Diagnóstico de audio (temporal, para depurar en móviles sin consola) */
+#audio-debug {
+    position: absolute;
+    bottom: max(4px, env(safe-area-inset-bottom));
+    left: 4px;
+    z-index: 40;
+    font-size: 9px;
+    color: #8affc1;
+    background: rgba(0, 0, 0, 0.6);
+    padding: 3px 6px;
+    border-radius: 4px;
+    pointer-events: none;
+    max-width: 96vw;
+    word-break: break-all;
+}
+
 .hud-pill {
     background: rgba(23, 24, 29, 0.85);
     border: 1px solid var(--accent-gold);

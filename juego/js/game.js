@@ -493,6 +493,7 @@
         let ambienceSource = null, ambienceGain = null;
         let loopTimer = null;
         let currentLoop = null;
+        let lastError = null;
 
         function ensure() {
             if (actx) return;
@@ -747,13 +748,28 @@
             // gesto de toque real -si no, el contexto queda "running" pero
             // no suena nada durante el resto de la partida-.
             unlock() {
-                ensure();
-                if (actx.state === 'suspended') actx.resume();
-                const buffer = actx.createBuffer(1, 1, 22050);
-                const src = actx.createBufferSource();
-                src.buffer = buffer;
-                src.connect(actx.destination);
-                src.start(0);
+                try {
+                    ensure();
+                    if (actx.state === 'suspended') actx.resume();
+                    const buffer = actx.createBuffer(1, 1, 22050);
+                    const src = actx.createBufferSource();
+                    src.buffer = buffer;
+                    src.connect(actx.destination);
+                    src.start(0);
+                } catch (err) {
+                    lastError = (err && err.message) || String(err);
+                }
+            },
+            // Diagnóstico visible en pantalla: en el móvil no hay consola
+            // para ver si el AudioContext falla o se queda "suspended".
+            getDebugInfo() {
+                return {
+                    supported: !!(window.AudioContext || window.webkitAudioContext),
+                    created: !!actx,
+                    state: actx ? actx.state : 'sin crear',
+                    sampleRate: actx ? actx.sampleRate : null,
+                    error: lastError
+                };
             }
         };
     })();
@@ -1699,6 +1715,17 @@
         running = true;
         lastTs = performance.now();
         requestAnimationFrame(loop);
+
+        // Diagnóstico de audio en pantalla (ver SFX.getDebugInfo): no hay
+        // consola en el móvil para ver por qué no suena nada.
+        const showAudioDebug = () => {
+            const el = document.getElementById('audio-debug');
+            if (!el) return;
+            const info = SFX.getDebugInfo();
+            el.textContent = `🔊 soportado:${info.supported} creado:${info.created} estado:${info.state} hz:${info.sampleRate} error:${info.error || 'ninguno'}`;
+        };
+        showAudioDebug();
+        setTimeout(showAudioDebug, 400);
     }
 
     function gameOver(reason) {

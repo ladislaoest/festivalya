@@ -25,55 +25,84 @@
         document.body.classList.add('touch-device');
     }
 
-    // --- Sprite real del personaje (recorte del vídeo de referencia) ---
-    const playerImg = new Image();
-    let playerImgReady = false;
-    playerImg.onload = () => { playerImgReady = true; };
-    playerImg.src = 'assets/player.png';
-    const PLAYER_IMG_H = 78; // alto al que se dibuja en el mundo
-    const PLAYER_IMG_W = PLAYER_IMG_H * (playerImg.naturalWidth ? playerImg.naturalWidth / playerImg.naturalHeight : 0.446);
+    // --- Sprite real del personaje, partido en torso + piernas para poder
+    // animar el andar (el recorte original es una única foto de pie, ver
+    // juego/assets/player.png del que salen estas tres piezas) ---
+    function loadImg(src) {
+        const img = new Image();
+        img.src = src;
+        return img;
+    }
+    const playerTorso = loadImg('assets/player_torso.png');
+    const playerLegL = loadImg('assets/player_leg_l.png');
+    const playerLegR = loadImg('assets/player_leg_r.png');
+    let playerPartsReady = false;
+    let partsLoaded = 0;
+    [playerTorso, playerLegL, playerLegR].forEach(img => {
+        img.onload = () => { partsLoaded++; if (partsLoaded === 3) playerPartsReady = true; };
+    });
 
-    // --- Constantes de juego (reajustadas: partidas más largas, menos brutal) ---
+    // Dimensiones y puntos de articulación de la foto ORIGINAL (250x560) antes
+    // de partirla: el torso ocupa (0,0)-(250,400) y cada pierna nace en la
+    // cadera, en (91,398) la izquierda y (162,398) la derecha -ver el recorte
+    // hecho con Pillow-. Todo se escala igual para que encajen sin costuras.
+    const ORIG_W = 250, ORIG_H = 560, HIP_Y = 398;
+    const HIP_L_X = 91, HIP_R_X = 162;
+    const PLAYER_IMG_H = 78; // alto final en el mundo del juego
+    const SPR_SCALE = PLAYER_IMG_H / ORIG_H;
+
+    // --- Constantes de juego ---
     const PLAYER_R = 18;
     const PLAYER_SPEED = 200;
     const PLAYER_SPEED_TIRED = 145;
     const PLAYER_SPEED_BOOST = 265;
     const CHAVALA_R = 16;
     const CHAVALA_BASE_SPEED = 92;
+    const CHAVALA_FLEE_SPEED = 150;
     const CHASE_RANGE = 130;
     const ENERGY_DRAIN_RATE = 7;
     const ENERGY_REGEN_RATE = 9;
     const CATCH_ENERGY_LOSS = 18;
     const CATCH_INVULN_TIME = 2.3;
     const START_GRACE_TIME = 2.5;
+
+    const BAR_COOLDOWN = 3.5;
+    const BAR_SERVE_SCORE = 10;
+
     const BOLSITA_TIME_LIMIT = 15;
     const BOLSITA_SPAWN_MIN = 10, BOLSITA_SPAWN_MAX = 18;
-    const CUBATA_MAX_ON_FIELD = 5;
-    const CUBATA_RESPAWN_DELAY = 1.2;
+
+    const PASTILLA_SPAWN_MIN = 22, PASTILLA_SPAWN_MAX = 38;
+    const POWER_DURATION = 8;
+    const EAT_SCORE = 50;
+    const CHAVALA_RESPAWN_DELAY = 1.6;
+
+    const STAGE_SAFE_MAX = 6;
+    const STAGE_RECHARGE_TIME = 10;
+
     const MAX_CHAVALAS = 5;
     const CHAVALA_EVERY_POINTS = 450;
 
-    // --- Escenario: barras, baño, escenario decorativo y valla perimetral ---
+    // --- Escenario: barras, baño, escenario y valla perimetral ---
     const bars = [
-        { x: 70, y: 70, w: 110, h: 60, label: 'BARRA' },
-        { x: WORLD_W - 180, y: 70, w: 110, h: 60, label: 'BARRA' },
-        { x: 70, y: WORLD_H - 130, w: 110, h: 60, label: 'BARRA' },
-        { x: WORLD_W - 180, y: WORLD_H - 130, w: 110, h: 60, label: 'BARRA' }
+        { x: 70, y: 70, w: 110, h: 60, label: 'BARRA', ready: true, cooldownTimer: 0 },
+        { x: WORLD_W - 180, y: 70, w: 110, h: 60, label: 'BARRA', ready: true, cooldownTimer: 0 },
+        { x: 70, y: WORLD_H - 130, w: 110, h: 60, label: 'BARRA', ready: true, cooldownTimer: 0 },
+        { x: WORLD_W - 180, y: WORLD_H - 130, w: 110, h: 60, label: 'BARRA', ready: true, cooldownTimer: 0 }
     ];
-    const bathroom = { x: WORLD_W / 2 - 55, y: WORLD_H - 70, w: 110, h: 50, label: 'BAÑO' };
+    // Más arriba que antes: pegado del todo al borde inferior se solapaba
+    // visualmente con la barra de energía (ver drawEnergyBar).
+    const bathroom = { x: WORLD_W / 2 - 60, y: WORLD_H - 168, w: 120, h: 52, label: 'BAÑO' };
     const stage = { x: WORLD_W / 2 - 110, y: 18, w: 220, h: 50 };
 
     const solids = [...bars, bathroom];
 
-    // Puntos de paso (centro de cada punto de interés) para dibujar "caminos
-    // trillados" de tierra entre ellos, como en un recinto real pisoteado.
     const paths = [];
     const hub = { x: WORLD_W / 2, y: WORLD_H / 2 };
     [...bars, bathroom, stage].forEach(s => {
         paths.push({ x1: s.x + s.w / 2, y1: s.y + s.h, x2: hub.x, y2: hub.y });
     });
 
-    // Público decorativo estático (solo ambientación, no interactúa)
     const crowd = [];
     for (let i = 0; i < 26; i++) {
         crowd.push({
@@ -101,16 +130,24 @@
         return { x: WORLD_W / 2, y: WORLD_H / 2 };
     }
 
+    function clamp(v, lo, hi) { return Math.max(lo, Math.min(hi, v)); }
+
     // --- Estado del juego ---
     let running = false;
     let score = 0;
     let highScore = Number(localStorage.getItem('bradwather_highscore') || 0);
-    let cubatas = [];
     let bolsita = null;
     let nextBolsitaAt = 0;
+    let pastilla = null;
+    let nextPastillaAt = 0;
+    let powerMode = false;
+    let powerTimer = 0;
     let elapsed = 0;
     let chavalas = [];
     let particles = [];
+    let bursts = [];
+    let flashAlpha = 0;
+    let flashColor = '#ffffff';
 
     const player = {
         x: WORLD_W / 2, y: WORLD_H / 2 + 40, r: PLAYER_R,
@@ -119,7 +156,13 @@
         invuln: 0,
         boost: 0,
         carryingBolsita: false,
-        bolsitaTimer: 0
+        bolsitaTimer: 0,
+        legPhase: 0,
+        legSwing: 0,
+        onStage: false,
+        dancing: false,
+        stageSafeTime: STAGE_SAFE_MAX,
+        batSwing: 0
     };
 
     function resetGame() {
@@ -131,21 +174,30 @@
         player.boost = 0;
         player.carryingBolsita = false;
         player.bolsitaTimer = 0;
+        player.legPhase = 0;
+        player.legSwing = 0;
+        player.onStage = false;
+        player.dancing = false;
+        player.stageSafeTime = STAGE_SAFE_MAX;
+        player.batSwing = 0;
         particles = [];
+        bursts = [];
+        flashAlpha = 0;
 
-        cubatas = [];
-        for (let i = 0; i < CUBATA_MAX_ON_FIELD; i++) spawnCubata();
+        bars.forEach(b => { b.ready = true; b.cooldownTimer = 0; });
 
         bolsita = null;
         nextBolsitaAt = BOLSITA_SPAWN_MIN + Math.random() * (BOLSITA_SPAWN_MAX - BOLSITA_SPAWN_MIN);
 
+        pastilla = null;
+        nextPastillaAt = PASTILLA_SPAWN_MIN + Math.random() * (PASTILLA_SPAWN_MAX - PASTILLA_SPAWN_MIN);
+        powerMode = false;
+        powerTimer = 0;
+
         chavalas = [];
         spawnChavala();
-    }
 
-    function spawnCubata() {
-        const pos = randomFreePosition(10);
-        cubatas.push({ x: pos.x, y: pos.y, r: 11 });
+        SFX.setLoop('ambience');
     }
 
     function spawnChavala() {
@@ -165,8 +217,40 @@
         });
     }
 
+    function maybeSpawnChavalaByScore() {
+        const target = Math.min(MAX_CHAVALAS, 1 + Math.floor(score / CHAVALA_EVERY_POINTS));
+        if (chavalas.length < target) spawnChavala();
+    }
+
     function addParticle(x, y, text, color) {
         particles.push({ x, y, text, color: color || '#fff', life: 1.0 });
+    }
+
+    // Ráfaga de partículas físicas (explosión de azúcar, "comerse" a una
+    // chavala...): reutilizable para cualquier efecto de impacto.
+    function burst(x, y, count, colors, opts) {
+        opts = opts || {};
+        const spread = opts.spread || 220;
+        const life = opts.life || 0.8;
+        for (let i = 0; i < count; i++) {
+            const ang = Math.random() * Math.PI * 2;
+            const spd = spread * (0.4 + Math.random() * 0.6);
+            bursts.push({
+                x, y,
+                vx: Math.cos(ang) * spd,
+                vy: Math.sin(ang) * spd - (opts.upBias || 0),
+                size: (opts.size || 4) * (0.6 + Math.random() * 0.8),
+                color: colors[Math.floor(Math.random() * colors.length)],
+                life,
+                maxLife: life,
+                gravity: opts.gravity != null ? opts.gravity : 260
+            });
+        }
+    }
+
+    function flash(color, amount) {
+        flashColor = color;
+        flashAlpha = Math.max(flashAlpha, amount);
     }
 
     // --- Entrada: teclado + D-Pad táctil ---
@@ -205,8 +289,9 @@
         let master = null;
         let delaySend = null;
         let noiseBuffer = null;
-        let ambienceSource = null;
-        let ambienceGain = null;
+        let ambienceSource = null, ambienceGain = null;
+        let loopTimer = null;
+        let currentLoop = null;
 
         function ensure() {
             if (actx) return;
@@ -215,8 +300,6 @@
             master.gain.value = 0.5;
             master.connect(actx.destination);
 
-            // Pequeño eco por realimentación: da algo de "sala" sin necesitar
-            // un impulso de reverb ni archivos de audio externos.
             delaySend = actx.createDelay();
             delaySend.delayTime.value = 0.16;
             const feedback = actx.createGain();
@@ -228,7 +311,6 @@
             delaySend.connect(delayGain);
             delayGain.connect(master);
 
-            // Buffer de ruido blanco reutilizable (percusión + ambiente)
             const len = actx.sampleRate * 2;
             noiseBuffer = actx.createBuffer(1, len, actx.sampleRate);
             const data = noiseBuffer.getChannelData(0);
@@ -275,10 +357,73 @@
             src.stop(t0 + duration + 0.02);
         }
 
+        function stopAmbience() {
+            if (ambienceSource) { try { ambienceSource.stop(); } catch (e) {} ambienceSource = null; }
+        }
+
+        function startAmbience() {
+            ensure();
+            if (ambienceSource) return;
+            ambienceSource = actx.createBufferSource();
+            ambienceSource.buffer = noiseBuffer;
+            ambienceSource.loop = true;
+            const filt = actx.createBiquadFilter();
+            filt.type = 'bandpass';
+            filt.frequency.value = 420;
+            filt.Q.value = 0.5;
+            ambienceGain = actx.createGain();
+            ambienceGain.gain.value = 0.02;
+            ambienceSource.connect(filt);
+            filt.connect(ambienceGain);
+            ambienceGain.connect(master);
+            ambienceSource.start();
+        }
+
+        function stopScheduledLoop() {
+            if (loopTimer) { clearInterval(loopTimer); loopTimer = null; }
+        }
+
+        function startActionLoop() {
+            stopScheduledLoop();
+            const bassNotes = [110, 110, 146.83, 130.81];
+            let step = 0;
+            loopTimer = setInterval(() => {
+                tone(bassNotes[step % bassNotes.length], 0.16, { type: 'sawtooth', gain: 0.12 });
+                noiseBurst(0.05, { filterType: 'highpass', freq: 4200, gain: 0.09 });
+                if (step % 2 === 0) tone(bassNotes[step % bassNotes.length] * 2, 0.1, { type: 'square', gain: 0.05 });
+                step++;
+            }, 170);
+        }
+
+        function startDanceLoop() {
+            stopScheduledLoop();
+            const melody = [523, 659, 784, 659, 587, 784, 880, 659];
+            let step = 0;
+            loopTimer = setInterval(() => {
+                tone(melody[step % melody.length], 0.22, { type: 'triangle', gain: 0.11, wet: true });
+                if (step % 4 === 0) tone(melody[step % melody.length] / 2, 0.3, { type: 'sine', gain: 0.09 });
+                step++;
+            }, 220);
+        }
+
+        function setLoop(name) {
+            if (currentLoop === name) return;
+            currentLoop = name;
+            stopScheduledLoop();
+            stopAmbience();
+            if (name === 'ambience') startAmbience();
+            else if (name === 'action') startActionLoop();
+            else if (name === 'dance') startDanceLoop();
+        }
+
         return {
             pickup() {
                 tone(740, 0.09, { type: 'triangle', gain: 0.14 });
                 tone(1180, 0.14, { type: 'sine', gain: 0.1, wet: true });
+            },
+            serve() {
+                tone(523, 0.08, { type: 'sine', gain: 0.12 });
+                tone(784, 0.16, { type: 'triangle', gain: 0.12, wet: true });
             },
             caught() {
                 noiseBurst(0.18, { filterType: 'lowpass', freq: 500, gain: 0.22 });
@@ -290,33 +435,30 @@
             bolsitaLost() {
                 tone(300, 0.3, { type: 'sine', sweepTo: 120, gain: 0.08 });
             },
+            sugarExplosion() {
+                noiseBurst(0.35, { filterType: 'highpass', freq: 1200, gain: 0.22 });
+                [880, 1320, 1760].forEach((f, i) => setTimeout(() => tone(f, 0.18, { type: 'sine', gain: 0.14, wet: true }), i * 40));
+            },
             refill() {
                 [523, 659, 784, 1047].forEach((f, i) => {
                     setTimeout(() => tone(f, 0.22, { type: 'sine', gain: 0.12, wet: true }), i * 70);
                 });
             },
+            pastillaFound() {
+                tone(200, 0.4, { type: 'sawtooth', sweepTo: 500, gain: 0.16 });
+            },
+            eatChavala() {
+                noiseBurst(0.12, { filterType: 'bandpass', freq: 1400, gain: 0.2 });
+                tone(660, 0.14, { type: 'square', sweepTo: 220, gain: 0.14 });
+            },
             gameOver() {
+                stopScheduledLoop();
+                stopAmbience();
                 [420, 340, 260, 180].forEach((f, i) => {
                     setTimeout(() => tone(f, 0.4, { type: 'sawtooth', gain: 0.14 }), i * 150);
                 });
             },
-            startAmbience() {
-                ensure();
-                if (ambienceSource) return;
-                ambienceSource = actx.createBufferSource();
-                ambienceSource.buffer = noiseBuffer;
-                ambienceSource.loop = true;
-                const filt = actx.createBiquadFilter();
-                filt.type = 'bandpass';
-                filt.frequency.value = 420;
-                filt.Q.value = 0.5;
-                ambienceGain = actx.createGain();
-                ambienceGain.gain.value = 0.02;
-                ambienceSource.connect(filt);
-                filt.connect(ambienceGain);
-                ambienceGain.connect(master);
-                ambienceSource.start();
-            },
+            setLoop,
             resume() {
                 ensure();
                 if (actx.state === 'suspended') actx.resume();
@@ -330,6 +472,7 @@
     function update(dt) {
         elapsed += dt;
         const input = readInput();
+        const isMoving = input.dx !== 0 || input.dy !== 0;
         if (input.dx !== 0) player.facing = input.dx > 0 ? 1 : -1;
 
         let speed = PLAYER_SPEED;
@@ -338,25 +481,35 @@
 
         player.x += input.dx * speed * dt;
         player.y += input.dy * speed * dt;
-        player.x = Math.max(PLAYER_R, Math.min(WORLD_W - PLAYER_R, player.x));
-        player.y = Math.max(PLAYER_R, Math.min(WORLD_H - PLAYER_R, player.y));
+        player.x = clamp(player.x, PLAYER_R, WORLD_W - PLAYER_R);
+        player.y = clamp(player.y, PLAYER_R, WORLD_H - PLAYER_R);
+
+        // Animación de piernas: fase siempre avanza, pero la amplitud se
+        // atenúa suavemente a 0 al pararse (si no, se queda a media zancada).
+        player.legPhase += dt * 9;
+        const swingTarget = (isMoving || player.dancing) ? 1 : 0;
+        player.legSwing += (swingTarget - player.legSwing) * Math.min(1, dt * 8);
 
         if (player.invuln > 0) player.invuln -= dt;
         if (player.boost > 0) player.boost -= dt;
+        if (player.batSwing > 0) player.batSwing = Math.max(0, player.batSwing - dt * 4);
 
-        for (let i = cubatas.length - 1; i >= 0; i--) {
-            const c = cubatas[i];
-            const dist = Math.hypot(player.x - c.x, player.y - c.y);
-            if (dist < player.r + c.r) {
-                cubatas.splice(i, 1);
-                score += 10;
-                addParticle(c.x, c.y, '+10', '#f2c85c');
-                SFX.pickup();
-                setTimeout(spawnCubata, CUBATA_RESPAWN_DELAY * 1000);
+        // --- Barras: hay que ir a por cada cubata, no aparecen solas en el suelo ---
+        bars.forEach(bar => {
+            if (!bar.ready) {
+                bar.cooldownTimer -= dt;
+                if (bar.cooldownTimer <= 0) bar.ready = true;
+            } else if (rectsOverlap(player.x, player.y, player.r, bar, 4)) {
+                bar.ready = false;
+                bar.cooldownTimer = BAR_COOLDOWN;
+                score += BAR_SERVE_SCORE;
+                addParticle(bar.x + bar.w / 2, bar.y - 10, '+10 🍹', '#f2c85c');
+                SFX.serve();
                 maybeSpawnChavalaByScore();
             }
-        }
+        });
 
+        // --- Bolsita de azúcar ---
         if (!bolsita && !player.carryingBolsita) {
             nextBolsitaAt -= dt;
             if (nextBolsitaAt <= 0) {
@@ -374,7 +527,6 @@
                 SFX.bolsitaFound();
             }
         }
-
         if (player.carryingBolsita) {
             player.bolsitaTimer -= dt;
             if (player.bolsitaTimer <= 0) {
@@ -388,41 +540,108 @@
                 player.boost = 3;
                 player.invuln = Math.max(player.invuln, 2);
                 score += 25;
-                addParticle(player.x, player.y - 30, '¡ENERGÍA A TOPE!', '#3fb950');
-                SFX.refill();
+                addParticle(player.x, player.y - 46, '¡ENERGÍA A TOPE!', '#3fb950');
+                burst(player.x, player.y - 10, 30, ['#ffffff', '#f5efe0', '#e8dcc0'], { spread: 260, life: 0.9, upBias: 90, size: 5 });
+                flash('#ffffff', 0.75);
+                SFX.sugarExplosion();
+                setTimeout(() => SFX.refill(), 120);
                 nextBolsitaAt = BOLSITA_SPAWN_MIN + Math.random() * (BOLSITA_SPAWN_MAX - BOLSITA_SPAWN_MIN);
             }
         }
 
+        // --- Pastilla (modo "azote del festival") ---
+        if (!pastilla && !powerMode) {
+            nextPastillaAt -= dt;
+            if (nextPastillaAt <= 0) {
+                const pos = randomFreePosition(9);
+                pastilla = { x: pos.x, y: pos.y, r: 10 };
+            }
+        }
+        if (pastilla) {
+            const dist = Math.hypot(player.x - pastilla.x, player.y - pastilla.y);
+            if (dist < player.r + pastilla.r) {
+                pastilla = null;
+                powerMode = true;
+                powerTimer = POWER_DURATION;
+                addParticle(player.x, player.y - 30, '¡MODO AZOTE!', '#c86bff');
+                SFX.pastillaFound();
+                SFX.setLoop('action');
+            }
+        }
+        if (powerMode) {
+            powerTimer -= dt;
+            if (powerTimer <= 0) {
+                powerMode = false;
+                SFX.setLoop(player.dancing ? 'dance' : 'ambience');
+                nextPastillaAt = PASTILLA_SPAWN_MIN + Math.random() * (PASTILLA_SPAWN_MAX - PASTILLA_SPAWN_MIN);
+            }
+        }
+
+        // --- Escenario: refugio temporal donde se pone a bailar ---
+        player.onStage = rectsOverlap(player.x, player.y, player.r, stage, 4);
+        if (player.onStage && player.stageSafeTime > 0) {
+            player.dancing = true;
+            player.stageSafeTime -= dt;
+            if (!powerMode) SFX.setLoop('dance');
+        } else {
+            if (player.dancing && !powerMode) SFX.setLoop('ambience');
+            player.dancing = false;
+            if (!player.onStage) {
+                player.stageSafeTime = Math.min(STAGE_SAFE_MAX, player.stageSafeTime + dt * (STAGE_SAFE_MAX / STAGE_RECHARGE_TIME));
+            }
+        }
+
+        // --- Chavalas ---
+        const playerIsSafe = player.dancing || player.invuln > 0;
         let minDist = Infinity;
-        chavalas.forEach(ch => {
+        for (let i = chavalas.length - 1; i >= 0; i--) {
+            const ch = chavalas[i];
             ch.bob += dt * 6;
             const dist = Math.hypot(player.x - ch.x, player.y - ch.y);
             minDist = Math.min(minDist, dist);
+
+            const spd = (powerMode ? CHAVALA_FLEE_SPEED : CHAVALA_BASE_SPEED * ch.speedMul);
             if (dist > 1) {
-                const spd = CHAVALA_BASE_SPEED * ch.speedMul;
-                ch.x += (player.x - ch.x) / dist * spd * dt;
-                ch.y += (player.y - ch.y) / dist * spd * dt;
+                const dirSign = powerMode ? -1 : 1;
+                ch.x += (player.x - ch.x) / dist * spd * dt * dirSign;
+                ch.y += (player.y - ch.y) / dist * spd * dt * dirSign;
             }
-            if (dist < player.r + ch.r && player.invuln <= 0) {
-                if (player.energy > 0) {
-                    player.energy = Math.max(0, player.energy - CATCH_ENERGY_LOSS);
-                    player.invuln = CATCH_INVULN_TIME;
-                    const away = Math.atan2(player.y - ch.y, player.x - ch.x);
-                    player.x += Math.cos(away) * 50;
-                    player.y += Math.sin(away) * 50;
-                    addParticle(player.x, player.y - 30, '¡TE PILLÓ!', '#e5484d');
-                    SFX.caught();
-                    const pos = randomFreePosition(CHAVALA_R);
-                    ch.x = pos.x; ch.y = pos.y;
-                } else {
-                    gameOver('caught');
+            ch.x = clamp(ch.x, CHAVALA_R, WORLD_W - CHAVALA_R);
+            ch.y = clamp(ch.y, CHAVALA_R, WORLD_H - CHAVALA_R);
+
+            if (dist < player.r + ch.r) {
+                if (powerMode) {
+                    score += EAT_SCORE;
+                    player.batSwing = 1;
+                    addParticle(ch.x, ch.y - 20, `¡ÑAM! +${EAT_SCORE}`, '#c86bff');
+                    burst(ch.x, ch.y, 16, [ch.color, '#ffffff'], { spread: 180, life: 0.6, size: 4 });
+                    SFX.eatChavala();
+                    chavalas.splice(i, 1);
+                    setTimeout(spawnChavala, CHAVALA_RESPAWN_DELAY * 1000);
+                } else if (!playerIsSafe) {
+                    if (player.energy > 0) {
+                        player.energy = Math.max(0, player.energy - CATCH_ENERGY_LOSS);
+                        player.invuln = CATCH_INVULN_TIME;
+                        const away = Math.atan2(player.y - ch.y, player.x - ch.x);
+                        player.x += Math.cos(away) * 50;
+                        player.y += Math.sin(away) * 50;
+                        addParticle(player.x, player.y - 30, '¡TE PILLÓ!', '#e5484d');
+                        SFX.caught();
+                        const pos = randomFreePosition(CHAVALA_R);
+                        ch.x = pos.x; ch.y = pos.y;
+                    } else {
+                        gameOver('caught');
+                    }
                 }
             }
-        });
+        }
 
-        if (minDist < CHASE_RANGE) {
-            player.energy = Math.max(0, player.energy - ENERGY_DRAIN_RATE * dt);
+        if (!player.dancing && !powerMode) {
+            if (minDist < CHASE_RANGE) {
+                player.energy = Math.max(0, player.energy - ENERGY_DRAIN_RATE * dt);
+            } else {
+                player.energy = Math.min(100, player.energy + ENERGY_REGEN_RATE * dt);
+            }
         } else {
             player.energy = Math.min(100, player.energy + ENERGY_REGEN_RATE * dt);
         }
@@ -430,13 +649,18 @@
         particles.forEach(p => { p.y -= 24 * dt; p.life -= dt * 0.9; });
         particles = particles.filter(p => p.life > 0);
 
+        bursts.forEach(b => {
+            b.vy += b.gravity * dt;
+            b.x += b.vx * dt;
+            b.y += b.vy * dt;
+            b.life -= dt;
+        });
+        bursts = bursts.filter(b => b.life > 0);
+
+        if (flashAlpha > 0) flashAlpha = Math.max(0, flashAlpha - dt * 2.2);
+
         document.getElementById('hud-score').textContent = `🍹 ${score}`;
         document.getElementById('hud-best').textContent = `🏆 ${Math.max(score, highScore)}`;
-    }
-
-    function maybeSpawnChavalaByScore() {
-        const target = Math.min(MAX_CHAVALAS, 1 + Math.floor(score / CHAVALA_EVERY_POINTS));
-        if (chavalas.length < target) spawnChavala();
     }
 
     // ==============================
@@ -449,7 +673,6 @@
         ctx.fillStyle = grad;
         ctx.fillRect(0, 0, WORLD_W, WORLD_H);
 
-        // Textura de césped (trama cruzada sutil)
         ctx.strokeStyle = 'rgba(0,0,0,0.05)';
         ctx.lineWidth = 1;
         for (let i = -WORLD_H; i < WORLD_W; i += 22) {
@@ -460,7 +683,6 @@
             ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i - WORLD_H, WORLD_H); ctx.stroke();
         }
 
-        // Caminos de tierra trillados entre los puntos de interés
         ctx.strokeStyle = 'rgba(120, 94, 60, 0.35)';
         ctx.lineWidth = 16;
         ctx.lineCap = 'round';
@@ -502,8 +724,7 @@
     }
 
     function drawStage() {
-        // Trussing (marco metálico)
-        ctx.strokeStyle = '#7a7a82';
+        ctx.strokeStyle = player.dancing ? '#f2c85c' : '#7a7a82';
         ctx.lineWidth = 4;
         ctx.strokeRect(stage.x - 8, stage.y - 8, stage.w + 16, stage.h + 26);
         ctx.beginPath();
@@ -511,32 +732,57 @@
         ctx.moveTo(stage.x + stage.w + 8, stage.y - 8); ctx.lineTo(stage.x + stage.w, stage.y);
         ctx.stroke();
 
-        // Pantalla de fondo con resplandor
         const glow = ctx.createLinearGradient(0, stage.y, 0, stage.y + stage.h);
-        glow.addColorStop(0, '#3a1f5c');
+        glow.addColorStop(0, player.dancing ? '#6c2f9c' : '#3a1f5c');
         glow.addColorStop(1, '#0f0a1a');
         ctx.fillStyle = glow;
         ctx.fillRect(stage.x, stage.y, stage.w, stage.h);
 
-        // Luces
         const lightColors = ['#ff6b6b', '#f2c85c', '#6bc9ff', '#8affc1'];
+        const speedMul = player.dancing ? 8 : 3;
         for (let i = 0; i < 8; i++) {
             ctx.fillStyle = lightColors[i % lightColors.length];
-            ctx.globalAlpha = 0.6 + Math.sin(elapsed * 3 + i) * 0.4;
+            ctx.globalAlpha = 0.6 + Math.sin(elapsed * speedMul + i) * 0.4;
             ctx.beginPath();
             ctx.arc(stage.x + 6 + i * (stage.w - 12) / 7, stage.y - 8, 2.5, 0, Math.PI * 2);
             ctx.fill();
         }
         ctx.globalAlpha = 1;
 
-        // Cabina de DJ
         ctx.fillStyle = '#2a2a30';
         ctx.fillRect(stage.x + stage.w / 2 - 22, stage.y + stage.h - 14, 44, 14);
 
         ctx.fillStyle = '#d9a935';
         ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('ESCENARIO', stage.x + stage.w / 2, stage.y + stage.h + 16);
+        ctx.fillText(player.dancing ? '¡A BAILAR!' : 'ESCENARIO', stage.x + stage.w / 2, stage.y + stage.h + 16);
+
+        // Barra de "tiempo a salvo" restante sobre el escenario
+        const pct = player.stageSafeTime / STAGE_SAFE_MAX;
+        ctx.fillStyle = 'rgba(0,0,0,0.4)';
+        ctx.fillRect(stage.x, stage.y + stage.h + 20, stage.w, 5);
+        ctx.fillStyle = pct > 0.3 ? '#f2c85c' : '#e5484d';
+        ctx.fillRect(stage.x, stage.y + stage.h + 20, stage.w * Math.max(0, pct), 5);
+    }
+
+    function drawBarIndicator(bar) {
+        const cx = bar.x + bar.w / 2, cy = bar.y - 40;
+        if (bar.ready) {
+            const pulse = 0.55 + 0.45 * Math.sin(elapsed * 4);
+            ctx.fillStyle = `rgba(63,185,80,${pulse})`;
+            ctx.beginPath(); ctx.arc(cx, cy, 9, 0, Math.PI * 2); ctx.fill();
+            ctx.font = '13px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🍹', cx, cy + 4);
+        } else {
+            const pct = 1 - bar.cooldownTimer / BAR_COOLDOWN;
+            ctx.strokeStyle = 'rgba(0,0,0,0.35)';
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(cx, cy, 8, 0, Math.PI * 2); ctx.stroke();
+            ctx.strokeStyle = '#d9a935';
+            ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.arc(cx, cy, 8, -Math.PI / 2, -Math.PI / 2 + pct * Math.PI * 2); ctx.stroke();
+        }
     }
 
     function drawStall(rect, color, label) {
@@ -545,24 +791,20 @@
         ctx.ellipse(rect.x + rect.w / 2, rect.y + rect.h + 6, rect.w / 2 + 6, 8, 0, 0, Math.PI * 2);
         ctx.fill();
 
-        // Mostrador con degradado (algo de volumen)
         const bodyGrad = ctx.createLinearGradient(0, rect.y, 0, rect.y + rect.h);
         bodyGrad.addColorStop(0, '#5a3c24');
         bodyGrad.addColorStop(1, '#3a2414');
         ctx.fillStyle = bodyGrad;
         ctx.fillRect(rect.x, rect.y, rect.w, rect.h);
 
-        // Botellas/vasos en el mostrador
         ctx.fillStyle = 'rgba(255,255,255,0.25)';
         for (let i = 0; i < 5; i++) ctx.fillRect(rect.x + 8 + i * 20, rect.y + 6, 6, 12);
 
-        // Toldo a rayas
         const stripeW = 14;
         for (let sx = 0; sx < rect.w + 12; sx += stripeW) {
             ctx.fillStyle = (Math.floor(sx / stripeW) % 2 === 0) ? color : '#fff5e6';
             ctx.fillRect(rect.x - 6 + sx, rect.y - 18, stripeW, 20);
         }
-        // Borde festoneado del toldo
         ctx.fillStyle = 'rgba(0,0,0,0.15)';
         for (let sx = 0; sx < rect.w + 12; sx += stripeW) {
             ctx.beginPath();
@@ -570,7 +812,6 @@
             ctx.fill();
         }
 
-        // Banderín
         ctx.fillStyle = color;
         ctx.fillRect(rect.x + rect.w / 2 - 1, rect.y - 30, 2, 12);
         ctx.beginPath();
@@ -583,6 +824,8 @@
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
         ctx.fillText(label, rect.x + rect.w / 2, rect.y + rect.h / 2 + 5);
+
+        drawBarIndicator(rect);
     }
 
     function drawBathroom(rect) {
@@ -605,21 +848,21 @@
             ctx.fillStyle = 'rgba(255,255,255,0.7)';
             ctx.fillRect(cx + cw / 2 - 1, rect.y + 6, 2, rect.h - 12);
         }
+        // Cartel arriba, DENTRO del bloque de la caseta (no vuela suelto
+        // por debajo, donde antes se comía la barra de energía).
         ctx.fillStyle = '#173a52';
-        ctx.fillRect(rect.x - 4, rect.y - 8, rect.w + 8, 8);
-
+        ctx.fillRect(rect.x - 4, rect.y - 18, rect.w + 8, 16);
         ctx.fillStyle = '#fff';
         ctx.font = 'bold 12px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('🚻 ' + bathroom.label, rect.x + rect.w / 2, rect.y + rect.h + 20);
+        ctx.fillText('🚻 ' + rect.label, rect.x + rect.w / 2, rect.y - 6);
     }
 
-    function drawCubata(c) {
-        const bob = Math.sin(elapsed * 4 + c.x) * 2;
+    function drawCubataIcon(x, y, scale) {
+        scale = scale || 1;
         ctx.save();
-        ctx.fillStyle = 'rgba(0,0,0,0.2)';
-        ctx.beginPath(); ctx.ellipse(c.x, c.y + 10, 7, 2.5, 0, 0, Math.PI * 2); ctx.fill();
-        ctx.translate(c.x, c.y + bob);
+        ctx.translate(x, y);
+        ctx.scale(scale, scale);
         ctx.fillStyle = '#e8e8e8';
         ctx.fillRect(-6, -10, 12, 16);
         ctx.fillStyle = '#e8912e';
@@ -630,17 +873,62 @@
         ctx.restore();
     }
 
+    // Bolsita de azúcar de verdad: sobrecito de papel con el borde
+    // festoneado arriba, en vez del rombo genérico de antes.
     function drawBolsita(b) {
-        const pulse = 1 + Math.sin(elapsed * 8) * 0.15;
+        const pulse = 1 + Math.sin(elapsed * 8) * 0.12;
         ctx.save();
         ctx.translate(b.x, b.y);
         ctx.scale(pulse, pulse);
-        ctx.fillStyle = 'rgba(255,255,255,0.85)';
-        ctx.strokeStyle = '#7fd4ff';
-        ctx.lineWidth = 2;
+
+        ctx.fillStyle = '#f7f3ea';
+        ctx.strokeStyle = '#c9bfa6';
+        ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(-8, -8); ctx.lineTo(8, -8); ctx.lineTo(6, 9); ctx.lineTo(-6, 9); ctx.closePath();
-        ctx.fill(); ctx.stroke();
+        ctx.moveTo(-8, -3); ctx.lineTo(8, -3); ctx.lineTo(7, 10); ctx.lineTo(-7, 10);
+        ctx.closePath(); ctx.fill(); ctx.stroke();
+
+        // Borde festoneado (el papel plegado arriba)
+        ctx.fillStyle = '#efe6d2';
+        for (let i = -8; i < 8; i += 4) {
+            ctx.beginPath(); ctx.arc(i + 2, -3, 2.4, 0, Math.PI * 2); ctx.fill();
+        }
+
+        // Rayitas rojas típicas de un sobre de azúcar
+        ctx.strokeStyle = '#d9534f';
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(-6, 1); ctx.lineTo(6, 1); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(-6, 4); ctx.lineTo(6, 4); ctx.stroke();
+
+        ctx.restore();
+    }
+
+    // Pequeña explosión de "azúcar" al llegar al baño con la bolsita
+    function drawBursts() {
+        bursts.forEach(b => {
+            ctx.globalAlpha = Math.max(0, b.life / b.maxLife);
+            ctx.fillStyle = b.color;
+            ctx.fillRect(b.x - b.size / 2, b.y - b.size / 2, b.size, b.size);
+        });
+        ctx.globalAlpha = 1;
+    }
+
+    // Pastilla "de la energía": rombo azul con la ranura característica.
+    function drawPastilla(p) {
+        const pulse = 1 + Math.sin(elapsed * 10) * 0.18;
+        ctx.save();
+        ctx.translate(p.x, p.y);
+        ctx.scale(pulse, pulse);
+        ctx.shadowColor = '#7a5cff';
+        ctx.shadowBlur = 10;
+        ctx.fillStyle = '#7a5cff';
+        ctx.beginPath();
+        ctx.moveTo(0, -10); ctx.lineTo(9, 0); ctx.lineTo(0, 10); ctx.lineTo(-9, 0);
+        ctx.closePath(); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = 'rgba(255,255,255,0.8)';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 10); ctx.stroke();
         ctx.restore();
     }
 
@@ -650,19 +938,70 @@
         ctx.beginPath(); ctx.ellipse(ch.x, ch.y + 13, 8, 3, 0, 0, Math.PI * 2); ctx.fill();
         ctx.save();
         ctx.translate(ch.x, ch.y + bob);
-        ctx.fillStyle = ch.color;
+
+        const scared = powerMode;
+        const flicker = scared && Math.floor(elapsed * 10) % 2 === 0;
+        ctx.fillStyle = flicker ? '#5b7fff' : (scared ? '#dfe6ff' : ch.color);
+
         ctx.beginPath();
         ctx.moveTo(-11, 10); ctx.lineTo(-6, -10); ctx.lineTo(6, -10); ctx.lineTo(11, 10);
         ctx.closePath(); ctx.fill();
-        ctx.fillStyle = '#ffd9b3';
+        ctx.fillStyle = scared ? '#dfe6ff' : '#ffd9b3';
         ctx.beginPath(); ctx.arc(0, -16, 8, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = '#3a2416';
-        ctx.beginPath(); ctx.arc(0, -19, 8.5, Math.PI, Math.PI * 2.15); ctx.fill();
+
+        if (scared) {
+            ctx.strokeStyle = '#2a2a30';
+            ctx.lineWidth = 1.4;
+            ctx.beginPath(); ctx.arc(-3, -17, 1.6, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(3, -17, 1.6, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, -12, 3, 0, Math.PI); ctx.stroke();
+        } else {
+            ctx.fillStyle = '#3a2416';
+            ctx.beginPath(); ctx.arc(0, -19, 8.5, Math.PI, Math.PI * 2.15); ctx.fill();
+        }
+        ctx.restore();
+    }
+
+    // --- Personaje: torso fijo + piernas que rotan sobre la cadera para
+    // simular la zancada (ver el recorte en tres piezas más arriba) ---
+    function drawLeg(img, hipOriginX, localPivotX, angle) {
+        if (!img.naturalWidth) return;
+        const pivotX = -ORIG_W / 2 * SPR_SCALE + hipOriginX * SPR_SCALE;
+        const pivotY = -PLAYER_IMG_H + 14 + HIP_Y * SPR_SCALE;
+        ctx.save();
+        ctx.translate(pivotX, pivotY);
+        ctx.rotate(angle);
+        ctx.drawImage(img, -localPivotX * SPR_SCALE, 0, img.naturalWidth * SPR_SCALE, img.naturalHeight * SPR_SCALE);
+        ctx.restore();
+    }
+
+    // Bate de béisbol que empuña mientras dura el "modo azote" (pastilla):
+    // reposa inclinado junto a la cadera y da un latigazo rápido cada vez
+    // que se come a una chavala (ver player.batSwing).
+    function drawBat() {
+        if (!powerMode) return;
+        const swing = player.batSwing || 0;
+        const angle = -0.35 - swing * 1.8;
+        ctx.save();
+        ctx.translate(15, -6);
+        ctx.rotate(angle);
+        ctx.fillStyle = '#6b4423';
+        ctx.fillRect(-2, 0, 4, 13);
+        ctx.fillStyle = '#c8935a';
+        ctx.beginPath();
+        ctx.moveTo(-3, 0);
+        ctx.quadraticCurveTo(-7, -19, -5, -31);
+        ctx.lineTo(5, -31);
+        ctx.quadraticCurveTo(7, -19, 3, 0);
+        ctx.closePath();
+        ctx.fill();
+        ctx.strokeStyle = '#8a5a30';
+        ctx.lineWidth = 1;
+        ctx.stroke();
         ctx.restore();
     }
 
     function drawPlayerFallback() {
-        // Silueta vectorial de repuesto por si la imagen aún no cargó
         ctx.fillStyle = '#3a5c8a';
         ctx.fillRect(-10, 6, 8, 16);
         ctx.fillRect(2, 6, 8, 16);
@@ -677,7 +1016,7 @@
     }
 
     function drawPlayer() {
-        const flash = player.invuln > 0 && Math.floor(elapsed * 12) % 2 === 0;
+        const flashOn = player.invuln > 0 && Math.floor(elapsed * 12) % 2 === 0;
 
         ctx.fillStyle = 'rgba(0,0,0,0.25)';
         ctx.beginPath(); ctx.ellipse(player.x, player.y + 16, 14, 5, 0, 0, Math.PI * 2); ctx.fill();
@@ -685,29 +1024,45 @@
         ctx.save();
         ctx.translate(player.x, player.y);
         ctx.scale(player.facing, 1);
-        if (flash) ctx.globalAlpha = 0.4;
+        if (flashOn) ctx.globalAlpha = 0.4;
 
-        if (player.boost > 0) {
-            ctx.strokeStyle = 'rgba(63, 185, 80, 0.6)';
+        if (player.boost > 0 || powerMode) {
+            ctx.strokeStyle = powerMode ? 'rgba(200, 107, 255, 0.75)' : 'rgba(63, 185, 80, 0.6)';
             ctx.lineWidth = 3;
-            ctx.beginPath(); ctx.arc(0, 0, PLAYER_R + 8, 0, Math.PI * 2); ctx.stroke();
+            ctx.beginPath(); ctx.arc(0, 0, PLAYER_R + 8 + Math.sin(elapsed * 10) * 2, 0, Math.PI * 2); ctx.stroke();
         }
 
-        if (playerImgReady) {
-            const w = PLAYER_IMG_H * (playerImg.naturalWidth / playerImg.naturalHeight);
-            ctx.drawImage(playerImg, -w / 2, -PLAYER_IMG_H + 14, w, PLAYER_IMG_H);
+        if (playerPartsReady) {
+            const swingAngle = Math.sin(player.legPhase) * 0.55 * player.legSwing;
+            const bobY = -Math.abs(Math.sin(player.legPhase)) * 3 * player.legSwing;
+
+            drawLeg(playerLegL, HIP_L_X, HIP_L_X, swingAngle);
+            drawLeg(playerLegR, HIP_R_X, HIP_R_X - ORIG_W / 2, -swingAngle);
+
+            const w = ORIG_W * SPR_SCALE;
+            ctx.drawImage(playerTorso, -w / 2, -PLAYER_IMG_H + 14 + bobY, w, 400 * SPR_SCALE);
         } else {
             drawPlayerFallback();
         }
+
+        drawBat();
 
         ctx.restore();
 
         if (player.carryingBolsita) {
             ctx.save();
             ctx.translate(player.x, player.y - 62);
-            ctx.font = '18px sans-serif';
+            ctx.font = '16px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('🛍️', 0, 0);
+            ctx.fillText('🧂', 0, 0);
+            ctx.restore();
+        }
+        if (player.dancing) {
+            ctx.save();
+            ctx.translate(player.x + Math.sin(elapsed * 5) * 10, player.y - 70 - Math.sin(elapsed * 5) * 4);
+            ctx.font = '16px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText('🎵', 0, 0);
             ctx.restore();
         }
     }
@@ -729,6 +1084,10 @@
             const tPct = Math.max(0, player.bolsitaTimer / BOLSITA_TIME_LIMIT);
             ctx.fillStyle = '#7fd4ff';
             ctx.fillRect(x, y - 10, barW * tPct, 5);
+        } else if (powerMode) {
+            const tPct = Math.max(0, powerTimer / POWER_DURATION);
+            ctx.fillStyle = '#c86bff';
+            ctx.fillRect(x, y - 10, barW * tPct, 5);
         }
     }
 
@@ -740,10 +1099,11 @@
         bars.forEach(b => drawStall(b, '#c0392b', b.label));
         drawBathroom(bathroom);
 
-        cubatas.forEach(drawCubata);
         if (bolsita) drawBolsita(bolsita);
+        if (pastilla) drawPastilla(pastilla);
         chavalas.forEach(drawChavala);
         drawPlayer();
+        drawBursts();
 
         particles.forEach(p => {
             ctx.globalAlpha = Math.max(0, p.life);
@@ -755,6 +1115,13 @@
         });
 
         drawEnergyBar();
+
+        if (flashAlpha > 0) {
+            ctx.fillStyle = flashColor;
+            ctx.globalAlpha = flashAlpha;
+            ctx.fillRect(0, 0, WORLD_W, WORLD_H);
+            ctx.globalAlpha = 1;
+        }
     }
 
     function loop(ts) {
@@ -769,7 +1136,6 @@
     // --- Flujo de pantallas ---
     function startGame() {
         SFX.resume();
-        SFX.startAmbience();
         resetGame();
         document.getElementById('start-screen').classList.add('hidden');
         document.getElementById('gameover-screen').classList.add('hidden');

@@ -20,6 +20,16 @@
         canvas.style.height = `${WORLD_H * scale}px`;
     }
     window.addEventListener('resize', resizeCanvas);
+    // Al girar el móvil, innerWidth/innerHeight a veces tardan un
+    // instante en asentarse (la barra del navegador se expande/colapsa a
+    // la vez): un solo "resize" inmediato puede calcular el tamaño con
+    // las medidas todavía viejas, dejando el lienzo más pequeño de lo que
+    // debería. Se reintenta un poco después, por si acaso.
+    window.addEventListener('orientationchange', () => {
+        resizeCanvas();
+        setTimeout(resizeCanvas, 250);
+        setTimeout(resizeCanvas, 600);
+    });
 
     if (('ontouchstart' in window) || navigator.maxTouchPoints > 0) {
         document.body.classList.add('touch-device');
@@ -488,7 +498,7 @@
             if (actx) return;
             actx = new (window.AudioContext || window.webkitAudioContext)();
             master = actx.createGain();
-            master.gain.value = 0.5;
+            master.gain.value = 0.9;
             master.connect(actx.destination);
 
             delaySend = actx.createDelay();
@@ -563,7 +573,7 @@
             filt.frequency.value = 420;
             filt.Q.value = 0.5;
             ambienceGain = actx.createGain();
-            ambienceGain.gain.value = 0.02;
+            ambienceGain.gain.value = 0.05;
             ambienceSource.connect(filt);
             filt.connect(ambienceGain);
             ambienceGain.connect(master);
@@ -1721,6 +1731,20 @@
     nameInputEl.value = Leaderboard.getSavedName();
     nameInputEl.addEventListener('input', () => nameInputEl.closest('.name-field').classList.remove('invalid'));
     Leaderboard.refreshInto('leaderboard-start', nameInputEl.value.trim());
+
+    // Red de seguridad para móvil: algunos navegadores/WebViews solo
+    // cuentan como "gesto de usuario" válido para desbloquear audio el
+    // PRIMER toque de la página, sea donde sea -no necesariamente el
+    // click en JUGAR-. Se dispara una sola vez y se autodestruye.
+    function firstTouchUnlock() {
+        SFX.unlock();
+        document.removeEventListener('touchend', firstTouchUnlock);
+        document.removeEventListener('pointerdown', firstTouchUnlock);
+        document.removeEventListener('click', firstTouchUnlock);
+    }
+    document.addEventListener('touchend', firstTouchUnlock, { once: true });
+    document.addEventListener('pointerdown', firstTouchUnlock, { once: true });
+    document.addEventListener('click', firstTouchUnlock, { once: true });
 
     setupJoystick();
     resizeCanvas();

@@ -244,7 +244,8 @@
             wanderTarget: null,
             wanderTimer: 0
         });
-        addParticle(bar.x + bar.w / 2, bar.y - 24, '¡El tiburón va a por ti!', '#4a6fa5');
+        addParticle(bar.x + bar.w / 2, bar.y - 24, '¡El tiburón viene a cobrarte!', '#4a6fa5');
+        setTimeout(() => addParticle(bar.x + bar.w / 2, bar.y - 24, '¡Llevas demasiadas copas!', '#4a6fa5'), 500);
         SFX.tiburonAlert();
     }
 
@@ -1041,42 +1042,78 @@
         ctx.restore();
     }
 
-    // El tiburón de la barra: bigote de cobrador, chaqueta gris-azulada,
-    // aleta y la factura en la mano. Se distingue a la legua de las chavalas.
+    // El tiburón de la barra: un tiburón de verdad (cuerpo de torpedo,
+    // aletas, dientes), de pie como el resto de personajes para que la
+    // silueta funcione igual en el juego. Lleva SIEMPRE una factura
+    // flotando encima -para que no haya duda de que viene a cobrar, no
+    // solo a perseguir, y se distinga a la legua de las chavalas-.
     function drawTiburon(ch) {
         const bob = Math.sin(ch.bob) * 3;
         ctx.fillStyle = 'rgba(0,0,0,0.25)';
-        ctx.beginPath(); ctx.ellipse(ch.x, ch.y + 15, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.ellipse(ch.x, ch.y + 18, 13, 4, 0, 0, Math.PI * 2); ctx.fill();
         ctx.save();
         ctx.translate(ch.x, ch.y + bob);
 
+        // Cuerpo (torpedo, de pie sobre la cola)
+        ctx.fillStyle = '#4a6a7a';
+        ctx.beginPath();
+        ctx.moveTo(0, -29);
+        ctx.quadraticCurveTo(11, -20, 10, -1);
+        ctx.quadraticCurveTo(9, 12, 0, 16);
+        ctx.quadraticCurveTo(-9, 12, -10, -1);
+        ctx.quadraticCurveTo(-11, -20, 0, -29);
+        ctx.closePath();
+        ctx.fill();
+
+        // Vientre más claro
+        ctx.fillStyle = '#cfe0e6';
+        ctx.beginPath();
+        ctx.moveTo(0, -19);
+        ctx.quadraticCurveTo(6, -11, 5, 4);
+        ctx.quadraticCurveTo(3, 12, 0, 14);
+        ctx.quadraticCurveTo(-3, 12, -5, 4);
+        ctx.quadraticCurveTo(-6, -11, 0, -19);
+        ctx.closePath();
+        ctx.fill();
+
+        // Aletas pectorales (a los lados, como brazos)
         ctx.fillStyle = '#37505f';
+        ctx.beginPath(); ctx.moveTo(-9, 0); ctx.lineTo(-19, 7); ctx.lineTo(-8, 7); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(9, 0); ctx.lineTo(19, 7); ctx.lineTo(8, 7); ctx.closePath(); ctx.fill();
+
+        // Aleta caudal (cola)
+        ctx.beginPath(); ctx.moveTo(-4, 13); ctx.lineTo(-10, 24); ctx.lineTo(0, 16); ctx.closePath(); ctx.fill();
+        ctx.beginPath(); ctx.moveTo(4, 13); ctx.lineTo(10, 24); ctx.lineTo(0, 16); ctx.closePath(); ctx.fill();
+
+        // Aleta dorsal (bien grande, la seña de identidad del tiburón)
         ctx.beginPath();
-        ctx.moveTo(-14, 13); ctx.lineTo(-8, -13); ctx.lineTo(8, -13); ctx.lineTo(14, 13);
+        ctx.moveTo(-4, -7); ctx.lineTo(0, -26); ctx.lineTo(5, -7);
         ctx.closePath(); ctx.fill();
 
-        ctx.fillStyle = '#2c4048';
-        ctx.beginPath();
-        ctx.moveTo(-3, -13); ctx.lineTo(0, -27); ctx.lineTo(4, -13);
-        ctx.closePath(); ctx.fill();
-
-        ctx.fillStyle = '#cfe0ea';
-        ctx.beginPath(); ctx.arc(0, -18, 8, 0, Math.PI * 2); ctx.fill();
+        // Ojos
         ctx.fillStyle = '#16232a';
-        ctx.beginPath(); ctx.arc(-3, -19, 1.5, 0, Math.PI * 2); ctx.fill();
-        ctx.beginPath(); ctx.arc(3, -19, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(-4, -21, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(4, -21, 1.5, 0, Math.PI * 2); ctx.fill();
+
+        // Boca con dientes afilados
         ctx.strokeStyle = '#16232a';
-        ctx.lineWidth = 1.4;
-        ctx.beginPath(); ctx.moveTo(-3, -13.5); ctx.lineTo(3, -13.5); ctx.stroke();
+        ctx.lineWidth = 1;
+        ctx.beginPath(); ctx.moveTo(-5, -14); ctx.lineTo(5, -14); ctx.stroke();
+        ctx.fillStyle = '#fff';
+        for (let tx = -4; tx <= 4; tx += 2.6) {
+            ctx.beginPath();
+            ctx.moveTo(tx - 1.1, -14); ctx.lineTo(tx + 1.1, -14); ctx.lineTo(tx, -11.6);
+            ctx.closePath(); ctx.fill();
+        }
 
-        // La factura de lo bebido
-        ctx.fillStyle = '#eef0c8';
-        ctx.fillRect(9, -3, 11, 8);
-        ctx.fillStyle = '#3d5a30';
-        ctx.font = 'bold 7px sans-serif';
+        ctx.restore();
+
+        const iconBob = Math.sin(elapsed * 3) * 3;
+        ctx.save();
+        ctx.translate(ch.x, ch.y - 36 + iconBob);
+        ctx.font = '16px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('$', 14.5, 3);
-
+        ctx.fillText('🧾', 0, 0);
         ctx.restore();
     }
 
@@ -1134,7 +1171,7 @@
         // da un latigazo hacia abajo-adelante.
         const angle = -0.1 - swing * 1.1;
         ctx.save();
-        ctx.translate(13, -5);
+        ctx.translate(13, 4);
         ctx.rotate(angle);
         ctx.fillStyle = '#6b4423';
         ctx.fillRect(0, -2.5, 12, 5);

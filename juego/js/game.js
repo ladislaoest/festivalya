@@ -411,55 +411,65 @@
     window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
     window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
-    // Joystick que aparece justo donde tocas (no un D-pad fijo en una
-    // esquina): funciona en cualquier parte de la pantalla y no estorba
-    // mientras las pantallas de inicio/game over están tapando el juego
-    // -"touch-zone" queda por debajo de esos overlays en el z-index-.
-    const JOY_MAX_RADIUS = 46;
+    // "touch-zone" cubre toda la pantalla y queda por debajo de las
+    // pantallas de inicio/game over en el z-index, así que tocar en
+    // cualquier parte del juego mueve el joystick fijo -no hace falta
+    // acertar justo en su base, es más perdonavidas así-.
+    const JOY_MAX_RADIUS = 55;
     let joystickPointerId = null;
-    let joystickOrigin = { x: 0, y: 0 };
     let joystickVector = { x: 0, y: 0 };
 
+    // Joystick FIJO en una esquina (siempre visible, no aparece/desaparece
+    // según dónde toques): un joystick "flotante" resultaba raro de
+    // encontrar cada vez -este es el patrón habitual en juegos móviles,
+    // el pulgar siempre sabe dónde está sin mirar-.
     function setupJoystick() {
         const zone = document.getElementById('touch-zone');
         const base = document.getElementById('joystick-base');
         const nub = document.getElementById('joystick-nub');
         if (!zone || !base || !nub) return;
 
-        function showAt(x, y) {
-            base.style.left = `${x}px`; base.style.top = `${y}px`;
-            nub.style.left = `${x}px`; nub.style.top = `${y}px`;
-            base.style.display = 'block'; nub.style.display = 'block';
+        function basePos() {
+            const rect = base.getBoundingClientRect();
+            return { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
         }
-        function hide() {
-            base.style.display = 'none'; nub.style.display = 'none';
-            joystickVector.x = 0; joystickVector.y = 0;
-        }
-        function updateNub(dx, dy) {
+        function updateNub(clientX, clientY) {
+            const pos = basePos();
+            const dx = clientX - pos.x, dy = clientY - pos.y;
             const dist = Math.min(JOY_MAX_RADIUS, Math.hypot(dx, dy));
             const ang = Math.atan2(dy, dx);
             const nx = Math.cos(ang) * dist, ny = Math.sin(ang) * dist;
-            nub.style.left = `${joystickOrigin.x + nx}px`;
-            nub.style.top = `${joystickOrigin.y + ny}px`;
+            nub.style.left = `${pos.x + nx}px`;
+            nub.style.top = `${pos.y + ny}px`;
             joystickVector.x = nx / JOY_MAX_RADIUS;
             joystickVector.y = ny / JOY_MAX_RADIUS;
         }
+        function resetNub() {
+            const pos = basePos();
+            nub.style.left = `${pos.x}px`;
+            nub.style.top = `${pos.y}px`;
+            joystickVector.x = 0; joystickVector.y = 0;
+        }
+
+        resetNub();
+        window.addEventListener('resize', resetNub);
 
         zone.addEventListener('pointerdown', (e) => {
             if (joystickPointerId !== null) return;
             joystickPointerId = e.pointerId;
-            joystickOrigin = { x: e.clientX, y: e.clientY };
-            showAt(e.clientX, e.clientY);
+            base.classList.add('active');
+            updateNub(e.clientX, e.clientY);
             zone.setPointerCapture(e.pointerId);
         });
         zone.addEventListener('pointermove', (e) => {
             if (e.pointerId !== joystickPointerId) return;
-            updateNub(e.clientX - joystickOrigin.x, e.clientY - joystickOrigin.y);
+            updateNub(e.clientX, e.clientY);
         });
         const endTouch = (e) => {
             if (e.pointerId !== joystickPointerId) return;
             joystickPointerId = null;
-            hide();
+            base.classList.remove('active');
+            resetNub();
         };
         zone.addEventListener('pointerup', endTouch);
         zone.addEventListener('pointercancel', endTouch);
@@ -493,13 +503,12 @@
         let ambienceSource = null, ambienceGain = null;
         let loopTimer = null;
         let currentLoop = null;
-        let lastError = null;
 
         function ensure() {
             if (actx) return;
             actx = new (window.AudioContext || window.webkitAudioContext)();
             master = actx.createGain();
-            master.gain.value = 0.9;
+            master.gain.value = 0.6;
             master.connect(actx.destination);
 
             delaySend = actx.createDelay();
@@ -570,11 +579,14 @@
             ambienceSource.buffer = noiseBuffer;
             ambienceSource.loop = true;
             const filt = actx.createBiquadFilter();
-            filt.type = 'bandpass';
-            filt.frequency.value = 420;
-            filt.Q.value = 0.5;
+            // Paso bajo, no de banda: el ruido blanco filtrado en banda
+            // ancha sonaba como un "shhh" bastante fuerte y molesto en vez
+            // de un murmullo de fondo suave.
+            filt.type = 'lowpass';
+            filt.frequency.value = 220;
+            filt.Q.value = 0.7;
             ambienceGain = actx.createGain();
-            ambienceGain.gain.value = 0.05;
+            ambienceGain.gain.value = 0.018;
             ambienceSource.connect(filt);
             filt.connect(ambienceGain);
             ambienceGain.connect(master);
@@ -756,20 +768,7 @@
                     src.buffer = buffer;
                     src.connect(actx.destination);
                     src.start(0);
-                } catch (err) {
-                    lastError = (err && err.message) || String(err);
-                }
-            },
-            // Diagnóstico visible en pantalla: en el móvil no hay consola
-            // para ver si el AudioContext falla o se queda "suspended".
-            getDebugInfo() {
-                return {
-                    supported: !!(window.AudioContext || window.webkitAudioContext),
-                    created: !!actx,
-                    state: actx ? actx.state : 'sin crear',
-                    sampleRate: actx ? actx.sampleRate : null,
-                    error: lastError
-                };
+                } catch (err) { /* ignorado: sin consola no hay a quién avisar en el móvil */ }
             }
         };
     })();
@@ -1716,20 +1715,6 @@
         lastTs = performance.now();
         requestAnimationFrame(loop);
 
-        // Diagnóstico de audio en pantalla (ver SFX.getDebugInfo): no hay
-        // consola en el móvil para ver por qué no suena nada.
-        const showAudioDebug = () => {
-            const el = document.getElementById('audio-debug');
-            const info = SFX.getDebugInfo();
-            const text = `soportado:${info.supported} creado:${info.created} estado:${info.state} hz:${info.sampleRate} error:${info.error || 'ninguno'}`;
-            if (el) el.textContent = '🔊 ' + text;
-            return text;
-        };
-        showAudioDebug();
-        setTimeout(() => {
-            const text = showAudioDebug();
-            alert('DIAGNÓSTICO DE AUDIO:\n' + text);
-        }, 500);
     }
 
     function gameOver(reason) {

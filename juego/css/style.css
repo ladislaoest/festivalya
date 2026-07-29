@@ -63,22 +63,6 @@ html, body {
     pointer-events: none;
 }
 
-/* Diagnóstico de audio (temporal, para depurar en móviles sin consola) */
-#audio-debug {
-    position: absolute;
-    bottom: max(4px, env(safe-area-inset-bottom));
-    left: 4px;
-    z-index: 40;
-    font-size: 9px;
-    color: #8affc1;
-    background: rgba(0, 0, 0, 0.6);
-    padding: 3px 6px;
-    border-radius: 4px;
-    pointer-events: none;
-    max-width: 96vw;
-    word-break: break-all;
-}
-
 .hud-pill {
     background: rgba(23, 24, 29, 0.85);
     border: 1px solid var(--accent-gold);
@@ -346,7 +330,10 @@ body.touch-device.is-portrait #rotate-hint { display: flex; }
 
 body.touch-device #touch-zone { display: block; }
 
-#joystick-base, #joystick-nub {
+/* Joystick fijo en la esquina inferior izquierda, siempre visible -no
+   aparece/desaparece según dónde toques, así el pulgar siempre sabe dónde
+   está sin tener que mirar-. */
+#joystick-nub {
     position: fixed;
     display: none;
     z-index: 26;
@@ -355,18 +342,35 @@ body.touch-device #touch-zone { display: block; }
     pointer-events: none;
 }
 
+body.touch-device #joystick-base,
+body.touch-device #joystick-nub {
+    display: block;
+}
+
 #joystick-base {
-    width: 92px;
-    height: 92px;
-    background: rgba(23, 24, 29, 0.35);
-    border: 2px solid rgba(217, 169, 53, 0.4);
+    position: fixed;
+    left: max(28px, env(safe-area-inset-left));
+    bottom: max(38px, env(safe-area-inset-bottom));
+    z-index: 26;
+    border-radius: 50%;
+    pointer-events: none;
+    width: 110px;
+    height: 110px;
+    background: rgba(23, 24, 29, 0.4);
+    border: 2px solid rgba(217, 169, 53, 0.45);
+    transition: background 0.15s, border-color 0.15s;
+}
+
+#joystick-base.active {
+    background: rgba(23, 24, 29, 0.6);
+    border-color: rgba(217, 169, 53, 0.8);
 }
 
 #joystick-nub {
-    width: 42px;
-    height: 42px;
-    background: rgba(217, 169, 53, 0.75);
-    border: 2px solid rgba(255, 255, 255, 0.5);
+    width: 50px;
+    height: 50px;
+    background: rgba(217, 169, 53, 0.8);
+    border: 2px solid rgba(255, 255, 255, 0.6);
 }
 
 /* --- Modo compacto: móvil en horizontal, poco alto disponible --- */

@@ -82,6 +82,8 @@
 
     const MAX_CHAVALAS = 5;
     const CHAVALA_EVERY_POINTS = 450;
+    const TIBURON_TRIGGER_DRINKS = 8;
+    const TIBURON_STEAL_SCORE = 30;
 
     // --- Escenario: barras, baño, escenario y valla perimetral ---
     const bars = [
@@ -144,6 +146,8 @@
     let powerTimer = 0;
     let elapsed = 0;
     let chavalas = [];
+    let drinksCount = 0;
+    let tiburonSpawned = false;
     let particles = [];
     let bursts = [];
     let flashAlpha = 0;
@@ -196,6 +200,8 @@
 
         chavalas = [];
         spawnChavala();
+        drinksCount = 0;
+        tiburonSpawned = false;
 
         SFX.setLoop('ambience');
     }
@@ -213,13 +219,33 @@
             x, y, r: CHAVALA_R,
             color: hueOptions[Math.floor(Math.random() * hueOptions.length)],
             speedMul: 0.82 + Math.random() * 0.18,
-            bob: Math.random() * Math.PI * 2
+            bob: Math.random() * Math.PI * 2,
+            wanderTarget: null,
+            wanderTimer: 0
         });
     }
 
     function maybeSpawnChavalaByScore() {
         const target = Math.min(MAX_CHAVALAS, 1 + Math.floor(score / CHAVALA_EVERY_POINTS));
         if (chavalas.length < target) spawnChavala();
+    }
+
+    // El tiburón de la barra: aparece una sola vez, cuando ya se han pedido
+    // demasiadas copas, a cobrar lo bebido. Persigue igual que las chavalas
+    // pero la pastilla no lo asusta ni se lo puede comer -ver el chequeo
+    // "!ch.isTiburon" en el bucle de chavalas-.
+    function spawnTiburon(bar) {
+        chavalas.push({
+            x: bar.x + bar.w / 2, y: bar.y + bar.h / 2,
+            r: CHAVALA_R + 6,
+            isTiburon: true,
+            speedMul: 1.05,
+            bob: Math.random() * Math.PI * 2,
+            wanderTarget: null,
+            wanderTimer: 0
+        });
+        addParticle(bar.x + bar.w / 2, bar.y - 24, '¡El tiburón va a por ti!', '#4a6fa5');
+        SFX.tiburonAlert();
     }
 
     function addParticle(x, y, text, color) {
@@ -395,15 +421,68 @@
             }, 170);
         }
 
+        // Bombo de "cuatro por compás" (el golpe grave típico de techno/house:
+        // un seno que cae rapidísimo de ~150Hz a ~45Hz).
+        function kick(t0) {
+            ensure();
+            const osc = actx.createOscillator();
+            const g = actx.createGain();
+            osc.type = 'sine';
+            osc.frequency.setValueAtTime(155, t0);
+            osc.frequency.exponentialRampToValueAtTime(46, t0 + 0.11);
+            g.gain.setValueAtTime(0.85, t0);
+            g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.17);
+            osc.connect(g); g.connect(master);
+            osc.start(t0); osc.stop(t0 + 0.2);
+        }
+
+        function hat(t0, open) {
+            ensure();
+            const src = actx.createBufferSource();
+            src.buffer = noiseBuffer;
+            const filt = actx.createBiquadFilter();
+            filt.type = 'highpass';
+            filt.frequency.value = 7500;
+            const g = actx.createGain();
+            g.gain.setValueAtTime(open ? 0.1 : 0.06, t0);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + (open ? 0.16 : 0.045));
+            src.connect(filt); filt.connect(g); g.connect(master);
+            src.start(t0); src.stop(t0 + 0.2);
+        }
+
+        function bassPluck(t0, freq) {
+            ensure();
+            const osc = actx.createOscillator();
+            const filt = actx.createBiquadFilter();
+            const g = actx.createGain();
+            osc.type = 'sawtooth';
+            osc.frequency.setValueAtTime(freq, t0);
+            filt.type = 'lowpass';
+            filt.frequency.value = 500;
+            g.gain.setValueAtTime(0.0001, t0);
+            g.gain.linearRampToValueAtTime(0.16, t0 + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.15);
+            osc.connect(filt); filt.connect(g); g.connect(master);
+            osc.start(t0); osc.stop(t0 + 0.18);
+        }
+
+        // Música de pista de verdad -house/techno de "cuatro por compás"-, no
+        // una melodía suelta: bombo en cada negra, hi-hats en corcheas y un
+        // bajo sincopado, como una caja de ritmos de 16 pasos a 126 BPM.
         function startDanceLoop() {
             stopScheduledLoop();
-            const melody = [523, 659, 784, 659, 587, 784, 880, 659];
+            ensure();
+            const bpm = 126;
+            const stepDur = 60 / bpm / 4;
+            const bassPattern = [110, 0, 0, 110, 0, 146.83, 0, 0, 110, 0, 0, 110, 0, 130.81, 0, 0];
             let step = 0;
             loopTimer = setInterval(() => {
-                tone(melody[step % melody.length], 0.22, { type: 'triangle', gain: 0.11, wet: true });
-                if (step % 4 === 0) tone(melody[step % melody.length] / 2, 0.3, { type: 'sine', gain: 0.09 });
-                step++;
-            }, 220);
+                const t0 = actx.currentTime;
+                if (step % 4 === 0) kick(t0);
+                if (step % 2 === 0) hat(t0, step % 4 === 2);
+                if (bassPattern[step]) bassPluck(t0, bassPattern[step]);
+                step = (step + 1) % 16;
+            }, stepDur * 1000);
         }
 
         function setLoop(name) {
@@ -446,6 +525,10 @@
             },
             pastillaFound() {
                 tone(200, 0.4, { type: 'sawtooth', sweepTo: 500, gain: 0.16 });
+            },
+            tiburonAlert() {
+                tone(90, 0.6, { type: 'sawtooth', sweepTo: 60, gain: 0.18 });
+                setTimeout(() => tone(90, 0.6, { type: 'sawtooth', sweepTo: 60, gain: 0.16 }), 350);
             },
             eatChavala() {
                 noiseBurst(0.12, { filterType: 'bandpass', freq: 1400, gain: 0.2 });
@@ -506,6 +589,12 @@
                 addParticle(bar.x + bar.w / 2, bar.y - 10, '+10 🍹', '#f2c85c');
                 SFX.serve();
                 maybeSpawnChavalaByScore();
+
+                drinksCount++;
+                if (!tiburonSpawned && drinksCount >= TIBURON_TRIGGER_DRINKS) {
+                    tiburonSpawned = true;
+                    spawnTiburon(bar);
+                }
             }
         });
 
@@ -563,7 +652,8 @@
                 pastilla = null;
                 powerMode = true;
                 powerTimer = POWER_DURATION;
-                addParticle(player.x, player.y - 30, '¡MODO AZOTE!', '#c86bff');
+                addParticle(player.x, player.y - 30, '¡Te comiste una viagra!', '#2f80ed');
+                setTimeout(() => addParticle(player.x, player.y - 30, '¡Estás en modo azote!', '#2f80ed'), 550);
                 SFX.pastillaFound();
                 SFX.setLoop('action');
             }
@@ -600,20 +690,43 @@
             const dist = Math.hypot(player.x - ch.x, player.y - ch.y);
             minDist = Math.min(minDist, dist);
 
-            const spd = (powerMode ? CHAVALA_FLEE_SPEED : CHAVALA_BASE_SPEED * ch.speedMul);
-            if (dist > 1) {
-                const dirSign = powerMode ? -1 : 1;
-                ch.x += (player.x - ch.x) / dist * spd * dt * dirSign;
-                ch.y += (player.y - ch.y) / dist * spd * dt * dirSign;
+            if (powerMode && !ch.isTiburon) {
+                // Huyen del jugador (el tiburón no: a él la pastilla no le da miedo)
+                if (dist > 1) {
+                    ch.x -= (player.x - ch.x) / dist * CHAVALA_FLEE_SPEED * dt;
+                    ch.y -= (player.y - ch.y) / dist * CHAVALA_FLEE_SPEED * dt;
+                }
+            } else if (player.dancing) {
+                // A salvo en el escenario: no tiene sentido que se queden
+                // apelotonadas esperando al pie -se van a dar una vuelta por
+                // ahí hasta que baje-.
+                if (!ch.wanderTarget || ch.wanderTimer <= 0 || Math.hypot(ch.wanderTarget.x - ch.x, ch.wanderTarget.y - ch.y) < 18) {
+                    ch.wanderTarget = { x: 60 + Math.random() * (WORLD_W - 120), y: 150 + Math.random() * (WORLD_H - 260) };
+                    ch.wanderTimer = 2 + Math.random() * 3;
+                }
+                ch.wanderTimer -= dt;
+                const wdist = Math.hypot(ch.wanderTarget.x - ch.x, ch.wanderTarget.y - ch.y);
+                if (wdist > 1) {
+                    const wspd = CHAVALA_BASE_SPEED * 0.55;
+                    ch.x += (ch.wanderTarget.x - ch.x) / wdist * wspd * dt;
+                    ch.y += (ch.wanderTarget.y - ch.y) / wdist * wspd * dt;
+                }
+            } else {
+                ch.wanderTarget = null;
+                if (dist > 1) {
+                    const spd = CHAVALA_BASE_SPEED * ch.speedMul;
+                    ch.x += (player.x - ch.x) / dist * spd * dt;
+                    ch.y += (player.y - ch.y) / dist * spd * dt;
+                }
             }
             ch.x = clamp(ch.x, CHAVALA_R, WORLD_W - CHAVALA_R);
             ch.y = clamp(ch.y, CHAVALA_R, WORLD_H - CHAVALA_R);
 
             if (dist < player.r + ch.r) {
-                if (powerMode) {
+                if (powerMode && !ch.isTiburon) {
                     score += EAT_SCORE;
                     player.batSwing = 1;
-                    addParticle(ch.x, ch.y - 20, `¡ÑAM! +${EAT_SCORE}`, '#c86bff');
+                    addParticle(ch.x, ch.y - 20, `¡ÑAM! +${EAT_SCORE}`, '#2f80ed');
                     burst(ch.x, ch.y, 16, [ch.color, '#ffffff'], { spread: 180, life: 0.6, size: 4 });
                     SFX.eatChavala();
                     chavalas.splice(i, 1);
@@ -625,12 +738,19 @@
                         const away = Math.atan2(player.y - ch.y, player.x - ch.x);
                         player.x += Math.cos(away) * 50;
                         player.y += Math.sin(away) * 50;
-                        addParticle(player.x, player.y - 30, '¡TE PILLÓ!', '#e5484d');
+                        if (ch.isTiburon) {
+                            score = Math.max(0, score - TIBURON_STEAL_SCORE);
+                            addParticle(player.x, player.y - 30, `¡Te cobró! -${TIBURON_STEAL_SCORE}`, '#4a6fa5');
+                        } else {
+                            addParticle(player.x, player.y - 30, '¡TE PILLÓ!', '#e5484d');
+                        }
                         SFX.caught();
-                        const pos = randomFreePosition(CHAVALA_R);
+                        const pos = ch.isTiburon
+                            ? randomFreePosition(CHAVALA_R + 6)
+                            : randomFreePosition(CHAVALA_R);
                         ch.x = pos.x; ch.y = pos.y;
                     } else {
-                        gameOver('caught');
+                        gameOver(ch.isTiburon ? 'tiburon' : 'caught');
                     }
                 }
             }
@@ -881,24 +1001,13 @@
         ctx.translate(b.x, b.y);
         ctx.scale(pulse, pulse);
 
+        // Solo la bolsa, sin más dibujos encima.
         ctx.fillStyle = '#f7f3ea';
         ctx.strokeStyle = '#c9bfa6';
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.moveTo(-8, -3); ctx.lineTo(8, -3); ctx.lineTo(7, 10); ctx.lineTo(-7, 10);
+        ctx.moveTo(-7, -6); ctx.lineTo(7, -6); ctx.lineTo(6, 9); ctx.lineTo(-6, 9);
         ctx.closePath(); ctx.fill(); ctx.stroke();
-
-        // Borde festoneado (el papel plegado arriba)
-        ctx.fillStyle = '#efe6d2';
-        for (let i = -8; i < 8; i += 4) {
-            ctx.beginPath(); ctx.arc(i + 2, -3, 2.4, 0, Math.PI * 2); ctx.fill();
-        }
-
-        // Rayitas rojas típicas de un sobre de azúcar
-        ctx.strokeStyle = '#d9534f';
-        ctx.lineWidth = 1;
-        ctx.beginPath(); ctx.moveTo(-6, 1); ctx.lineTo(6, 1); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(-6, 4); ctx.lineTo(6, 4); ctx.stroke();
 
         ctx.restore();
     }
@@ -919,9 +1028,9 @@
         ctx.save();
         ctx.translate(p.x, p.y);
         ctx.scale(pulse, pulse);
-        ctx.shadowColor = '#7a5cff';
+        ctx.shadowColor = '#2f80ed';
         ctx.shadowBlur = 10;
-        ctx.fillStyle = '#7a5cff';
+        ctx.fillStyle = '#2f80ed';
         ctx.beginPath();
         ctx.moveTo(0, -10); ctx.lineTo(9, 0); ctx.lineTo(0, 10); ctx.lineTo(-9, 0);
         ctx.closePath(); ctx.fill();
@@ -929,6 +1038,45 @@
         ctx.strokeStyle = 'rgba(255,255,255,0.8)';
         ctx.lineWidth = 1.4;
         ctx.beginPath(); ctx.moveTo(0, -10); ctx.lineTo(0, 10); ctx.stroke();
+        ctx.restore();
+    }
+
+    // El tiburón de la barra: bigote de cobrador, chaqueta gris-azulada,
+    // aleta y la factura en la mano. Se distingue a la legua de las chavalas.
+    function drawTiburon(ch) {
+        const bob = Math.sin(ch.bob) * 3;
+        ctx.fillStyle = 'rgba(0,0,0,0.25)';
+        ctx.beginPath(); ctx.ellipse(ch.x, ch.y + 15, 11, 4, 0, 0, Math.PI * 2); ctx.fill();
+        ctx.save();
+        ctx.translate(ch.x, ch.y + bob);
+
+        ctx.fillStyle = '#37505f';
+        ctx.beginPath();
+        ctx.moveTo(-14, 13); ctx.lineTo(-8, -13); ctx.lineTo(8, -13); ctx.lineTo(14, 13);
+        ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = '#2c4048';
+        ctx.beginPath();
+        ctx.moveTo(-3, -13); ctx.lineTo(0, -27); ctx.lineTo(4, -13);
+        ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = '#cfe0ea';
+        ctx.beginPath(); ctx.arc(0, -18, 8, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#16232a';
+        ctx.beginPath(); ctx.arc(-3, -19, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.beginPath(); ctx.arc(3, -19, 1.5, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = '#16232a';
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(-3, -13.5); ctx.lineTo(3, -13.5); ctx.stroke();
+
+        // La factura de lo bebido
+        ctx.fillStyle = '#eef0c8';
+        ctx.fillRect(9, -3, 11, 8);
+        ctx.fillStyle = '#3d5a30';
+        ctx.font = 'bold 7px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('$', 14.5, 3);
+
         ctx.restore();
     }
 
@@ -981,18 +1129,21 @@
     function drawBat() {
         if (!powerMode) return;
         const swing = player.batSwing || 0;
-        const angle = -0.35 - swing * 1.8;
+        // Reposo: casi horizontal, saliendo de la cadera hacia delante (+x,
+        // que tras el flip de "facing" siempre queda de cara). El golpe le
+        // da un latigazo hacia abajo-adelante.
+        const angle = -0.1 - swing * 1.1;
         ctx.save();
-        ctx.translate(15, -6);
+        ctx.translate(13, -5);
         ctx.rotate(angle);
         ctx.fillStyle = '#6b4423';
-        ctx.fillRect(-2, 0, 4, 13);
+        ctx.fillRect(0, -2.5, 12, 5);
         ctx.fillStyle = '#c8935a';
         ctx.beginPath();
-        ctx.moveTo(-3, 0);
-        ctx.quadraticCurveTo(-7, -19, -5, -31);
-        ctx.lineTo(5, -31);
-        ctx.quadraticCurveTo(7, -19, 3, 0);
+        ctx.moveTo(12, -3.5);
+        ctx.quadraticCurveTo(28, -8, 40, -6);
+        ctx.lineTo(40, 6);
+        ctx.quadraticCurveTo(28, 8, 12, 3.5);
         ctx.closePath();
         ctx.fill();
         ctx.strokeStyle = '#8a5a30';
@@ -1027,7 +1178,7 @@
         if (flashOn) ctx.globalAlpha = 0.4;
 
         if (player.boost > 0 || powerMode) {
-            ctx.strokeStyle = powerMode ? 'rgba(200, 107, 255, 0.75)' : 'rgba(63, 185, 80, 0.6)';
+            ctx.strokeStyle = powerMode ? 'rgba(47, 128, 237, 0.75)' : 'rgba(63, 185, 80, 0.6)';
             ctx.lineWidth = 3;
             ctx.beginPath(); ctx.arc(0, 0, PLAYER_R + 8 + Math.sin(elapsed * 10) * 2, 0, Math.PI * 2); ctx.stroke();
         }
@@ -1086,7 +1237,7 @@
             ctx.fillRect(x, y - 10, barW * tPct, 5);
         } else if (powerMode) {
             const tPct = Math.max(0, powerTimer / POWER_DURATION);
-            ctx.fillStyle = '#c86bff';
+            ctx.fillStyle = '#2f80ed';
             ctx.fillRect(x, y - 10, barW * tPct, 5);
         }
     }
@@ -1101,7 +1252,7 @@
 
         if (bolsita) drawBolsita(bolsita);
         if (pastilla) drawPastilla(pastilla);
-        chavalas.forEach(drawChavala);
+        chavalas.forEach(ch => ch.isTiburon ? drawTiburon(ch) : drawChavala(ch));
         drawPlayer();
         drawBursts();
 
@@ -1150,9 +1301,10 @@
             highScore = score;
             localStorage.setItem('bradwather_highscore', String(highScore));
         }
-        document.getElementById('gameover-reason').textContent = reason === 'caught'
-            ? 'Sin energía para escapar, las chavalas te han cazado.'
-            : 'Se acabó la fiesta por hoy.';
+        let reasonText = 'Se acabó la fiesta por hoy.';
+        if (reason === 'caught') reasonText = 'Sin energía para escapar, las chavalas te han cazado.';
+        else if (reason === 'tiburon') reasonText = 'El tiburón de la barra te ha cobrado todas las copas... con intereses.';
+        document.getElementById('gameover-reason').textContent = reasonText;
         document.getElementById('final-score').textContent = score;
         document.getElementById('final-best').textContent = highScore;
         document.getElementById('gameover-screen').classList.remove('hidden');

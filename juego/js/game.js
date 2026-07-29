@@ -1791,6 +1791,11 @@
     }
 
     function gameOver(reason) {
+        // Si varias chavalas tocan al jugador en el mismo fotograma con la
+        // energía ya a cero, el bucle de chavalas llamaba a esto una vez
+        // por cada una -de ahí partidas duplicadas en el marcador con la
+        // misma puntuación y el mismo segundo exacto-.
+        if (!running) return;
         running = false;
         if (score > highScore) {
             highScore = score;

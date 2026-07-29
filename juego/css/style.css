@@ -167,46 +167,169 @@ html, body {
     color: var(--accent-gold-bright);
 }
 
-/* --- Controles táctiles --- */
-#touch-controls {
-    position: absolute;
-    bottom: max(18px, env(safe-area-inset-bottom));
-    left: 18px;
-    z-index: 30;
-    display: none;
+/* --- Nombre del jugador --- */
+.name-field {
+    margin-bottom: 18px;
+    text-align: left;
 }
 
-body.touch-device #touch-controls { display: block; }
-
-.dpad {
-    position: relative;
-    width: 148px;
-    height: 148px;
+.name-field label {
+    display: block;
+    font-size: 11px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 6px;
 }
 
-.dpad-btn {
-    position: absolute;
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    border: 1px solid rgba(217, 169, 53, 0.4);
-    background: rgba(23, 24, 29, 0.75);
+.name-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 12px;
+    border-radius: 8px;
+    border: 1px solid rgba(217, 169, 53, 0.3);
+    background: #0e0f13;
+    color: var(--text-main);
+    font-size: 14px;
+}
+
+.name-field input:focus {
+    outline: none;
+    border-color: var(--accent-gold);
+}
+
+.name-field.invalid input {
+    border-color: var(--danger);
+}
+
+/* --- Marcador compartido --- */
+.leaderboard {
+    margin-top: 20px;
+    text-align: left;
+}
+
+.leaderboard-title {
+    font-size: 12px;
+    font-weight: 700;
     color: var(--accent-gold-bright);
-    font-size: 18px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 8px;
+}
+
+.leaderboard-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    max-height: 180px;
+    overflow-y: auto;
+}
+
+.leaderboard-list li {
     display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 6px 8px;
+    font-size: 13px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.leaderboard-list li:last-child { border-bottom: none; }
+
+.leaderboard-list .lb-rank {
+    color: var(--text-muted);
+    width: 20px;
+    flex-shrink: 0;
+}
+
+.leaderboard-list .lb-name {
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.leaderboard-list .lb-score {
+    font-weight: 700;
+    color: var(--accent-gold-bright);
+}
+
+.leaderboard-list li.lb-me { background: rgba(217, 169, 53, 0.12); border-radius: 6px; }
+
+.leaderboard-empty {
+    color: var(--text-muted);
+    font-size: 12px;
+    padding: 6px 8px;
+}
+
+/* --- Aviso de girar el móvil: el mapa es apaisado, así que en vertical
+   siempre queda con franjas negras arriba/abajo por mucho fullscreen que
+   se pida -esto es lo que de verdad soluciona el aprovechamiento de
+   pantalla, no el modo pantalla completa por sí solo- */
+#rotate-hint {
+    display: none;
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: #05070a;
+    color: var(--text-main);
+    flex-direction: column;
     align-items: center;
     justify-content: center;
-    user-select: none;
-    -webkit-user-select: none;
+    text-align: center;
+    padding: 30px;
+    gap: 14px;
+}
+
+body.touch-device.is-portrait #rotate-hint { display: flex; }
+
+.rotate-icon {
+    font-size: 42px;
+    animation: rotate-hint-spin 1.6s ease-in-out infinite;
+}
+
+#rotate-hint p {
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--text-muted);
+    max-width: 260px;
+}
+
+@keyframes rotate-hint-spin {
+    0%, 100% { transform: rotate(0deg); }
+    50% { transform: rotate(-90deg); }
+}
+
+/* --- Controles táctiles: joystick flotante que aparece donde tocas --- */
+#touch-zone {
+    position: absolute;
+    inset: 0;
+    z-index: 25;
+    display: none;
     touch-action: none;
 }
 
-.dpad-btn:active, .dpad-btn.pressed {
-    background: var(--accent-gold);
-    color: #1a1300;
+body.touch-device #touch-zone { display: block; }
+
+#joystick-base, #joystick-nub {
+    position: fixed;
+    display: none;
+    z-index: 26;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+    pointer-events: none;
 }
 
-.dpad-up { top: 0; left: 50px; }
-.dpad-left { top: 50px; left: 0; }
-.dpad-down { top: 100px; left: 50px; }
-.dpad-right { top: 50px; left: 96px; }
+#joystick-base {
+    width: 92px;
+    height: 92px;
+    background: rgba(23, 24, 29, 0.35);
+    border: 2px solid rgba(217, 169, 53, 0.4);
+}
+
+#joystick-nub {
+    width: 42px;
+    height: 42px;
+    background: rgba(217, 169, 53, 0.75);
+    border: 2px solid rgba(255, 255, 255, 0.5);
+}

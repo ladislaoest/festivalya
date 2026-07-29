@@ -25,6 +25,92 @@
         document.body.classList.add('touch-device');
     }
 
+    // El mapa es apaisado: en un móvil en vertical siempre va a quedar con
+    // franjas negras arriba/abajo, pida o no pantalla completa. Girar el
+    // teléfono es lo que de verdad soluciona eso.
+    function updateOrientationHint() {
+        document.body.classList.toggle('is-portrait', window.innerHeight > window.innerWidth);
+    }
+    window.addEventListener('resize', updateOrientationHint);
+    window.addEventListener('orientationchange', updateOrientationHint);
+    updateOrientationHint();
+
+    // ==============================
+    // --- Marcador compartido (Supabase, mismo proyecto que festivalya) ---
+    // ==============================
+    const Leaderboard = (() => {
+        const SUPABASE_URL = 'https://atmxqrkcvvatfqsvkdcm.supabase.co';
+        const SUPABASE_KEY = 'sb_publishable_jAo0VLnlU5UFF2J5rl4LJQ_UGlSaMPu';
+        const NAME_KEY = 'bradwather_playername';
+
+        function getSavedName() {
+            return localStorage.getItem(NAME_KEY) || '';
+        }
+        function saveName(name) {
+            localStorage.setItem(NAME_KEY, name);
+        }
+
+        async function submitScore(name, scoreValue) {
+            try {
+                await fetch(`${SUPABASE_URL}/rest/v1/bread_wather_scores`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'apikey': SUPABASE_KEY,
+                        'Authorization': `Bearer ${SUPABASE_KEY}`,
+                        'Prefer': 'return=minimal'
+                    },
+                    body: JSON.stringify({ player_name: name, score: scoreValue })
+                });
+            } catch (err) {
+                console.warn('[Bread & Wather] No se pudo guardar la puntuación en el marcador compartido.', err);
+            }
+        }
+
+        async function fetchTop(limit) {
+            try {
+                const res = await fetch(
+                    `${SUPABASE_URL}/rest/v1/bread_wather_scores?select=player_name,score&order=score.desc&limit=${limit}`,
+                    { headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` } }
+                );
+                if (!res.ok) return [];
+                return await res.json();
+            } catch (err) {
+                console.warn('[Bread & Wather] No se pudo cargar el marcador compartido.', err);
+                return [];
+            }
+        }
+
+        function render(listEl, rows, myName) {
+            if (!rows || rows.length === 0) {
+                listEl.innerHTML = '<li class="leaderboard-empty">Todavía nadie ha puntuado. ¡Sé el primero!</li>';
+                return;
+            }
+            listEl.innerHTML = rows.map((r, i) => `
+                <li class="${myName && r.player_name === myName ? 'lb-me' : ''}">
+                    <span class="lb-rank">${i + 1}º</span>
+                    <span class="lb-name">${escapeHtml(r.player_name)}</span>
+                    <span class="lb-score">${r.score}</span>
+                </li>
+            `).join('');
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML;
+        }
+
+        async function refreshInto(listElId, myName) {
+            const listEl = document.getElementById(listElId);
+            if (!listEl) return;
+            const rows = await fetchTop(10);
+            render(listEl, rows, myName);
+        }
+
+        return { getSavedName, saveName, submitScore, refreshInto };
+    })();
+
     // --- Sprite real del personaje, partido en torso + piernas para poder
     // animar el andar (el recorte original es una única foto de pie, ver
     // juego/assets/player.png del que salen estas tres piezas) ---
@@ -82,8 +168,12 @@
 
     const MAX_CHAVALAS = 5;
     const CHAVALA_EVERY_POINTS = 450;
+    const DIFFICULTY_RAMP_INTERVAL = 25;
+    const MAX_DIFFICULTY_LEVEL = 6;
     const TIBURON_TRIGGER_DRINKS = 8;
     const TIBURON_STEAL_SCORE = 30;
+    const BILLETES_NEEDED = 4;
+    const BILLETE_SPAWN_MIN = 4, BILLETE_SPAWN_MAX = 9;
 
     // --- Escenario: barras, baño, escenario y valla perimetral ---
     const bars = [
@@ -148,6 +238,12 @@
     let chavalas = [];
     let drinksCount = 0;
     let tiburonSpawned = false;
+    let lastDifficultyLevel = 0;
+    let billete = null;
+    let nextBilleteAt = 0;
+    let billetesCollected = 0;
+    let marcosTimer = 0;
+    let marcosX = 0, marcosY = 0;
     let particles = [];
     let bursts = [];
     let flashAlpha = 0;
@@ -166,7 +262,8 @@
         onStage: false,
         dancing: false,
         stageSafeTime: STAGE_SAFE_MAX,
-        batSwing: 0
+        batSwing: 0,
+        stageKicked: false
     };
 
     function resetGame() {
@@ -184,6 +281,8 @@
         player.dancing = false;
         player.stageSafeTime = STAGE_SAFE_MAX;
         player.batSwing = 0;
+        player.stageKicked = false;
+        marcosTimer = 0;
         particles = [];
         bursts = [];
         flashAlpha = 0;
@@ -202,8 +301,10 @@
         spawnChavala();
         drinksCount = 0;
         tiburonSpawned = false;
-
-        SFX.setLoop('ambience');
+        lastDifficultyLevel = 0;
+        billete = null;
+        nextBilleteAt = 0;
+        billetesCollected = 0;
     }
 
     function spawnChavala() {
@@ -280,31 +381,79 @@
         flashAlpha = Math.max(flashAlpha, amount);
     }
 
-    // --- Entrada: teclado + D-Pad táctil ---
+    // --- Entrada: teclado + joystick táctil flotante ---
     const keys = {};
     window.addEventListener('keydown', (e) => { keys[e.key.toLowerCase()] = true; });
     window.addEventListener('keyup', (e) => { keys[e.key.toLowerCase()] = false; });
 
-    const touchDir = { up: false, down: false, left: false, right: false };
-    document.querySelectorAll('.dpad-btn').forEach(btn => {
-        const dir = btn.dataset.dir;
-        const press = (e) => { e.preventDefault(); touchDir[dir] = true; btn.classList.add('pressed'); };
-        const release = (e) => { e.preventDefault(); touchDir[dir] = false; btn.classList.remove('pressed'); };
-        btn.addEventListener('touchstart', press, { passive: false });
-        btn.addEventListener('touchend', release, { passive: false });
-        btn.addEventListener('touchcancel', release, { passive: false });
-        btn.addEventListener('mousedown', press);
-        btn.addEventListener('mouseup', release);
-        btn.addEventListener('mouseleave', release);
-    });
+    // Joystick que aparece justo donde tocas (no un D-pad fijo en una
+    // esquina): funciona en cualquier parte de la pantalla y no estorba
+    // mientras las pantallas de inicio/game over están tapando el juego
+    // -"touch-zone" queda por debajo de esos overlays en el z-index-.
+    const JOY_MAX_RADIUS = 46;
+    let joystickPointerId = null;
+    let joystickOrigin = { x: 0, y: 0 };
+    let joystickVector = { x: 0, y: 0 };
+
+    function setupJoystick() {
+        const zone = document.getElementById('touch-zone');
+        const base = document.getElementById('joystick-base');
+        const nub = document.getElementById('joystick-nub');
+        if (!zone || !base || !nub) return;
+
+        function showAt(x, y) {
+            base.style.left = `${x}px`; base.style.top = `${y}px`;
+            nub.style.left = `${x}px`; nub.style.top = `${y}px`;
+            base.style.display = 'block'; nub.style.display = 'block';
+        }
+        function hide() {
+            base.style.display = 'none'; nub.style.display = 'none';
+            joystickVector.x = 0; joystickVector.y = 0;
+        }
+        function updateNub(dx, dy) {
+            const dist = Math.min(JOY_MAX_RADIUS, Math.hypot(dx, dy));
+            const ang = Math.atan2(dy, dx);
+            const nx = Math.cos(ang) * dist, ny = Math.sin(ang) * dist;
+            nub.style.left = `${joystickOrigin.x + nx}px`;
+            nub.style.top = `${joystickOrigin.y + ny}px`;
+            joystickVector.x = nx / JOY_MAX_RADIUS;
+            joystickVector.y = ny / JOY_MAX_RADIUS;
+        }
+
+        zone.addEventListener('pointerdown', (e) => {
+            if (joystickPointerId !== null) return;
+            joystickPointerId = e.pointerId;
+            joystickOrigin = { x: e.clientX, y: e.clientY };
+            showAt(e.clientX, e.clientY);
+            zone.setPointerCapture(e.pointerId);
+        });
+        zone.addEventListener('pointermove', (e) => {
+            if (e.pointerId !== joystickPointerId) return;
+            updateNub(e.clientX - joystickOrigin.x, e.clientY - joystickOrigin.y);
+        });
+        const endTouch = (e) => {
+            if (e.pointerId !== joystickPointerId) return;
+            joystickPointerId = null;
+            hide();
+        };
+        zone.addEventListener('pointerup', endTouch);
+        zone.addEventListener('pointercancel', endTouch);
+    }
 
     function readInput() {
         let dx = 0, dy = 0;
-        if (keys['arrowup'] || keys['w'] || touchDir.up) dy -= 1;
-        if (keys['arrowdown'] || keys['s'] || touchDir.down) dy += 1;
-        if (keys['arrowleft'] || keys['a'] || touchDir.left) dx -= 1;
-        if (keys['arrowright'] || keys['d'] || touchDir.right) dx += 1;
+        if (keys['arrowup'] || keys['w']) dy -= 1;
+        if (keys['arrowdown'] || keys['s']) dy += 1;
+        if (keys['arrowleft'] || keys['a']) dx -= 1;
+        if (keys['arrowright'] || keys['d']) dx += 1;
         if (dx !== 0 && dy !== 0) { dx *= 0.7071; dy *= 0.7071; }
+
+        if (joystickPointerId !== null && (joystickVector.x !== 0 || joystickVector.y !== 0)) {
+            dx = joystickVector.x;
+            dy = joystickVector.y;
+            const mag = Math.hypot(dx, dy);
+            if (mag > 1) { dx /= mag; dy /= mag; }
+        }
         return { dx, dy };
     }
 
@@ -532,8 +681,24 @@
                 });
             },
             tiburonAlert() {
+                // Sonsonete propio de "alarma de tiburón" (sin usar canciones
+                // con copyright): bajo amenazante + un riff pegadizo.
                 tone(90, 0.6, { type: 'sawtooth', sweepTo: 60, gain: 0.18 });
                 setTimeout(() => tone(90, 0.6, { type: 'sawtooth', sweepTo: 60, gain: 0.16 }), 350);
+                [220, 220, 330, 220, 220, 392].forEach((f, i) => {
+                    setTimeout(() => tone(f, 0.14, { type: 'square', gain: 0.1, wet: true }), 700 + i * 130);
+                });
+            },
+            levelUp() {
+                tone(330, 0.12, { type: 'square', gain: 0.13 });
+                setTimeout(() => tone(220, 0.25, { type: 'sawtooth', gain: 0.14 }), 90);
+            },
+            tiburonPaid() {
+                [392, 523, 659].forEach((f, i) => setTimeout(() => tone(f, 0.2, { type: 'sine', gain: 0.13, wet: true }), i * 90));
+            },
+            kicked() {
+                noiseBurst(0.15, { filterType: 'lowpass', freq: 400, gain: 0.24 });
+                tone(140, 0.2, { type: 'square', sweepTo: 60, gain: 0.16 });
             },
             eatChavala() {
                 noiseBurst(0.12, { filterType: 'bandpass', freq: 1400, gain: 0.2 });
@@ -550,6 +715,20 @@
             resume() {
                 ensure();
                 if (actx.state === 'suspended') actx.resume();
+            },
+            // En iOS/Safari (y varios WebViews de apps como WhatsApp)
+            // "resume()" no basta para desbloquear el audio del todo: hace
+            // falta además reproducir algo, aunque sea silencio, DENTRO del
+            // gesto de toque real -si no, el contexto queda "running" pero
+            // no suena nada durante el resto de la partida-.
+            unlock() {
+                ensure();
+                if (actx.state === 'suspended') actx.resume();
+                const buffer = actx.createBuffer(1, 1, 22050);
+                const src = actx.createBufferSource();
+                src.buffer = buffer;
+                src.connect(actx.destination);
+                src.start(0);
             }
         };
     })();
@@ -559,6 +738,20 @@
 
     function update(dt) {
         elapsed += dt;
+
+        // Dificultad progresiva: cuanto más dura la partida, más rápidas y
+        // pegajosas se ponen las chavalas -no solo "más chavalas" al sumar
+        // puntos, sino que las que ya hay aprietan más-. Se avisa con un
+        // aviso de nivel la primera vez que sube, para que se note.
+        const difficultyLevel = Math.min(MAX_DIFFICULTY_LEVEL, Math.floor(elapsed / DIFFICULTY_RAMP_INTERVAL));
+        if (difficultyLevel > lastDifficultyLevel) {
+            lastDifficultyLevel = difficultyLevel;
+            addParticle(player.x, player.y - 50, `¡Nivel ${difficultyLevel + 1}! Se complica...`, '#ff6b6b');
+            flash('#ff6b6b', 0.25);
+            SFX.levelUp();
+        }
+        const difficultyMul = 1 + difficultyLevel * 0.07;
+
         const input = readInput();
         const isMoving = input.dx !== 0 || input.dy !== 0;
         if (input.dx !== 0) player.facing = input.dx > 0 ? 1 : -1;
@@ -598,10 +791,43 @@
                 drinksCount++;
                 if (!tiburonSpawned && drinksCount >= TIBURON_TRIGGER_DRINKS) {
                     tiburonSpawned = true;
+                    billetesCollected = 0;
+                    nextBilleteAt = BILLETE_SPAWN_MIN + Math.random() * (BILLETE_SPAWN_MAX - BILLETE_SPAWN_MIN);
                     spawnTiburon(bar);
                 }
             }
         });
+
+        // --- Billetes: la forma de quitarse al tiburón de encima sin
+        // esperar a que se canse -recoge los que hagan falta y le pagas-.
+        if (tiburonSpawned) {
+            if (!billete) {
+                nextBilleteAt -= dt;
+                if (nextBilleteAt <= 0) {
+                    const pos = randomFreePosition(9);
+                    billete = { x: pos.x, y: pos.y, r: 10 };
+                }
+            } else {
+                const dist = Math.hypot(player.x - billete.x, player.y - billete.y);
+                if (dist < player.r + billete.r) {
+                    billete = null;
+                    billetesCollected++;
+                    addParticle(player.x, player.y - 30, `💵 ${billetesCollected}/${BILLETES_NEEDED}`, '#8affc1');
+                    SFX.pickup();
+                    if (billetesCollected >= BILLETES_NEEDED) {
+                        const idx = chavalas.findIndex(c => c.isTiburon);
+                        if (idx !== -1) chavalas.splice(idx, 1);
+                        tiburonSpawned = false;
+                        drinksCount = 0;
+                        billete = null;
+                        addParticle(player.x, player.y - 50, '¡Pagado! El tiburón se va tranquilo...', '#4a6fa5');
+                        SFX.tiburonPaid();
+                    } else {
+                        nextBilleteAt = BILLETE_SPAWN_MIN + Math.random() * (BILLETE_SPAWN_MAX - BILLETE_SPAWN_MIN);
+                    }
+                }
+            }
+        }
 
         // --- Bolsita de azúcar ---
         if (!bolsita && !player.carryingBolsita) {
@@ -679,14 +905,32 @@
         if (player.onStage && player.stageSafeTime > 0) {
             player.dancing = true;
             player.stageSafeTime -= dt;
+            player.stageKicked = false;
             if (!powerMode) SFX.setLoop('dance');
         } else {
             if (player.dancing && !powerMode) SFX.setLoop('ambience');
+            const wasDancing = player.dancing;
             player.dancing = false;
+            // Se le acabó el tiempo a mitad de estar en el escenario:
+            // aparece Marcos y lo echa a patadas, en vez de dejarlo ahí
+            // plantado y vulnerable sin que se note por qué.
+            if (player.onStage && wasDancing && !player.stageKicked) {
+                player.stageKicked = true;
+                marcosTimer = 1.4;
+                marcosX = player.x;
+                marcosY = stage.y + stage.h + 14;
+                player.y = stage.y + stage.h + 50;
+                player.x = clamp(player.x, PLAYER_R, WORLD_W - PLAYER_R);
+                player.invuln = Math.max(player.invuln, 2);
+                addParticle(player.x, player.y - 40, '¡MARCOS TE HA ECHADO!', '#e5484d');
+                SFX.kicked();
+            }
             if (!player.onStage) {
                 player.stageSafeTime = Math.min(STAGE_SAFE_MAX, player.stageSafeTime + dt * (STAGE_SAFE_MAX / STAGE_RECHARGE_TIME));
+                player.stageKicked = false;
             }
         }
+        if (marcosTimer > 0) marcosTimer -= dt;
 
         // --- Chavalas ---
         const playerIsSafe = player.dancing || player.invuln > 0;
@@ -721,7 +965,7 @@
             } else {
                 ch.wanderTarget = null;
                 if (dist > 1) {
-                    const spd = CHAVALA_BASE_SPEED * ch.speedMul;
+                    const spd = CHAVALA_BASE_SPEED * ch.speedMul * (ch.isTiburon ? 1 : difficultyMul);
                     ch.x += (player.x - ch.x) / dist * spd * dt;
                     ch.y += (player.y - ch.y) / dist * spd * dt;
                 }
@@ -765,7 +1009,7 @@
 
         if (!player.dancing && !powerMode) {
             if (minDist < CHASE_RANGE) {
-                player.energy = Math.max(0, player.energy - ENERGY_DRAIN_RATE * dt);
+                player.energy = Math.max(0, player.energy - ENERGY_DRAIN_RATE * difficultyMul * dt);
             } else {
                 player.energy = Math.min(100, player.energy + ENERGY_REGEN_RATE * dt);
             }
@@ -787,6 +1031,7 @@
         if (flashAlpha > 0) flashAlpha = Math.max(0, flashAlpha - dt * 2.2);
 
         document.getElementById('hud-score').textContent = `🍹 ${score}`;
+        document.getElementById('hud-level').textContent = `⚡ Nivel ${difficultyLevel + 1}`;
         document.getElementById('hud-best').textContent = `🏆 ${Math.max(score, highScore)}`;
     }
 
@@ -1019,6 +1264,23 @@
         ctx.restore();
     }
 
+    // Billete para pagarle al tiburón (solo aparece mientras anda suelto)
+    function drawBillete(b) {
+        const bob = Math.sin(elapsed * 5 + b.x) * 2;
+        ctx.save();
+        ctx.translate(b.x, b.y + bob);
+        ctx.rotate(Math.sin(elapsed * 2) * 0.15);
+        ctx.fillStyle = '#3fa15a';
+        ctx.strokeStyle = '#28753f';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.roundRect ? ctx.roundRect(-11, -6, 22, 12, 2) : ctx.rect(-11, -6, 22, 12);
+        ctx.fill(); ctx.stroke();
+        ctx.fillStyle = '#eafff0';
+        ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+    }
+
     // Pequeña explosión de "azúcar" al llegar al baño con la bolsita
     function drawBursts() {
         bursts.forEach(b => {
@@ -1120,7 +1382,7 @@
         const iconBob = Math.sin(elapsed * 3) * 2;
         ctx.save();
         ctx.translate(ch.x, ch.y - 42 + iconBob);
-        const bw = 54, bh = 18;
+        const bw = 78, bh = 18;
         ctx.fillStyle = 'rgba(255,255,255,0.95)';
         ctx.strokeStyle = '#16232a';
         ctx.lineWidth = 1.2;
@@ -1132,9 +1394,42 @@
         ctx.moveTo(-4, bh / 2 - 1); ctx.lineTo(0, bh / 2 + 6); ctx.lineTo(4, bh / 2 - 1);
         ctx.closePath(); ctx.fill(); ctx.stroke();
         ctx.fillStyle = '#16232a';
+        ctx.font = 'bold 10px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`PAGA YA (${billetesCollected}/${BILLETES_NEEDED})`, 0, 4);
+        ctx.restore();
+    }
+
+    // Marcos, el gorila de seguridad: aparece un instante a echarte del
+    // escenario a patadas si te quedas ahí más de la cuenta.
+    function drawMarcos(x, y) {
+        ctx.save();
+        ctx.translate(x, y);
+        ctx.globalAlpha = Math.min(1, marcosTimer / 0.3);
+
+        ctx.fillStyle = 'rgba(0,0,0,0.3)';
+        ctx.beginPath(); ctx.ellipse(0, 18, 15, 4, 0, 0, Math.PI * 2); ctx.fill();
+
+        ctx.fillStyle = '#1a1a22';
+        ctx.beginPath();
+        ctx.moveTo(-13, 14); ctx.lineTo(-9, -14); ctx.lineTo(9, -14); ctx.lineTo(13, 14);
+        ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = '#d8a878';
+        ctx.beginPath(); ctx.arc(0, -20, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#111';
+        ctx.fillRect(-7, -22, 14, 4);
+
+        // Pierna dando la patada
+        ctx.fillStyle = '#1a1a22';
+        ctx.beginPath();
+        ctx.moveTo(6, 10); ctx.lineTo(28, 0); ctx.lineTo(24, 10); ctx.lineTo(10, 16);
+        ctx.closePath(); ctx.fill();
+
+        ctx.fillStyle = '#fff';
         ctx.font = 'bold 11px sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('¡PAGA YA!', 0, 4);
+        ctx.fillText('MARCOS', 0, -34);
         ctx.restore();
     }
 
@@ -1194,7 +1489,10 @@
         // da un latigazo hacia abajo-adelante.
         const angle = -0.1 - swing * 1.1;
         ctx.save();
-        ctx.translate(4, 3);
+        // A la altura de la entrepierna/bragueta (borde inferior de la
+        // sudadera), no de la rodilla: ahí el mango queda tapado por la
+        // tela y no se ve un hueco flotando aparte del cuerpo.
+        ctx.translate(2, -6);
         ctx.rotate(angle);
         ctx.fillStyle = '#6b4423';
         ctx.fillRect(-6, -2.5, 15, 5);
@@ -1311,6 +1609,8 @@
         drawBathroom(bathroom);
 
         if (bolsita) drawBolsita(bolsita);
+        if (billete) drawBillete(billete);
+        if (marcosTimer > 0) drawMarcos(marcosX, marcosY);
         if (pastilla) drawPastilla(pastilla);
         chavalas.forEach(ch => ch.isTiburon ? drawTiburon(ch) : drawChavala(ch));
         drawPlayer();
@@ -1345,9 +1645,30 @@
     }
 
     // --- Flujo de pantallas ---
+    function requestFullscreenSafe() {
+        const el = document.documentElement;
+        const req = el.requestFullscreen || el.webkitRequestFullscreen || el.msRequestFullscreen;
+        if (req) { try { req.call(el); } catch (err) { /* algunos navegadores móviles simplemente no lo permiten */ } }
+    }
+
+    let currentPlayerName = '';
+
     function startGame() {
-        SFX.resume();
+        const nameInput = document.getElementById('player-name-input');
+        const name = (nameInput.value || '').trim();
+        if (!name) {
+            nameInput.closest('.name-field').classList.add('invalid');
+            nameInput.focus();
+            return;
+        }
+        nameInput.closest('.name-field').classList.remove('invalid');
+        currentPlayerName = name;
+        Leaderboard.saveName(name);
+
+        SFX.unlock();
+        requestFullscreenSafe();
         resetGame();
+        SFX.setLoop('ambience');
         document.getElementById('start-screen').classList.add('hidden');
         document.getElementById('gameover-screen').classList.add('hidden');
         running = true;
@@ -1369,12 +1690,23 @@
         document.getElementById('final-best').textContent = highScore;
         document.getElementById('gameover-screen').classList.remove('hidden');
         SFX.gameOver();
+
+        Leaderboard.submitScore(currentPlayerName, score).then(() => {
+            Leaderboard.refreshInto('leaderboard-gameover', currentPlayerName);
+            Leaderboard.refreshInto('leaderboard-start', currentPlayerName);
+        });
     }
 
     document.getElementById('btn-start').addEventListener('click', startGame);
     document.getElementById('btn-retry').addEventListener('click', startGame);
     document.getElementById('hud-best').textContent = `🏆 ${highScore}`;
 
+    const nameInputEl = document.getElementById('player-name-input');
+    nameInputEl.value = Leaderboard.getSavedName();
+    nameInputEl.addEventListener('input', () => nameInputEl.closest('.name-field').classList.remove('invalid'));
+    Leaderboard.refreshInto('leaderboard-start', nameInputEl.value.trim());
+
+    setupJoystick();
     resizeCanvas();
     resetGame();
     draw();

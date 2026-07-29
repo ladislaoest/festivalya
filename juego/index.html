@@ -10,8 +10,14 @@
 <body>
 
   <div id="game-wrap">
+    <div id="rotate-hint">
+      <div class="rotate-icon">🔄</div>
+      <p>Gira el móvil para jugar en horizontal<br>y aprovechar toda la pantalla</p>
+    </div>
+
     <div id="hud-top">
       <div class="hud-pill" id="hud-score">🍹 0</div>
+      <div class="hud-pill" id="hud-level">⚡ Nivel 1</div>
       <div class="hud-pill" id="hud-best">🏆 0</div>
     </div>
 
@@ -22,6 +28,12 @@
       <div class="overlay-card">
         <h1>BREAD &amp; WATHER</h1>
         <p class="subtitle">El Escape del Festival</p>
+
+        <div class="name-field">
+          <label for="player-name-input">Tu nombre (para el marcador)</label>
+          <input type="text" id="player-name-input" maxlength="18" placeholder="¿Cómo te llamas?">
+        </div>
+
         <ul class="rules">
           <li>🍹 Vete de barra en barra a por cubatas: cada una tarda un rato en recargarse.</li>
           <li>💃 Las chavalas te persiguen: esquívalas o te agarran.</li>
@@ -33,6 +45,11 @@
         </ul>
         <button id="btn-start" class="btn-play">JUGAR</button>
         <p class="controls-hint">Muévete con las flechas / WASD, o con el joystick en pantalla.</p>
+
+        <div class="leaderboard">
+          <div class="leaderboard-title">🏆 Mejores puntuaciones</div>
+          <ol id="leaderboard-start" class="leaderboard-list"><li class="leaderboard-empty">Cargando...</li></ol>
+        </div>
       </div>
     </div>
 
@@ -46,18 +63,19 @@
           <div><span class="score-label">Récord</span><span class="score-value" id="final-best">0</span></div>
         </div>
         <button id="btn-retry" class="btn-play">JUGAR OTRA VEZ</button>
+
+        <div class="leaderboard">
+          <div class="leaderboard-title">🏆 Mejores puntuaciones</div>
+          <ol id="leaderboard-gameover" class="leaderboard-list"><li class="leaderboard-empty">Cargando...</li></ol>
+        </div>
       </div>
     </div>
 
-    <!-- Controles táctiles (móvil) -->
-    <div id="touch-controls">
-      <div class="dpad">
-        <button class="dpad-btn dpad-up" data-dir="up" aria-label="Arriba">▲</button>
-        <button class="dpad-btn dpad-left" data-dir="left" aria-label="Izquierda">◀</button>
-        <button class="dpad-btn dpad-down" data-dir="down" aria-label="Abajo">▼</button>
-        <button class="dpad-btn dpad-right" data-dir="right" aria-label="Derecha">▶</button>
-      </div>
-    </div>
+    <!-- Controles táctiles (móvil): joystick flotante que aparece donde
+         toques, no un D-pad fijo en una esquina -->
+    <div id="touch-zone"></div>
+    <div id="joystick-base"></div>
+    <div id="joystick-nub"></div>
   </div>
 
   <script src="js/game.js?v=1"></script>

@@ -197,6 +197,9 @@
     const MAX_DIFFICULTY_LEVEL = 6;
     const TIBURON_TRIGGER_DRINKS = 8;
     const TIBURON_STEAL_SCORE = 30;
+
+    const MARLBORO_SPAWN_MIN = 20, MARLBORO_SPAWN_MAX = 40;
+    const MARLBORO_LIFETIME = 6;
     const BILLETES_NEEDED = 4;
     const BILLETE_SPAWN_MIN = 4, BILLETE_SPAWN_MAX = 9;
 
@@ -273,6 +276,8 @@
     let billetesCollected = 0;
     let marcosTimer = 0;
     let marcosX = 0, marcosY = 0;
+    let marlboro = null;
+    let nextMarlboroAt = 0;
     let particles = [];
     let bursts = [];
     let flashAlpha = 0;
@@ -334,6 +339,9 @@
         billete = null;
         nextBilleteAt = 0;
         billetesCollected = 0;
+
+        marlboro = null;
+        nextMarlboroAt = MARLBORO_SPAWN_MIN + Math.random() * (MARLBORO_SPAWN_MAX - MARLBORO_SPAWN_MIN);
     }
 
     function spawnChavala() {
@@ -944,6 +952,31 @@
             }
         }
 
+        // --- Marlboro XL: sube de nivel de golpe, pero hay que darse
+        // prisa -si no se recoge a tiempo, desaparece sin más-.
+        if (!marlboro) {
+            nextMarlboroAt -= dt;
+            if (nextMarlboroAt <= 0) {
+                const pos = randomFreePosition(9);
+                marlboro = { x: pos.x, y: pos.y, r: 10, timer: MARLBORO_LIFETIME };
+            }
+        } else {
+            marlboro.timer -= dt;
+            if (marlboro.timer <= 0) {
+                marlboro = null;
+                nextMarlboroAt = MARLBORO_SPAWN_MIN + Math.random() * (MARLBORO_SPAWN_MAX - MARLBORO_SPAWN_MIN);
+            } else {
+                const dist = Math.hypot(player.x - marlboro.x, player.y - marlboro.y);
+                if (dist < player.r + marlboro.r) {
+                    marlboro = null;
+                    nextMarlboroAt = MARLBORO_SPAWN_MIN + Math.random() * (MARLBORO_SPAWN_MAX - MARLBORO_SPAWN_MIN);
+                    elapsed += DIFFICULTY_RAMP_INTERVAL;
+                    addParticle(player.x, player.y - 46, '¡Nivel extra!', '#ff6b6b');
+                    SFX.levelUp();
+                }
+            }
+        }
+
         // --- Escenario: refugio temporal donde se pone a bailar ---
         player.onStage = rectsOverlap(player.x, player.y, player.r, stage, 4);
         if (player.onStage && player.stageSafeTime > 0) {
@@ -1354,6 +1387,41 @@
         ctx.restore();
     }
 
+    // Paquete de tabaco: aparece poco y hay que darse prisa, así que lleva
+    // su propio anillo de cuenta atrás (se pone rojo y parpadea justo
+    // antes de desaparecer).
+    function drawMarlboro(m) {
+        const pctLeft = m.timer / MARLBORO_LIFETIME;
+        const urgent = pctLeft < 0.35;
+        const blink = urgent && Math.floor(elapsed * 8) % 2 === 0;
+
+        ctx.save();
+        ctx.translate(m.x, m.y);
+        if (blink) ctx.globalAlpha = 0.4;
+
+        // Cajetilla (caja roja arriba, blanca abajo, tipo "flip-top")
+        ctx.fillStyle = '#e5484d';
+        ctx.fillRect(-8, -10, 16, 8);
+        ctx.fillStyle = '#f5f2ea';
+        ctx.fillRect(-8, -2, 16, 12);
+        ctx.strokeStyle = '#c9bfa6';
+        ctx.lineWidth = 1;
+        ctx.strokeRect(-8, -2, 16, 12);
+        ctx.fillStyle = '#1a1a1a';
+        ctx.font = 'bold 6px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText('XL', 0, 7);
+
+        // Anillo de cuenta atrás
+        ctx.strokeStyle = urgent ? '#e5484d' : '#8affc1';
+        ctx.lineWidth = 2.5;
+        ctx.beginPath();
+        ctx.arc(0, 0, 15, -Math.PI / 2, -Math.PI / 2 + pctLeft * Math.PI * 2);
+        ctx.stroke();
+
+        ctx.restore();
+    }
+
     // El tiburón de la barra: un tiburón de verdad (cuerpo de torpedo,
     // aletas, dientes), de pie como el resto de personajes para que la
     // silueta funcione igual en el juego. Lleva SIEMPRE una factura
@@ -1656,6 +1724,7 @@
         if (billete) drawBillete(billete);
         if (marcosTimer > 0) drawMarcos(marcosX, marcosY);
         if (pastilla) drawPastilla(pastilla);
+        if (marlboro) drawMarlboro(marlboro);
         chavalas.forEach(ch => ch.isTiburon ? drawTiburon(ch) : drawChavala(ch));
         drawPlayer();
         drawBursts();

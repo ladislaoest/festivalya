@@ -75,6 +75,11 @@ function startNewProject() {
 
 document.addEventListener('DOMContentLoaded', async function() {
     const startupModal = document.getElementById('startup-modal');
+    // La vista pública de solo lectura (publico.html) no tiene modal de
+    // inicio: carga el mapa por su cuenta (ver public.js) y no debe disparar
+    // este flujo de editor, o Leaflet explota al llamar initMap() dos veces.
+    if (!startupModal) return;
+
     const newProjectBtn = document.getElementById('new-project-btn');
     const loadProjectBtn = document.getElementById('load-project-btn');
 

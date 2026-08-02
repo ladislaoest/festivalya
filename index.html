@@ -988,6 +988,29 @@
             display: flex;
         }
 
+        #mapa_public_link_btn {
+            position: fixed;
+            top: calc(14px + env(safe-area-inset-top));
+            right: calc(149px + env(safe-area-inset-right));
+            z-index: 2600;
+            background: rgba(10, 10, 11, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid var(--border-soft);
+            color: var(--text-main);
+            border-radius: 999px;
+            width: 44px;
+            height: 44px;
+            display: none;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            box-shadow: var(--shadow-lg);
+        }
+
+        #tab_mapa.active #mapa_public_link_btn {
+            display: flex;
+        }
+
         #mapa_iframe {
             width: 100%;
             height: 100%;
@@ -1247,6 +1270,9 @@
     <div id="tab_mapa" class="app-page">
         <div id="mapa_no_event">Seleccioná un evento en la pestaña Eventos para ver o crear su mapa.</div>
         <iframe id="mapa_iframe" title="Mapa del evento" allow="geolocation"></iframe>
+        <button type="button" id="mapa_public_link_btn" title="Copiar enlace público del mapa 3D" aria-label="Copiar enlace público del mapa 3D" onclick="copyPublicMapLink()">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+        </button>
         <button type="button" id="mapa_back_btn" title="Volver a FestivalYa" aria-label="Volver a FestivalYa" onclick="switchTab('tab_eventos')">
             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="19" y1="12" x2="5" y2="12"></line><polyline points="12 19 5 12 12 5"></polyline></svg>
         </button>
@@ -4457,6 +4483,23 @@
             const desiredSrc = `mapa/index.html?event=${encodeURIComponent(currentEvent)}`;
             if (!iframe.src.endsWith(desiredSrc)) {
                 iframe.src = desiredSrc;
+            }
+        }
+
+        // Enlace público de solo lectura (mapa/publico.html): mismo evento,
+        // pero sin ningún menú de edición -pensado para enviar a empleados
+        // que solo necesitan recorrer el mapa 3D del recinto.
+        async function copyPublicMapLink() {
+            if (!currentEvent) {
+                alert('Seleccioná primero un evento en la pestaña Eventos.');
+                return;
+            }
+            const url = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}mapa/publico.html?event=${encodeURIComponent(currentEvent)}`;
+            try {
+                await navigator.clipboard.writeText(url);
+                alert('Enlace público copiado. Podés enviarlo a tus empleados: solo verán el mapa 3D, sin poder modificarlo.');
+            } catch (err) {
+                prompt('Copiá este enlace público para tus empleados (solo lectura):', url);
             }
         }
 

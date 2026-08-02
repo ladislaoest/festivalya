@@ -1,0 +1,218 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <title>FestivalYa - Mapa 3D</title>
+  <link rel="icon" type="image/png" href="../icons/icon-32.png">
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.css" />
+  <link rel="stylesheet" href="https://unpkg.com/leaflet-search@2.9.7/dist/leaflet-search.min.css" />
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css?v=3.43">
+  <style>
+    /* Vista pública de solo lectura (enlace para empleados): sin menús de
+       edición, solo el mapa 3D. El panel de edición y el cuadro de
+       estadísticas se mantienen en el DOM -el JS compartido con index.html
+       (elements.js, save-load.js...) escribe en esos elementos sin
+       comprobar antes que existan- pero se ocultan por completo, así que no
+       hay forma de interactuar con ellos ni de modificar el mapa. */
+    #panel, #mobile-menu-btn, #finish-drawing-btn, #stats-box {
+      display: none !important;
+    }
+    #main-content { width: 100%; }
+    #public-map-title {
+      position: fixed;
+      top: calc(14px + env(safe-area-inset-top));
+      left: calc(14px + env(safe-area-inset-left));
+      z-index: 20;
+      background: rgba(10, 10, 11, 0.75);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255,255,255,0.12);
+      color: #fff;
+      padding: 8px 14px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 600;
+      letter-spacing: 0.3px;
+      pointer-events: none;
+      max-width: calc(100vw - 28px);
+    }
+  </style>
+</head>
+<body>
+  <div id="public-map-title"></div>
+
+  <button id="mobile-menu-btn">☰ MENÚ</button>
+  <button id="finish-drawing-btn" style="display:none;">✓ Finalizar recorrido</button>
+
+  <!-- Panel de edición completo (oculto por CSS): se deja igual que en
+       index.html, con los mismos IDs, para que setupElementEvents() y el
+       resto del JS compartido no revienten al buscar elementos que no
+       existen. Como está oculto, nada de esto es alcanzable ni clicable. -->
+  <div id="panel">
+    <div class="header">
+      <img src="../logo.png" alt="FestivalYa" class="logo-img">
+      <div class="save-load-controls">
+        <button class="btn" id="save-cloud-btn" title="Guardar mapa del evento"></button>
+        <button class="btn btn-secondary" id="export-img-btn" title="Descargar Imagen"></button>
+        <button class="btn btn-secondary" id="measure-btn" title="Regla de Medición"></button>
+        <button class="btn btn-secondary" id="save-pc-btn" title="Guardar en PC"></button>
+        <button class="btn btn-secondary" id="load-btn-panel" title="Cargar Proyecto desde archivo"></button>
+      </div>
+    </div>
+    <div id="event-map-title"></div>
+
+    <div class="view-selector">
+        <button class="view-btn active" data-view="map-2d">2D</button>
+        <button class="view-btn" data-view="3d-minimal">3D</button>
+        <button class="view-btn" id="festival-mode-btn">MODO FESTIVAL</button>
+        <button class="view-btn" id="hide-labels-btn">OCULTAR TEXTOS</button>
+        <button class="view-btn" id="toggle-fences-btn">OCULTAR VALLAS</button>
+        <button class="view-btn" id="illustrated-map-btn">MAPA ILUSTRADO</button>
+    </div>
+
+    <div id="editor-controls">
+            <div class="card">
+                <div class="form-group">
+                  <select class="form-control" id="element-type">
+                    <option value="main-stage">Escenario</option>
+                    <option value="bar">Barra</option>
+                    <option value="food-truck">Food Truck</option>
+                    <option value="generator">Generador</option>
+                    <option value="wc">Baños</option>
+                    <option value="security">Seguridad</option>
+                    <option value="drunk">Bread & Wather</option>
+                    <option value="tiburon">Tiburón</option>
+                    <option value="fence">Valla de Obra</option>
+                    <option value="panic-fence">Valla Antipánico</option>
+                    <option value="signal-parking">Señal Parking</option>
+                    <option value="signal-disabled">Señal Minusválidos</option>
+                    <option value="signal-no-parking">Prohibido Aparcar</option>
+                    <option value="signal-exit">Salida Emergencia</option>
+                    <option value="signal-no-entry">Prohibido el Paso</option>
+                    <option value="signal-wc">Señal WC</option>
+                    <option value="entrance">Entrada</option>
+                    <option value="zone-vip">Zona VIP</option>
+                    <option value="zone-camping">Zona Acampada</option>
+                    <option value="zone-parking">Zona Parking</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <input type="text" class="form-control" id="element-name">
+                </div>
+
+                <div id="fence-controls" class="form-group" style="display:none;">
+                  <select class="form-control" id="fence-mode">
+                    <option value="draw">Dibujar en mapa</option>
+                    <option value="fixed">Medida fija</option>
+                  </select>
+                  <div id="fence-fixed-length-group" style="display:none;">
+                    <input type="number" class="form-control" id="fence-fixed-length" value="10">
+                  </div>
+                </div>
+
+                <div id="patrol-controls" class="form-group" style="display:none;">
+                  <select class="form-control" id="patrol-mode">
+                    <option value="fixed">Sin recorrido (se queda quieto)</option>
+                    <option value="draw">Marcar recorrido a pie</option>
+                  </select>
+                </div>
+
+                <div id="dimension-controls" class="form-group">
+                  <input type="number" class="form-control" id="element-length" value="22">
+                  <input type="number" class="form-control" id="element-width" value="10">
+                </div>
+
+                <div class="icon-grid" id="icon-selector">
+                    <div class="icon-option selected" data-icon="stage"></div>
+                    <div class="icon-option" data-icon="bar"></div>
+                    <div class="icon-option" data-icon="food"></div>
+                    <div class="icon-option" data-icon="custom"></div>
+                    <div class="icon-option" data-icon="wc"></div>
+                    <div class="icon-option" data-icon="security"></div>
+                    <div class="icon-option" data-icon="drunk"></div>
+                    <div class="icon-option" data-icon="tiburon"></div>
+                    <div class="icon-option" data-icon="fence"></div>
+                    <div class="icon-option" data-icon="panic-fence"></div>
+                    <div class="icon-option" data-icon="parking"></div>
+                    <div class="icon-option" data-icon="disabled"></div>
+                    <div class="icon-option" data-icon="noparking"></div>
+                    <div class="icon-option" data-icon="no-entry"></div>
+                    <div class="icon-option" data-icon="exit"></div>
+                    <div class="icon-option" data-icon="entrance"></div>
+                </div>
+
+                <button class="btn" id="add-element"></button>
+            </div>
+
+            <div id="edit-panel" class="card" style="display:none;">
+                <div class="form-group" id="edit-rotation-group">
+                    <input type="range" class="form-control" id="element-rotation" min="0" max="360" value="0">
+                </div>
+                <div class="form-group">
+                    <input type="text" class="form-control" id="edit-element-name">
+                </div>
+                <div id="edit-dimension-controls" class="form-group">
+                    <input type="number" class="form-control" id="edit-element-length">
+                    <div id="edit-width-group">
+                        <input type="number" class="form-control" id="edit-element-width">
+                    </div>
+                </div>
+                <button class="btn btn-secondary" id="delete-element-btn"></button>
+            </div>
+
+            <div class="card">
+                <div class="elements-list" id="elements-list"></div>
+            </div>
+    </div>
+  </div>
+
+  <div id="stats-box">
+      <p>Total Vallas: <span id="stat-vallas-m" class="stat-val">0</span>m</p>
+      <p>Secciones (2m): <span id="stat-vallas-n" class="stat-val">0</span></p>
+      <p>Vallas Antipánico: <span id="stat-panic-m" class="stat-val">0</span>m</p>
+      <p>Total Baños: <span id="stat-wc" class="stat-val">0</span></p>
+      <p>Food Trucks: <span id="stat-food" class="stat-val">0</span></p>
+      <p>Barras: <span id="stat-bar" class="stat-val">0</span></p>
+  </div>
+
+  <div id="main-content">
+      <div id="map-container" class="view-container">
+          <div id="map"></div>
+          <div id="map-legend" class="map-legend">
+              <div class="legend-header" id="legend-toggle">
+                <span id="legend-arrow">▼</span>
+              </div>
+              <div id="legend-content">
+                <div id="legend-items"></div>
+              </div>
+          </div>
+      </div>
+      <div id="container-3d-full" class="view-container">
+          <canvas id="canvas-3d-full"></canvas>
+          <div id="tour-3d-caption"></div>
+          <div id="view3d-error-banner" style="display:none;"></div>
+          <button id="tour-3d-btn" class="btn-3d-tour">🎬 Tour automático</button>
+      </div>
+  </div>
+
+  <!-- Librerías JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/leaflet-rotate@0.2.8/dist/leaflet-rotate.min.js"></script>
+  <script src="https://unpkg.com/leaflet-search@2.9.7/dist/leaflet-search.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.132.2/examples/js/loaders/OBJLoader.js"></script>
+  <script src="js/map.js?v=3.43"></script>
+  <script src="js/elements.js?v=3.43"></script>
+  <script src="js/view3d.js?v=3.43"></script>
+  <script src="js/save-load.js?v=3.43"></script>
+  <script src="js/main.js?v=3.43"></script>
+  <script src="js/public.js?v=3.43"></script>
+</body>
+</html>

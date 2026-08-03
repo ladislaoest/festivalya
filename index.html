@@ -4834,6 +4834,18 @@
             return `${h}:${m}:${s}`;
         }
 
+        // Hora de entrada/salida reales (fichadas), para los informes de
+        // sueldos -si el empleado fichó más de una vez en el mismo evento,
+        // se listan todos los tramos en vez de solo el primero/último.
+        function formatFichajeSessionTimes(sessions) {
+            const formatT = (iso) => iso ? new Date(iso).toLocaleTimeString('es-ES', { hour: '2-digit', minute: '2-digit' }) : '-';
+            if (!sessions || sessions.length === 0) return { entrada: '-', salida: '-' };
+            return {
+                entrada: sessions.map(s => formatT(s.clockIn)).join(', '),
+                salida: sessions.map(s => formatT(s.clockOut)).join(', ')
+            };
+        }
+
         function populateTimeSelect(select, selectedValue) {
             select.innerHTML = '';
             for (let h = 0; h < 24; h++) {
@@ -5523,13 +5535,14 @@
                 (p.sessions || []).forEach(s => { if (s.clockIn && s.clockOut) totalTime += new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime(); });
                 const finalSalary = (totalTime / 3600000) * (emp.salary || 0);
                 totalSalary += finalSalary;
-                return [`${emp.name || ''} ${emp.last_name || ''}`, emp.position || '', formatFichajeTime(totalTime), `€${finalSalary.toFixed(2)}`];
+                const times = formatFichajeSessionTimes(p.sessions);
+                return [`${emp.name || ''} ${emp.last_name || ''}`, emp.position || '', times.entrada, times.salida, formatFichajeTime(totalTime), `€${finalSalary.toFixed(2)}`];
             });
 
             docPDF.text(`Informe de Sueldos (Salidas Registradas): ${eventName}`, 14, 15);
             docPDF.text(`Fecha: ${new Date().toLocaleDateString()}`, 14, 22);
             docPDF.autoTable({
-                head: [['Nombre', 'Puesto', 'Tiempo Total', 'Sueldo a Cobrar']],
+                head: [['Nombre', 'Puesto', 'Entrada', 'Salida', 'Tiempo Total', 'Sueldo a Cobrar']],
                 body: tableData,
                 startY: 30,
                 didDrawPage: (data) => {
@@ -5557,7 +5570,8 @@
                 let totalTime = 0;
                 (p.sessions || []).forEach(s => { if (s.clockIn && s.clockOut) totalTime += new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime(); });
                 const salary = (totalTime / 3600000) * (emp.salary || 0);
-                return { row: [`${emp.name || ''} ${emp.last_name || ''}`, emp.position || '', formatFichajeTime(totalTime), `€${salary.toFixed(2)}`], salary };
+                const times = formatFichajeSessionTimes(p.sessions);
+                return { row: [`${emp.name || ''} ${emp.last_name || ''}`, emp.position || '', times.entrada, times.salida, formatFichajeTime(totalTime), `€${salary.toFixed(2)}`], salary };
             };
 
             const paid = participants.filter(p => p.payment_status === 'paid').map(calcRow);
@@ -5572,7 +5586,7 @@
 
             let nextY = 30;
             if (unpaid.length > 0) {
-                docPDF.autoTable({ head: [['Nombre', 'Puesto', 'Tiempo Total', 'Sueldo']], body: unpaid.map(r => r.row), startY: nextY });
+                docPDF.autoTable({ head: [['Nombre', 'Puesto', 'Entrada', 'Salida', 'Tiempo Total', 'Sueldo']], body: unpaid.map(r => r.row), startY: nextY });
                 nextY = docPDF.lastAutoTable.finalY + 10;
                 docPDF.setFontSize(11);
                 docPDF.text(`Pendiente de Pago: €${totalPending.toFixed(2)}`, 14, nextY);
@@ -5581,7 +5595,7 @@
             if (paid.length > 0) {
                 docPDF.text('Ya Pagado (en informes anteriores)', 14, nextY);
                 nextY += 6;
-                docPDF.autoTable({ head: [['Nombre', 'Puesto', 'Tiempo Total', 'Sueldo']], body: paid.map(r => r.row), startY: nextY, theme: 'grid' });
+                docPDF.autoTable({ head: [['Nombre', 'Puesto', 'Entrada', 'Salida', 'Tiempo Total', 'Sueldo']], body: paid.map(r => r.row), startY: nextY, theme: 'grid' });
                 nextY = docPDF.lastAutoTable.finalY + 10;
             }
             docPDF.setFontSize(12);

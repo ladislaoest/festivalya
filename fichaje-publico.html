@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Fichaje - FestivalYa</title>
+<link rel="icon" type="image/png" href="icons/icon-32.png">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root {
+    --bg-primary: #0a0a0b;
+    --bg-elevated: #131317;
+    --bg-card: #17181d;
+    --bg-card-hover: #1c1d23;
+    --accent-gold: #d9a935;
+    --accent-gold-bright: #f2c85c;
+    --accent-gold-dim: rgba(217, 169, 53, 0.12);
+    --text-main: #f2f2f0;
+    --text-muted: #8b8d97;
+    --border-soft: #1d1e24;
+    --danger: #e5484d;
+    --success: #34d399;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; background: var(--bg-primary); color: var(--text-main);
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    padding: 24px 16px 60px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .subtitle { color: var(--text-muted); font-size: 13px; margin-bottom: 24px; }
+  .card {
+    background: var(--bg-card); border: 1px solid var(--border-soft); border-radius: 14px;
+    padding: 16px; margin-bottom: 12px; display: flex; justify-content: space-between;
+    align-items: center; gap: 14px; flex-wrap: wrap;
+  }
+  .name { font-weight: 700; font-size: 16px; }
+  .status-badge {
+    display: inline-flex; align-items: center; font-size: 11px; font-weight: 700;
+    text-transform: uppercase; letter-spacing: 0.4px; padding: 4px 10px; border-radius: 20px; margin-top: 6px;
+  }
+  .status-in { background: rgba(52,211,153,0.12); color: var(--success); }
+  .status-out { background: var(--bg-elevated); color: var(--text-muted); }
+  .time { font-family: monospace; font-size: 18px; font-weight: 700; color: var(--accent-gold-bright); }
+  .btn {
+    border: none; border-radius: 10px; padding: 12px 18px; font-weight: 700;
+    font-size: 14px; cursor: pointer;
+  }
+  .btn-in { background: var(--success); color: #08201a; }
+  .btn-out { background: var(--danger); color: #2a0a0b; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+  .empty, .error {
+    text-align: center; color: var(--text-muted); padding: 60px 20px; font-size: 14px;
+  }
+</style>
+</head>
+<body>
+  <h1 id="event_name">Cargando...</h1>
+  <div class="subtitle" id="event_date"></div>
+  <div id="list"></div>
+
+  <script>
+    // Enlace público de fichaje: sin login, ligado a un único evento (por
+    // id en la URL) y solo con lo mínimo para que alguien delegado pueda
+    // fichar entrada/salida del personal en tiempo real -nombre y tiempo
+    // trabajado, nada de sueldos, DNI, teléfono ni otros eventos.
+    const GROOVY_SUPABASE_URL = 'https://hspotavnqapbsabywxfp.supabase.co';
+    const GROOVY_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzcG90YXZucWFwYnNhYnl3eGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMDQ3NDIsImV4cCI6MjA2NzU4MDc0Mn0.V2II3YiL5xeOvkfhs9cp1I11jgfBNIJbryxKt_tJMIU';
+    const groovySb = supabase.createClient(GROOVY_SUPABASE_URL, GROOVY_SUPABASE_KEY);
+
+    const eventId = new URLSearchParams(location.search).get('event');
+    let participants = [];
+    let busy = false;
+    let eventFinalized = false;
+
+    function formatTime(ms) {
+        if (ms < 0) ms = 0;
+        const h = String(Math.floor(ms / 3600000)).padStart(2, '0');
+        const m = String(Math.floor((ms % 3600000) / 60000)).padStart(2, '0');
+        const s = String(Math.floor((ms % 60000) / 1000)).padStart(2, '0');
+        return `${h}:${m}:${s}`;
+    }
+
+    async function init() {
+        if (!eventId) {
+            document.getElementById('event_name').textContent = 'Enlace no válido';
+            document.getElementById('list').innerHTML = '<div class="error">Falta el identificador del evento.</div>';
+            return;
+        }
+        const { data: ev, error } = await groovySb.from('events').select('name, date').eq('id', eventId).maybeSingle();
+        if (error || !ev) {
+            document.getElementById('event_name').textContent = 'Evento no encontrado';
+            document.getElementById('list').innerHTML = '<div class="error">Revisá el enlace con la persona que te lo envió.</div>';
+            return;
+        }
+        document.getElementById('event_name').textContent = ev.name;
+        document.getElementById('event_date').textContent = ev.date ? new Date(ev.date + 'T00:00:00').toLocaleDateString() : '';
+        await load();
+        setInterval(tick, 1000);
+    }
+
+    async function load() {
+        const { data: eventRow } = await groovySb.from('events').select('status').eq('id', eventId).maybeSingle();
+        eventFinalized = !!(eventRow && eventRow.status === 'Finalizado');
+
+        const { data, error } = await groovySb.from('participants').select('id, status, sessions, employees(name, last_name)').eq('event_id', eventId);
+        if (error) { document.getElementById('list').innerHTML = '<div class="error">No se pudo cargar el fichaje.</div>'; return; }
+        participants = data || [];
+        participants.sort((a, b) => {
+            const na = `${(a.employees || {}).name || ''} ${(a.employees || {}).last_name || ''}`;
+            const nb = `${(b.employees || {}).name || ''} ${(b.employees || {}).last_name || ''}`;
+            return na.localeCompare(nb);
+        });
+        render();
+    }
+
+    function render() {
+        const list = document.getElementById('list');
+        const banner = eventFinalized
+            ? '<div class="error" style="padding:14px; margin-bottom:16px; border:1px solid var(--danger); border-radius:10px; color:var(--danger);">Este evento está finalizado. Ya no se puede fichar.</div>'
+            : '';
+
+        if (participants.length === 0) {
+            list.innerHTML = banner + '<div class="empty">Todavía no hay empleados asignados a este evento.</div>';
+            return;
+        }
+        list.innerHTML = banner + participants.map(p => {
+            const emp = p.employees || {};
+            const label = p.status === 'in' ? 'Fichado' : 'Fuera';
+            return `
+            <div class="card" data-id="${p.id}" data-status="${p.status}" data-sessions='${JSON.stringify(p.sessions || [])}'>
+                <div>
+                    <div class="name">${emp.name || '?'} ${emp.last_name || ''}</div>
+                    <span class="status-badge status-${p.status}">${label}</span>
+                </div>
+                <div style="display:flex; align-items:center; gap:16px;">
+                    <div class="time" id="time_${p.id}">00:00:00</div>
+                    <button class="btn ${p.status === 'in' ? 'btn-out' : 'btn-in'}" onclick="toggleClock('${p.id}')" ${eventFinalized ? 'disabled' : ''}>${p.status === 'in' ? 'Fichar Salida' : 'Fichar Entrada'}</button>
+                </div>
+            </div>`;
+        }).join('');
+        tick();
+    }
+
+    function tick() {
+        document.querySelectorAll('[data-id]').forEach(card => {
+            const status = card.dataset.status;
+            const sessions = JSON.parse(card.dataset.sessions || '[]');
+            let total = 0;
+            sessions.forEach(s => {
+                if (s.clockIn && s.clockOut) total += new Date(s.clockOut).getTime() - new Date(s.clockIn).getTime();
+                else if (s.clockIn && !s.clockOut && status === 'in') total += Date.now() - new Date(s.clockIn).getTime();
+            });
+            const el = document.getElementById(`time_${card.dataset.id}`);
+            if (el) el.textContent = formatTime(total);
+        });
+    }
+
+    async function toggleClock(participantId) {
+        if (busy || eventFinalized) return;
+        busy = true;
+        try {
+            const { data: p, error } = await groovySb.from('participants').select('*').eq('id', participantId).single();
+            if (error || !p) { alert('No se pudo fichar.'); return; }
+
+            if (p.status !== 'in') {
+                const sessions = p.sessions || [];
+                sessions.push({ clockIn: new Date().toISOString(), clockOut: null });
+                await groovySb.from('participants').update({ status: 'in', sessions, payment_status: null }).eq('id', participantId);
+
+                const { data: eventRow } = await groovySb.from('events').select('status').eq('id', eventId).maybeSingle();
+                if (eventRow && eventRow.status === 'Planificado') {
+                    await groovySb.from('events').update({ status: 'En Transcurso' }).eq('id', eventId);
+                }
+            } else {
+                const sessions = p.sessions || [];
+                if (sessions.length > 0 && !sessions[sessions.length - 1].clockOut) {
+                    sessions[sessions.length - 1].clockOut = new Date().toISOString();
+                    await groovySb.from('participants').update({ status: 'out', sessions }).eq('id', participantId);
+                }
+            }
+            await load();
+        } finally {
+            busy = false;
+        }
+    }
+
+    init();
+  </script>
+</body>
+</html>

@@ -1731,6 +1731,7 @@
                     <button type="button" class="view-toggle-btn" id="fichaje_gestoria_btn" onclick="createGestoriaFiles()">Generar Archivo Gestoría</button>
                     <button type="button" class="view-toggle-btn" id="fichaje_reset_btn" onclick="resetEvent()">Reiniciar Evento</button>
                     <button type="button" class="view-toggle-btn" id="fichaje_finalize_btn" onclick="finalizeEvent()">Finalizar Evento</button>
+                    <button type="button" class="view-toggle-btn" id="fichaje_public_link_btn" onclick="copyFichajePublicLink()">Enlace Público de Fichaje</button>
                 </div>
 
                 <div id="fichaje_finalized_banner" style="display:none; margin-bottom:14px; padding:10px 14px; border-radius:10px; background: var(--danger-dim); color: var(--danger); font-size:13px; font-weight:600;">Este evento está finalizado. Reiniciá el evento para volver a fichar.</div>
@@ -4803,6 +4804,21 @@
             }
         }
 
+        // Enlace público de fichaje (fichaje-publico.html): ligado a un solo
+        // evento de Groovy app, sin login. Quien lo abra solo ve nombres y
+        // tiempo trabajado y puede fichar entrada/salida -nada de sueldos,
+        // DNI, teléfono ni otros eventos.
+        async function copyFichajePublicLink() {
+            if (!currentFichajeEventId) return;
+            const url = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}fichaje-publico.html?event=${encodeURIComponent(currentFichajeEventId)}`;
+            try {
+                await navigator.clipboard.writeText(url);
+                alert('Enlace público de fichaje copiado. Quien lo abra podrá fichar entrada/salida de este evento, sin ver sueldos ni otros datos.');
+            } catch (err) {
+                prompt('Copiá este enlace para que alguien ficha por vos (solo entrada/salida, sin sueldos):', url);
+            }
+        }
+
         // --- FICHAJE DE EMPLEADOS (admin) ---
         // Usa la base de datos de "Groovy app" (groovySb) en vez de la de
         // festivalya: ahí ya viven los empleados y el histórico de eventos
@@ -5165,7 +5181,7 @@
             eventParticipantsCache = data || [];
 
             document.querySelectorAll('#fichaje_event_detail .view-toggle-btn, #fichaje_event_detail .btn-add-event').forEach(btn => {
-                if (btn.id === 'fichaje_reset_btn') return; // el reset siempre debe quedar disponible para desbloquear
+                if (btn.id === 'fichaje_reset_btn' || btn.id === 'fichaje_public_link_btn') return; // el reset y el enlace público siempre quedan disponibles
                 btn.disabled = finalized;
                 btn.style.opacity = finalized ? '0.5' : '';
                 btn.style.pointerEvents = finalized ? 'none' : '';

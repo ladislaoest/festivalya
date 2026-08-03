@@ -4810,12 +4810,16 @@
         // DNI, teléfono ni otros eventos.
         async function copyFichajePublicLink() {
             if (!currentFichajeEventId) return;
-            const url = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}fichaje-publico.html?event=${encodeURIComponent(currentFichajeEventId)}`;
+            // Válido 24h desde que se genera -pasado ese plazo, fichaje-publico.html
+            // lo rechaza aunque el evento siga activo. Volver a pulsar el botón
+            // genera un enlace nuevo con otras 24h.
+            const exp = Date.now() + 24 * 60 * 60 * 1000;
+            const url = `${window.location.origin}${window.location.pathname.replace(/[^/]*$/, '')}fichaje-publico.html?event=${encodeURIComponent(currentFichajeEventId)}&exp=${exp}`;
             try {
                 await navigator.clipboard.writeText(url);
-                alert('Enlace público de fichaje copiado. Quien lo abra podrá fichar entrada/salida de este evento, sin ver sueldos ni otros datos.');
+                alert('Enlace público de fichaje copiado (válido 24 horas). Quien lo abra podrá fichar entrada/salida de este evento, sin ver sueldos ni otros datos.');
             } catch (err) {
-                prompt('Copiá este enlace para que alguien ficha por vos (solo entrada/salida, sin sueldos):', url);
+                prompt('Copiá este enlace para que alguien ficha por vos (solo entrada/salida, sin sueldos, válido 24h):', url);
             }
         }
 

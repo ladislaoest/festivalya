@@ -68,7 +68,9 @@
     const GROOVY_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzcG90YXZucWFwYnNhYnl3eGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMDQ3NDIsImV4cCI6MjA2NzU4MDc0Mn0.V2II3YiL5xeOvkfhs9cp1I11jgfBNIJbryxKt_tJMIU';
     const groovySb = supabase.createClient(GROOVY_SUPABASE_URL, GROOVY_SUPABASE_KEY);
 
-    const eventId = new URLSearchParams(location.search).get('event');
+    const urlParams = new URLSearchParams(location.search);
+    const eventId = urlParams.get('event');
+    const linkExp = parseInt(urlParams.get('exp'), 10);
     let participants = [];
     let busy = false;
     let eventFinalized = false;
@@ -85,6 +87,14 @@
         if (!eventId) {
             document.getElementById('event_name').textContent = 'Enlace no válido';
             document.getElementById('list').innerHTML = '<div class="error">Falta el identificador del evento.</div>';
+            return;
+        }
+        // El enlace lleva su propia caducidad (24h desde que se generó, ver
+        // copyFichajePublicLink en index.html) -pasado ese plazo no se carga
+        // nada, ni siquiera en modo solo lectura, aunque el evento siga activo.
+        if (!linkExp || isNaN(linkExp) || Date.now() > linkExp) {
+            document.getElementById('event_name').textContent = 'Enlace caducado';
+            document.getElementById('list').innerHTML = '<div class="error">Este enlace ya no es válido (los enlaces de fichaje duran 24 horas). Pedile al organizador uno nuevo.</div>';
             return;
         }
         const { data: ev, error } = await groovySb.from('events').select('name, date').eq('id', eventId).maybeSingle();

@@ -1650,19 +1650,35 @@
                 <div id="employees_grid" class="card-group"></div>
             </div>
 
-            <h2>Personal del Evento</h2>
-            <div id="fichaje_no_event" style="display:none; text-align:center; color:var(--text-muted); padding:40px 0;">Seleccioná un evento en la pestaña Eventos para gestionar su personal.</div>
-
-            <div id="fichaje_event_content">
+            <div id="fichaje_events_section">
                 <div class="form-card" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
-                    <button type="button" class="btn-add-event" onclick="openAddParticipantsModal()">+ Añadir empleado al evento</button>
-                    <div style="display:flex; gap:8px; flex-wrap:wrap;">
-                        <button type="button" class="view-toggle-btn" id="fichaje_notify_btn" onclick="sendAllWhatsAppNotifications()">Notificar a todos</button>
-                        <button type="button" class="view-toggle-btn" id="fichaje_report_btn" onclick="generatePartialSalaryReport()">Informe de Sueldos</button>
-                        <button type="button" class="view-toggle-btn" id="fichaje_gestoria_btn" onclick="createGestoriaFiles()">Archivo Gestoría</button>
-                        <button type="button" class="view-toggle-btn" id="fichaje_reset_btn" onclick="resetEvent()">Reiniciar Evento</button>
-                        <button type="button" class="view-toggle-btn" id="fichaje_finalize_btn" onclick="finalizeEvent()">Finalizar Evento</button>
+                    <h2 style="margin:0;">Eventos (Fichaje)</h2>
+                    <button type="button" class="btn-add-event" onclick="openFichajeEventModal()">+ Crear Evento</button>
+                </div>
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+                    <button type="button" class="view-toggle-btn active" data-fichaje-filter="Todos" onclick="setFichajeEventsStatusFilter('Todos')">Todos</button>
+                    <button type="button" class="view-toggle-btn" data-fichaje-filter="Planificado" onclick="setFichajeEventsStatusFilter('Planificado')">Planificado</button>
+                    <button type="button" class="view-toggle-btn" data-fichaje-filter="En Transcurso" onclick="setFichajeEventsStatusFilter('En Transcurso')">En Curso</button>
+                    <button type="button" class="view-toggle-btn" data-fichaje-filter="Finalizado" onclick="setFichajeEventsStatusFilter('Finalizado')">Finalizado</button>
+                </div>
+                <div id="fichaje_events_grid" class="card-group"></div>
+            </div>
+
+            <div id="fichaje_event_detail" style="display:none;">
+                <div class="form-card" style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap; margin-bottom:14px;">
+                    <div>
+                        <button type="button" class="btn-logout" onclick="backToFichajeEvents()" style="margin-bottom:8px;">&larr; Volver a Eventos</button>
+                        <h2 id="fichaje_event_detail_title" style="margin:0;"></h2>
                     </div>
+                    <button type="button" class="btn-add-event" onclick="openAddParticipantsModal()">+ Añadir empleado al evento</button>
+                </div>
+
+                <div style="display:flex; gap:8px; flex-wrap:wrap; margin-bottom:14px;">
+                    <button type="button" class="view-toggle-btn" id="fichaje_notify_btn" onclick="sendAllWhatsAppNotifications()">Notificar a todos</button>
+                    <button type="button" class="view-toggle-btn" id="fichaje_report_btn" onclick="generatePartialSalaryReport()">Informe de Sueldos</button>
+                    <button type="button" class="view-toggle-btn" id="fichaje_gestoria_btn" onclick="createGestoriaFiles()">Archivo Gestoría</button>
+                    <button type="button" class="view-toggle-btn" id="fichaje_reset_btn" onclick="resetEvent()">Reiniciar Evento</button>
+                    <button type="button" class="view-toggle-btn" id="fichaje_finalize_btn" onclick="finalizeEvent()">Finalizar Evento</button>
                 </div>
 
                 <div id="fichaje_finalized_banner" style="display:none; margin-bottom:14px; padding:10px 14px; border-radius:10px; background: var(--danger-dim); color: var(--danger); font-size:13px; font-weight:600;">Este evento está finalizado. Reiniciá el evento para volver a fichar.</div>
@@ -1741,6 +1757,20 @@
             <div class="modal-actions">
                 <button type="button" class="btn-logout" onclick="closeEmployeeModal()">Cancelar</button>
                 <button type="button" class="btn-add-event" id="employee_save_btn" onclick="saveEmployee()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="fichaje-event-modal-overlay" class="modal-overlay">
+        <div class="modal-card">
+            <h3>Crear Evento (Fichaje)</h3>
+            <div class="card-group">
+                <div class="form-card"><label>Nombre del Evento</label><input type="text" id="fichaje_event_name" placeholder="Ej: Festival de Verano"></div>
+                <div class="form-card"><label>Fecha</label><input type="date" id="fichaje_event_date"></div>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-logout" onclick="closeFichajeEventModal()">Cancelar</button>
+                <button type="button" class="btn-add-event" id="fichaje_event_save_btn" onclick="saveFichajeEvent()">Crear</button>
             </div>
         </div>
     </div>
@@ -1891,6 +1921,13 @@
         const SUPABASE_URL = 'https://atmxqrkcvvatfqsvkdcm.supabase.co';
         const SUPABASE_KEY = 'sb_publishable_jAo0VLnlU5UFF2J5rl4LJQ_UGlSaMPu';
         const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+        // --- CONEXIÓN A LA BASE DE DATOS DE "GROOVY APP" (fichaje: empleados y
+        // eventos ya existentes ahí, con mucho histórico -se usa la misma base
+        // en vivo en vez de duplicar datos en la de festivalya) ---
+        const GROOVY_SUPABASE_URL = 'https://hspotavnqapbsabywxfp.supabase.co';
+        const GROOVY_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImhzcG90YXZucWFwYnNhYnl3eGZwIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTIwMDQ3NDIsImV4cCI6MjA2NzU4MDc0Mn0.V2II3YiL5xeOvkfhs9cp1I11jgfBNIJbryxKt_tJMIU';
+        const groovySb = supabase.createClient(GROOVY_SUPABASE_URL, GROOVY_SUPABASE_KEY);
 
         // Iconos SVG reutilizados en contenido generado por JS
         const ICON_TRASH = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>';
@@ -4655,7 +4692,7 @@
                 markTalkieSeen();
             } else if (tabId === 'tab_fichaje') {
                 loadEmployees();
-                loadEventParticipants();
+                loadFichajeEvents();
             } else {
                 window.scrollTo({top: 0, behavior: 'smooth'});
             }
@@ -4698,6 +4735,12 @@
         }
 
         // --- FICHAJE DE EMPLEADOS (admin) ---
+        // Usa la base de datos de "Groovy app" (groovySb) en vez de la de
+        // festivalya: ahí ya viven los empleados y el histórico de eventos
+        // reales, y esta sección se conecta en vivo a esos mismos datos en
+        // lugar de duplicarlos. Por eso "evento" aquí es el propio evento de
+        // Groovy app (su tabla events/participants), independiente del
+        // currentEvent/eventsCache de festivalya que usa el resto de pestañas.
         let employeesCache = [];
         let eventParticipantsCache = [];
         let editingEmployeeId = null;
@@ -4706,6 +4749,9 @@
         let lastUsedSchedule = null;
         let scheduleModalResolve = null;
         let whatsappNotificationQueue = [];
+        let fichajeEventsCache = [];
+        let fichajeEventsStatusFilter = 'Todos';
+        let currentFichajeEventId = null;
 
         function sanitizeFilename(name) {
             return (name || '').replace(/[^a-zA-Z0-9._-]/g, '_');
@@ -4732,9 +4778,9 @@
             }
         }
 
-        // --- Empleados (plantilla global) ---
+        // --- Empleados (plantilla global, tabla "employees" de Groovy app) ---
         async function loadEmployees() {
-            const { data, error } = await sb.from('employees').select('*').order('name');
+            const { data, error } = await groovySb.from('employees').select('*').order('name');
             if (error) { console.error('Error cargando empleados:', error); return; }
             employeesCache = data || [];
             renderEmployeeGrid();
@@ -4758,8 +4804,8 @@
                         <div class="event-card-date">${e.position || 'Sin puesto'} · €${Number(e.salary || 0).toFixed(2)}/h${e.files && e.files.length ? ` · ${e.files.length} archivo(s)` : ''}</div>
                     </div>
                     <div style="display:flex; gap:8px;">
-                        <button type="button" class="btn-logout" style="padding:8px 12px;" onclick="openEmployeeModal(${e.id})">Editar</button>
-                        <button type="button" class="btn-logout" style="padding:8px 12px;" onclick="deleteEmployee(${e.id})">${ICON_TRASH}</button>
+                        <button type="button" class="btn-logout" style="padding:8px 12px;" onclick="openEmployeeModal('${e.id}')">Editar</button>
+                        <button type="button" class="btn-logout" style="padding:8px 12px;" onclick="deleteEmployee('${e.id}')">${ICON_TRASH}</button>
                     </div>
                 </div>
             `).join('');
@@ -4824,15 +4870,15 @@
                 const selectedFiles = Array.from(fileInput.files || []);
                 for (const file of selectedFiles) {
                     const fileName = `${Date.now()}_${sanitizeFilename(file.name)}`;
-                    const { error: uploadError } = await sb.storage.from('employee-files').upload(fileName, file);
+                    const { error: uploadError } = await groovySb.storage.from('employee-files').upload(fileName, file);
                     if (uploadError) throw uploadError;
-                    const { data: urlData } = sb.storage.from('employee-files').getPublicUrl(fileName);
+                    const { data: urlData } = groovySb.storage.from('employee-files').getPublicUrl(fileName);
                     employeeData.files.push({ name: file.name, url: urlData.publicUrl, path: fileName });
                 }
 
                 const { error } = editingEmployeeId
-                    ? await sb.from('employees').update(employeeData).eq('id', editingEmployeeId)
-                    : await sb.from('employees').insert([employeeData]);
+                    ? await groovySb.from('employees').update(employeeData).eq('id', editingEmployeeId)
+                    : await groovySb.from('employees').insert([employeeData]);
                 if (error) throw error;
 
                 closeEmployeeModal();
@@ -4846,36 +4892,113 @@
 
         async function deleteEmployee(id) {
             if (!confirm('¿Seguro que quieres eliminar este empleado? También se quitará de cualquier evento en el que estuviera fichado.')) return;
-            const { error } = await sb.from('employees').delete().eq('id', id);
+            const { error } = await groovySb.from('employees').delete().eq('id', id);
             if (error) { alert('Error eliminando: ' + error.message); return; }
             await loadEmployees();
-            await loadEventParticipants();
+            if (currentFichajeEventId) await loadEventParticipants();
         }
 
-        // --- Personal del evento (ligado a currentEvent) ---
-        async function loadEventParticipants() {
-            const noEventBox = document.getElementById('fichaje_no_event');
-            const content = document.getElementById('fichaje_event_content');
-            if (!noEventBox || !content) return;
+        // --- Eventos de fichaje (tabla "events" de Groovy app, independiente de los eventos de festivalya) ---
+        async function loadFichajeEvents() {
+            const { data, error } = await groovySb.from('events').select('*').order('date', { ascending: false });
+            if (error) { console.error('Error cargando eventos de fichaje:', error); return; }
+            fichajeEventsCache = data || [];
+            renderFichajeEvents();
+        }
 
-            if (!currentEvent) {
-                noEventBox.style.display = 'flex';
-                content.style.display = 'none';
-                stopFichajeTimers();
+        function fichajeEventStatusBadgeClass(status) {
+            if (status === 'En Transcurso') return 'status-in';
+            if (status === 'Finalizado') return 'status-out';
+            return 'status-scheduled'; // Planificado
+        }
+
+        function renderFichajeEvents() {
+            const grid = document.getElementById('fichaje_events_grid');
+            if (!grid) return;
+            document.querySelectorAll('[data-fichaje-filter]').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.fichajeFilter === fichajeEventsStatusFilter);
+            });
+            const filtered = fichajeEventsStatusFilter === 'Todos'
+                ? fichajeEventsCache
+                : fichajeEventsCache.filter(ev => ev.status === fichajeEventsStatusFilter);
+
+            if (filtered.length === 0) {
+                grid.innerHTML = `<div class="form-card" style="text-align:center; color:var(--text-muted);">No hay eventos${fichajeEventsStatusFilter !== 'Todos' ? ' en este estado' : ' todavía'}.</div>`;
                 return;
             }
-            noEventBox.style.display = 'none';
-            content.style.display = 'block';
+            grid.innerHTML = filtered.map(ev => `
+                <div class="event-card" onclick="openFichajeEventDetail('${ev.id}')">
+                    <div>
+                        <div class="event-card-name">${ev.name}</div>
+                        <div class="event-card-date">${ev.date ? new Date(ev.date + 'T00:00:00').toLocaleDateString() : 'Sin fecha'}</div>
+                    </div>
+                    <span class="status-badge ${fichajeEventStatusBadgeClass(ev.status)}">${ev.status || 'Planificado'}</span>
+                </div>
+            `).join('');
+        }
 
-            const { data, error } = await sb.from('event_participants').select('*, employees(*)').eq('event_id', currentEvent);
+        function setFichajeEventsStatusFilter(filter) {
+            fichajeEventsStatusFilter = filter;
+            renderFichajeEvents();
+        }
+
+        function openFichajeEventModal() {
+            document.getElementById('fichaje_event_name').value = '';
+            document.getElementById('fichaje_event_date').value = '';
+            document.getElementById('fichaje-event-modal-overlay').style.display = 'flex';
+        }
+
+        function closeFichajeEventModal() {
+            document.getElementById('fichaje-event-modal-overlay').style.display = 'none';
+        }
+
+        async function saveFichajeEvent() {
+            const name = document.getElementById('fichaje_event_name').value.trim();
+            const date = document.getElementById('fichaje_event_date').value;
+            if (!name || !date) { alert('El nombre y la fecha son obligatorios.'); return; }
+
+            const btn = document.getElementById('fichaje_event_save_btn');
+            btn.disabled = true;
+            const { data, error } = await groovySb.from('events').insert({ name, date, status: 'Planificado' }).select().single();
+            btn.disabled = false;
+            if (error) { alert('Error creando el evento: ' + error.message); return; }
+
+            closeFichajeEventModal();
+            await loadFichajeEvents();
+            openFichajeEventDetail(data.id);
+            openAddParticipantsModal();
+        }
+
+        function openFichajeEventDetail(eventId) {
+            currentFichajeEventId = eventId;
+            const ev = fichajeEventsCache.find(e => e.id === eventId);
+            document.getElementById('fichaje_event_detail_title').textContent = ev ? ev.name : '';
+            document.getElementById('fichaje_events_section').style.display = 'none';
+            document.getElementById('fichaje_event_detail').style.display = 'block';
+            loadEventParticipants();
+        }
+
+        function backToFichajeEvents() {
+            currentFichajeEventId = null;
+            stopFichajeTimers();
+            document.getElementById('fichaje_event_detail').style.display = 'none';
+            document.getElementById('fichaje_events_section').style.display = 'block';
+            loadFichajeEvents();
+        }
+
+        // --- Personal del evento (ligado a currentFichajeEventId) ---
+        async function loadEventParticipants() {
+            if (!currentFichajeEventId) return;
+
+            const { data, error } = await groovySb.from('participants').select('*, employees(*)').eq('event_id', currentFichajeEventId);
             if (error) { console.error('Error cargando personal del evento:', error); return; }
             eventParticipantsCache = data || [];
 
-            const { data: eventRow } = await sb.from('events').select('fichaje_finalizado_at').eq('id', currentEvent).maybeSingle();
-            const finalized = !!(eventRow && eventRow.fichaje_finalizado_at);
+            const { data: eventRow } = await groovySb.from('events').select('status').eq('id', currentFichajeEventId).maybeSingle();
+            const finalized = !!(eventRow && eventRow.status === 'Finalizado');
             document.getElementById('fichaje_finalized_banner').style.display = finalized ? 'block' : 'none';
 
-            document.querySelectorAll('#fichaje_event_content .view-toggle-btn, #fichaje_event_content > .form-card .btn-add-event').forEach(btn => {
+            document.querySelectorAll('#fichaje_event_detail .view-toggle-btn, #fichaje_event_detail .btn-add-event').forEach(btn => {
                 if (btn.id === 'fichaje_reset_btn') return; // el reset siempre debe quedar disponible para desbloquear
                 btn.disabled = finalized;
                 btn.style.opacity = finalized ? '0.5' : '';
@@ -4909,7 +5032,7 @@
                     </div>
                     <div class="staff-card-row">
                         <div class="event-card-date">Horario: ${p.estimated_schedule || 'N/A'}
-                            <button type="button" class="btn-logout" style="padding:2px 8px; margin-left:6px;" onclick="editParticipantSchedule(${p.id})" ${finalized ? 'disabled' : ''}>Editar</button>
+                            <button type="button" class="btn-logout" style="padding:2px 8px; margin-left:6px;" onclick="editParticipantSchedule('${p.id}')" ${finalized ? 'disabled' : ''}>Editar</button>
                         </div>
                         <div style="display:flex; gap:14px; align-items:center; font-size:13px;">
                             <span>⏱ <span id="time_${p.id}">00:00:00</span></span>
@@ -4917,10 +5040,10 @@
                         </div>
                     </div>
                     <div class="staff-card-row">
-                        <button type="button" class="btn-add-event" onclick="toggleClock(${p.id})" ${finalized ? 'disabled' : ''}>${p.status === 'in' ? 'Fichar Salida' : 'Fichar Entrada'}</button>
+                        <button type="button" class="btn-add-event" onclick="toggleClock('${p.id}')" ${finalized ? 'disabled' : ''}>${p.status === 'in' ? 'Fichar Salida' : 'Fichar Entrada'}</button>
                         <div style="display:flex; gap:8px;">
-                            <button type="button" class="btn-logout" onclick="resetParticipant(${p.id})" ${finalized ? 'disabled' : ''}>Reiniciar</button>
-                            <button type="button" class="btn-logout" onclick="removeParticipant(${p.id})" ${finalized ? 'disabled' : ''}>Quitar</button>
+                            <button type="button" class="btn-logout" onclick="resetParticipant('${p.id}')" ${finalized ? 'disabled' : ''}>Reiniciar</button>
+                            <button type="button" class="btn-logout" onclick="removeParticipant('${p.id}')" ${finalized ? 'disabled' : ''}>Quitar</button>
                         </div>
                     </div>
                 </div>`;
@@ -4968,15 +5091,21 @@
 
         // --- Fichar entrada/salida ---
         async function toggleClock(participantId) {
-            const { data: p, error } = await sb.from('event_participants').select('*, employees(*)').eq('id', participantId).single();
+            const { data: p, error } = await groovySb.from('participants').select('*, employees(*)').eq('id', participantId).single();
             if (error || !p) { alert('No se pudo cargar el fichaje.'); return; }
 
             if (p.status !== 'in') {
                 const now = new Date().toISOString();
                 const sessions = p.sessions || [];
                 sessions.push({ clockIn: now, clockOut: null });
-                const { error: updErr } = await sb.from('event_participants').update({ status: 'in', sessions, payment_status: null }).eq('id', participantId);
+                const { error: updErr } = await groovySb.from('participants').update({ status: 'in', sessions, payment_status: null }).eq('id', participantId);
                 if (updErr) { alert('Error fichando entrada: ' + updErr.message); return; }
+
+                const { data: eventRow } = await groovySb.from('events').select('status').eq('id', currentFichajeEventId).maybeSingle();
+                if (eventRow && eventRow.status === 'Planificado') {
+                    await groovySb.from('events').update({ status: 'En Transcurso' }).eq('id', currentFichajeEventId);
+                    await loadFichajeEvents();
+                }
                 await loadEventParticipants();
             } else {
                 openClockOutModal(p);
@@ -5033,12 +5162,12 @@
         }
 
         async function performClockOut(participantId, clockOutTime, newStatus) {
-            const { data: p, error } = await sb.from('event_participants').select('*').eq('id', participantId).single();
+            const { data: p, error } = await groovySb.from('participants').select('*').eq('id', participantId).single();
             if (error || !p) return;
             const sessions = p.sessions || [];
             if (sessions.length > 0 && !sessions[sessions.length - 1].clockOut) {
                 sessions[sessions.length - 1].clockOut = clockOutTime.toISOString();
-                const { error: updErr } = await sb.from('event_participants').update({ status: newStatus, sessions }).eq('id', participantId);
+                const { error: updErr } = await groovySb.from('participants').update({ status: newStatus, sessions }).eq('id', participantId);
                 if (updErr) { alert('Error fichando salida: ' + updErr.message); return; }
             }
             closeClockOutModal();
@@ -5062,7 +5191,7 @@
             scheduleModalResolve = async () => {
                 const newStart = document.getElementById('schedule_start_select').value;
                 const newEnd = document.getElementById('schedule_end_select').value;
-                const { error } = await sb.from('event_participants').update({ estimated_schedule: `${newStart} - ${newEnd}` }).eq('id', participantId);
+                const { error } = await groovySb.from('participants').update({ estimated_schedule: `${newStart} - ${newEnd}` }).eq('id', participantId);
                 if (error) { alert('Error guardando horario: ' + error.message); return; }
                 closeScheduleModal();
                 await loadEventParticipants();
@@ -5103,7 +5232,7 @@
 
         // --- Añadir empleados al evento ---
         function openAddParticipantsModal() {
-            if (!currentEvent) return;
+            if (!currentFichajeEventId) return;
             const assignedIds = new Set(eventParticipantsCache.map(p => p.employee_id));
             const available = employeesCache.filter(e => !assignedIds.has(e.id));
             const box = document.getElementById('participant_checkboxes');
@@ -5125,15 +5254,15 @@
         }
 
         async function confirmAddParticipants() {
-            const selected = Array.from(document.querySelectorAll('.participant-checkbox:checked')).map(cb => parseInt(cb.value, 10));
+            const selected = Array.from(document.querySelectorAll('.participant-checkbox:checked')).map(cb => cb.value);
             closeParticipantModal();
             if (selected.length === 0) return;
 
             for (const employeeId of selected) {
                 const emp = employeesCache.find(e => e.id === employeeId);
                 const schedule = await promptForSchedule(emp);
-                const { error } = await sb.from('event_participants').insert({
-                    event_id: currentEvent, employee_id: employeeId,
+                const { error } = await groovySb.from('participants').insert({
+                    event_id: currentFichajeEventId, employee_id: employeeId,
                     estimated_schedule: schedule, status: 'out', sessions: []
                 });
                 if (error) alert(`Error añadiendo a ${emp ? emp.name : 'empleado'}: ` + error.message);
@@ -5143,21 +5272,21 @@
 
         async function resetParticipant(participantId) {
             if (!confirm('¿Reiniciar el fichaje de este empleado? Se borrará su historial de entradas/salidas en este evento.')) return;
-            const { error } = await sb.from('event_participants').update({ sessions: [], status: 'out', payment_status: null }).eq('id', participantId);
+            const { error } = await groovySb.from('participants').update({ sessions: [], status: 'out', payment_status: null }).eq('id', participantId);
             if (error) { alert('Error: ' + error.message); return; }
             await loadEventParticipants();
         }
 
         async function removeParticipant(participantId) {
             if (!confirm('¿Quitar a este empleado del evento?')) return;
-            const { error } = await sb.from('event_participants').delete().eq('id', participantId);
+            const { error } = await groovySb.from('participants').delete().eq('id', participantId);
             if (error) { alert('Error: ' + error.message); return; }
             await loadEventParticipants();
         }
 
         // --- Finalizar / reiniciar evento ---
         async function finalizeEvent() {
-            if (!currentEvent) return;
+            if (!currentFichajeEventId) return;
             if (!confirm('¿Seguro que quieres finalizar este evento? Se generará el informe final de sueldos y se bloqueará el fichaje hasta que lo reinicies.')) return;
 
             const stillIn = eventParticipantsCache.filter(p => p.status === 'in');
@@ -5166,19 +5295,21 @@
                 if (sessions.length > 0 && !sessions[sessions.length - 1].clockOut) {
                     sessions[sessions.length - 1].clockOut = new Date().toISOString();
                 }
-                await sb.from('event_participants').update({ status: 'out', sessions }).eq('id', p.id);
+                await groovySb.from('participants').update({ status: 'out', sessions }).eq('id', p.id);
             }
 
-            await sb.from('events').update({ fichaje_finalizado_at: new Date().toISOString() }).eq('id', currentEvent);
+            await groovySb.from('events').update({ status: 'Finalizado' }).eq('id', currentFichajeEventId);
+            await loadFichajeEvents();
             await loadEventParticipants();
             await generateFinalSalaryReport();
         }
 
         async function resetEvent() {
-            if (!currentEvent) return;
+            if (!currentFichajeEventId) return;
             if (!confirm('¿Reiniciar el fichaje de TODO el evento? Se borrará el historial de todos los empleados y se desbloqueará.')) return;
-            await sb.from('event_participants').update({ sessions: [], status: 'out', payment_status: null }).eq('event_id', currentEvent);
-            await sb.from('events').update({ fichaje_finalizado_at: null }).eq('id', currentEvent);
+            await groovySb.from('participants').update({ sessions: [], status: 'out', payment_status: null }).eq('event_id', currentFichajeEventId);
+            await groovySb.from('events').update({ status: 'Planificado' }).eq('id', currentFichajeEventId);
+            await loadFichajeEvents();
             await loadEventParticipants();
         }
 
@@ -5211,16 +5342,16 @@
         }
 
         function fichajeEventName() {
-            const ev = eventsCache ? eventsCache[currentEvent] : null;
-            return (ev && ev.name) ? ev.name : currentEvent;
+            const ev = fichajeEventsCache.find(e => e.id === currentFichajeEventId);
+            return ev ? ev.name : '';
         }
 
         // --- Informes ---
         async function generatePartialSalaryReport() {
-            if (!currentEvent) return;
+            if (!currentFichajeEventId) return;
             const eventName = fichajeEventName();
 
-            const { data: participants, error } = await sb.from('event_participants').select('*, employees(*)').eq('event_id', currentEvent).or('status.eq.out,status.eq.scheduled');
+            const { data: participants, error } = await groovySb.from('participants').select('*, employees(*)').eq('event_id', currentFichajeEventId).or('status.eq.out,status.eq.scheduled');
             if (error || !participants || participants.length === 0) {
                 alert('No hay empleados con salida registrada o programada para generar un informe.');
                 return;
@@ -5258,15 +5389,15 @@
             docPDF.save(`sueldos_parcial_${sanitizeFilename(eventName)}.pdf`);
 
             const idsToUpdate = participantsToPay.map(p => p.id);
-            await sb.from('event_participants').update({ payment_status: 'paid' }).in('id', idsToUpdate);
+            await groovySb.from('participants').update({ payment_status: 'paid' }).in('id', idsToUpdate);
             await loadEventParticipants();
         }
 
         async function generateFinalSalaryReport() {
-            if (!currentEvent) return;
+            if (!currentFichajeEventId) return;
             const eventName = fichajeEventName();
 
-            const { data: participants, error } = await sb.from('event_participants').select('*, employees(*)').eq('event_id', currentEvent);
+            const { data: participants, error } = await groovySb.from('participants').select('*, employees(*)').eq('event_id', currentFichajeEventId);
             if (error || !participants) return;
 
             const calcRow = (p) => {
@@ -5310,7 +5441,7 @@
         }
 
         async function createGestoriaFiles() {
-            if (!currentEvent) return;
+            if (!currentFichajeEventId) return;
             const eventName = fichajeEventName();
 
             const { jsPDF } = window.jspdf;
@@ -5319,7 +5450,7 @@
             const folder = zip.folder(sanitizeFilename('archivos_gestoria'));
 
             try {
-                const { data: participants, error } = await sb.from('event_participants').select('estimated_schedule, employees(*)').eq('event_id', currentEvent);
+                const { data: participants, error } = await groovySb.from('participants').select('estimated_schedule, employees(*)').eq('event_id', currentFichajeEventId);
                 if (error) throw error;
                 if (!participants || participants.length === 0) { alert('No hay empleados asignados a este evento.'); return; }
 
@@ -5358,11 +5489,11 @@
 
         // --- Notificación por WhatsApp ---
         async function sendAllWhatsAppNotifications() {
-            if (!currentEvent) return;
+            if (!currentFichajeEventId) return;
             if (!confirm('¿Notificar por WhatsApp a todo el personal de este evento con su horario?')) return;
             const eventName = fichajeEventName();
 
-            const { data: participants, error } = await sb.from('event_participants').select('estimated_schedule, employees(name, phone)').eq('event_id', currentEvent);
+            const { data: participants, error } = await groovySb.from('participants').select('estimated_schedule, employees(name, phone)').eq('event_id', currentFichajeEventId);
             if (error || !participants || participants.length === 0) { alert('No hay empleados para notificar.'); return; }
 
             whatsappNotificationQueue = participants

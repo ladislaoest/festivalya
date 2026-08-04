@@ -1307,7 +1307,7 @@
 
     <header>
         <div class="logo-row">
-            <img src="logo.png" alt="FestivalYa" class="logo-img">
+            <img src="logo.png" alt="FestivalYa" class="logo-img" style="cursor:pointer;" onclick="switchTab('tab_eventos')" title="Volver al menú principal">
             <div style="display: flex; gap: 6px; align-items: center;">
                 <button class="btn-icon-only btn-logout" onclick="openNotificationsPanel()" title="Notificaciones" aria-label="Notificaciones">
                     <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 9-3 9h18s-3-2-3-9"></path><path d="M13.73 21a2 2 0 0 1-3.46 0"></path></svg>
@@ -1325,8 +1325,6 @@
             </div>
         </div>
         <div class="event-selector-zone">
-            <select id="eventSelect" onchange="loadEventData()">
-                </select>
             <button id="admin_add_event_btn" class="btn-add-event" onclick="openCreateEventModal()">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
                 Nuevo
@@ -2450,31 +2448,25 @@
             return Object.values(eventsCache).filter(e => canUserSeeEvent(e.id));
         }
 
+        // Ya no hay <select> de evento en la cabecera -el festival se elige
+        // desde la lista o el calendario de la pestaña Eventos (openEventById)-,
+        // pero esta función sigue haciendo falta: valida que currentEvent
+        // siga siendo un evento visible para el usuario, y si no, cae al
+        // primero disponible (o lo deja vacío si no hay ninguno).
         function updateEventSelect() {
-            const select = document.getElementById('eventSelect');
-            select.innerHTML = '';
+            const visibleIds = Object.keys(eventsCache).filter(canUserSeeEvent);
 
-            for (const key in eventsCache) {
-                if (!canUserSeeEvent(key)) continue;
-
-                const opt = document.createElement('option');
-                opt.value = key;
-                opt.innerText = eventsCache[key].name;
-                if(key === currentEvent) opt.selected = true;
-                select.appendChild(opt);
-            }
-
-            const selectedOpt = select.querySelector(`option[value="${currentEvent}"]`);
-            if (!selectedOpt && select.options.length > 0) {
-                currentEvent = select.options[0].value;
-                select.value = currentEvent;
-                loadEventData();
-            } else if (select.options.length === 0) {
-                currentEvent = "";
-                allFields.forEach(f => {
-                    const el = document.getElementById(f);
-                    if (el) el.value = "";
-                });
+            if (!visibleIds.includes(currentEvent)) {
+                if (visibleIds.length > 0) {
+                    currentEvent = visibleIds[0];
+                    loadEventData();
+                } else {
+                    currentEvent = "";
+                    allFields.forEach(f => {
+                        const el = document.getElementById(f);
+                        if (el) el.value = "";
+                    });
+                }
             }
         }
 
@@ -2516,9 +2508,7 @@
         }
 
         function loadEventData() {
-            const select = document.getElementById('eventSelect');
-            if(!select.value) return;
-            currentEvent = select.value;
+            if (!currentEvent) return;
             localStorage.setItem('festivalya_last_event', currentEvent);
 
             const event = eventsCache[currentEvent];
@@ -3548,8 +3538,6 @@
         function openEventById(eventId, tab) {
             currentEvent = eventId;
             updateEventSelect();
-            const select = document.getElementById('eventSelect');
-            select.value = eventId;
             loadEventData();
             switchTab(tab || 'tab_produccion');
         }
@@ -4736,7 +4724,15 @@
             });
         }
 
-        function switchTab(tabId) {
+        // Navegación entre pestañas + botón "atrás" del navegador: cada
+        // cambio de pestaña real (no al re-entrar en la misma) se apila en el
+        // historial, así que "atrás" vuelve al menú anterior en vez de salir
+        // de la app o no hacer nada -ver el listener de 'popstate' más abajo.
+        function switchTab(tabId, opts) {
+            opts = opts || {};
+            const previousActive = document.querySelector('.app-page.active');
+            const isSameTab = previousActive && previousActive.id === tabId;
+
             const pages = document.querySelectorAll('.app-page');
             pages.forEach(p => p.classList.remove('active'));
             const navs = document.querySelectorAll('.nav-item');
@@ -4745,6 +4741,10 @@
             document.getElementById(tabId).classList.add('active');
             const navBtn = document.querySelector(`.nav-item[data-tab="${tabId}"]`);
             if (navBtn) navBtn.classList.add('active');
+
+            if (!opts.fromPopState && !isSameTab) {
+                history.pushState({ festivalyaTab: tabId }, '', '#' + tabId);
+            }
 
             if (tabId === 'tab_mapa') {
                 loadMapaIframe();
@@ -4767,6 +4767,19 @@
                 window.scrollTo({top: 0, behavior: 'smooth'});
             }
         }
+
+        window.addEventListener('popstate', (e) => {
+            const tabId = (e.state && e.state.festivalyaTab) || 'tab_eventos';
+            if (document.getElementById(tabId)) switchTab(tabId, { fromPopState: true });
+        });
+
+        document.addEventListener('DOMContentLoaded', () => {
+            // Sustituye la entrada inicial del historial por la pestaña que
+            // ya está activa al cargar, para que el primer "atrás" no lleve
+            // a un estado en blanco sin pestaña asociada.
+            const initialTab = document.querySelector('.app-page.active');
+            history.replaceState({ festivalyaTab: initialTab ? initialTab.id : 'tab_eventos' }, '', location.href);
+        });
 
         function loadMapaIframe() {
             const iframe = document.getElementById('mapa_iframe');

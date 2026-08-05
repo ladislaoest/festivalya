@@ -274,6 +274,26 @@
             letter-spacing: 0.6px;
         }
 
+        /* Envuelve la <label> de un campo cuando tiene checkbox "Asignar" al
+           lado (ver injectAssignWidgets) -sustituye el margin-bottom propio
+           de la label por el de la fila, para no duplicar espacio. */
+        .field-label-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 8px;
+        }
+
+        .field-label-row label {
+            margin-bottom: 0;
+        }
+
+        .assign-toggle {
+            flex-shrink: 0;
+            white-space: nowrap;
+        }
+
         .inline-row {
             display: flex;
             gap: 10px;
@@ -310,18 +330,17 @@
             accent-color: var(--accent-gold);
         }
 
-        /* Asignación de tareas por campo (ver injectAssignWidgets/renderFieldAssignments) */
-        .assign-widget {
-            margin-top: 12px;
-            padding-top: 10px;
-            border-top: 1px dashed var(--border-soft);
-        }
-
+        /* Asignación de tareas por campo (ver injectAssignWidgets/renderFieldAssignments).
+           .assign-widget es solo un contenedor -sin margen/borde propios-
+           para que no deje un hueco vacío cuando el checkbox "Asignar" (que
+           ahora vive junto a la etiqueta del campo, no aquí) está sin
+           marcar; el espaciado real lo pone .assign-box, que ya es
+           display:none por defecto y por tanto no ocupa sitio si está oculta. */
         .assign-box {
             display: none;
             flex-direction: column;
             gap: 8px;
-            margin-top: 8px;
+            margin-top: 10px;
             padding: 10px;
             background: var(--accent-gold-dim);
             border-left: 2px solid var(--accent-gold);
@@ -1487,9 +1506,14 @@
                         <select id="prod_escenario" onchange="handleEscenarioChange()">
                             <option value="">-- Elegir escenario --</option>
                         </select>
-                        <button type="button" class="btn-add-event" onclick="addCustomEscenario()">
+                        <button type="button" class="btn-add-event" onclick="addCustomEscenario()" title="Crear escenario">
                             <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
-                            Añadir
+                        </button>
+                        <button type="button" class="btn-logout" onclick="editCustomEscenario()" title="Editar escenario seleccionado">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                        </button>
+                        <button type="button" class="btn-logout" onclick="deleteCustomEscenario()" title="Eliminar escenario seleccionado">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
                         </button>
                     </div>
                     <div id="escenario_medidas_display" class="measures-badge"></div>
@@ -1519,19 +1543,27 @@
 
                 <div class="form-card">
                     <label>Efectos FX</label>
-                    <select id="prod_efectos">
+                    <select id="prod_efectos" onchange="toggleEfectosDetalle()">
                         <option value="no">No</option>
                         <option value="si">Sí</option>
                         <option value="incluidos">Incluidos</option>
                     </select>
+                    <div id="box_efectos_detalle" class="conditional-box">
+                        <label>Detalle de los efectos</label>
+                        <input type="text" id="prod_efectos_detalle" class="mention-field" placeholder="Ej: 4 cañones CO2, confeti al final...">
+                    </div>
                 </div>
 
                 <div class="form-card">
                     <label>Pirotecnia</label>
-                    <select id="prod_pirotecnia">
+                    <select id="prod_pirotecnia" onchange="togglePirotecniaDetalle()">
                         <option value="no">No</option>
                         <option value="si">Sí</option>
                     </select>
+                    <div id="box_pirotecnia_detalle" class="conditional-box">
+                        <label>Detalle de la pirotecnia</label>
+                        <input type="text" id="prod_pirotecnia_detalle" class="mention-field" placeholder="Ej: Empresa autorizada, horario del disparo...">
+                    </div>
                 </div>
 
                 <div class="form-card">
@@ -2074,7 +2106,7 @@
 
         const allFields = [
             'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_vallas_antipanico',
-            'prod_vallas_bajas', 'prod_efectos', 'prod_pirotecnia', 'prod_generadores',
+            'prod_vallas_bajas', 'prod_efectos', 'prod_efectos_detalle', 'prod_pirotecnia', 'prod_pirotecnia_detalle', 'prod_generadores',
             'prod_banos', 'prod_ambulancia', 'prod_seguridad', 'prod_contenedores', 'prod_limpieza',
             'prod_anotaciones',
             'media_video', 'media_foto', 'media_drone', 'media_speaker',
@@ -2089,7 +2121,9 @@
             prod_vallas_antipanico: 'vallas_antipanico',
             prod_vallas_bajas: 'vallas_bajas',
             prod_efectos: 'efectos',
+            prod_efectos_detalle: 'efectos_detalle',
             prod_pirotecnia: 'pirotecnia',
+            prod_pirotecnia_detalle: 'pirotecnia_detalle',
             prod_generadores: 'generadores',
             prod_banos: 'banos',
             prod_ambulancia: 'ambulancia',
@@ -2115,7 +2149,9 @@
             prod_vallas_antipanico: { label: 'Vallas Antipánico', tab: 'tab_produccion' },
             prod_vallas_bajas: { label: 'Vallas Bajas', tab: 'tab_produccion' },
             prod_efectos: { label: 'Efectos FX', tab: 'tab_produccion' },
+            prod_efectos_detalle: { label: 'Detalle de los efectos', tab: 'tab_produccion' },
             prod_pirotecnia: { label: 'Pirotecnia', tab: 'tab_produccion' },
+            prod_pirotecnia_detalle: { label: 'Detalle de la pirotecnia', tab: 'tab_produccion' },
             prod_generadores: { label: 'Generadores / Energía', tab: 'tab_produccion' },
             prod_banos: { label: 'Baños', tab: 'tab_produccion' },
             prod_ambulancia: { label: 'Ambulancia / Asistencia', tab: 'tab_produccion' },
@@ -2461,12 +2497,65 @@
             populateEscenarios();
             document.getElementById('prod_escenario').value = id;
             handleEscenarioChange();
+            // El cambio de valor es por JS, no dispara 'change': el listener
+            // delegado en #festivalForm (que llama a saveSingleField) no se
+            // entera solo, hay que guardarlo a mano.
+            saveSingleField('prod_escenario');
+        }
+
+        async function editCustomEscenario() {
+            const select = document.getElementById('prod_escenario');
+            const id = select.value;
+            if (!id || !masterEscenarios[id]) { alert("Elegí primero un escenario para editar."); return; }
+
+            const current = masterEscenarios[id];
+            const name = prompt("Nombre del escenario:", current.name);
+            if (!name) return;
+            const measures = prompt("Medidas (Ej: 16m x 12m):", current.measures || '');
+            if (measures === null) return;
+
+            const { error } = await sb.from('escenarios').update({ name, measures }).eq('id', id);
+            if (error) { alert("Error actualizando escenario: " + error.message); return; }
+
+            masterEscenarios[id] = { name, measures };
+            populateEscenarios();
+            select.value = id;
+            handleEscenarioChange();
+        }
+
+        async function deleteCustomEscenario() {
+            const select = document.getElementById('prod_escenario');
+            const id = select.value;
+            if (!id || !masterEscenarios[id]) { alert("Elegí primero un escenario para eliminar."); return; }
+
+            const usedBy = Object.values(eventsCache).filter(e => e.escenario_id === id).length;
+            const warning = usedBy > 0 ? `\n\nOjo: ${usedBy} evento(s) tienen este escenario asignado y se quedarán sin escenario.` : '';
+            if (!confirm(`¿Eliminar el escenario "${masterEscenarios[id].name}"?${warning}`)) return;
+
+            const { error } = await sb.from('escenarios').delete().eq('id', id);
+            if (error) { alert("Error eliminando escenario: " + error.message); return; }
+
+            delete masterEscenarios[id];
+            populateEscenarios();
+            select.value = '';
+            handleEscenarioChange();
+            saveSingleField('prod_escenario');
         }
 
         function toggleRiderEmpresa() {
             const riderVal = document.getElementById('prod_rider').value;
             const box = document.getElementById('box_rider_empresa');
             box.style.display = (riderVal === 'si') ? 'block' : 'none';
+        }
+
+        function toggleEfectosDetalle() {
+            const val = document.getElementById('prod_efectos').value;
+            document.getElementById('box_efectos_detalle').style.display = (val === 'si') ? 'block' : 'none';
+        }
+
+        function togglePirotecniaDetalle() {
+            const val = document.getElementById('prod_pirotecnia').value;
+            document.getElementById('box_pirotecnia_detalle').style.display = (val === 'si') ? 'block' : 'none';
         }
 
         function canUserSeeEvent(eventId) {
@@ -2555,6 +2644,8 @@
 
             handleEscenarioChange();
             toggleRiderEmpresa();
+            toggleEfectosDetalle();
+            togglePirotecniaDetalle();
             renderFieldAssignments();
             // Suscripción push para este (usuario, evento): sin gesto de
             // usuario de por medio no muestra ningún diálogo nuevo si el
@@ -2600,11 +2691,13 @@
         }
 
         // Checkbox "Asignar" + selector de usuario + checkbox "Resuelto":
-        // el contenido interno es el mismo para un campo normal (dentro de
-        // su .form-card, ver buildAssignWidgetHTML) y para una categoría de
+        // esta versión combinada (checkbox + caja en un único bloque) la usa
         // Diseños (su propia .form-card completa, ver injectDesignAssignWidgets
         // -esa pestaña no tiene un elemento fijo por categoría con el que
-        // enganchar el widget, a diferencia de "allFields"-).
+        // enganchar el widget, a diferencia de "allFields"-). Los campos
+        // normales usan buildAssignToggleHTML/buildAssignBoxHTML por
+        // separado, para poder poner el checkbox junto a la etiqueta del
+        // campo en vez de debajo (ver injectAssignWidgets).
         function buildAssignFieldsHTML(fieldId) {
             return `
                 <label class="checkbox-row">
@@ -2623,19 +2716,54 @@
             `;
         }
 
-        // Insertado una sola vez dentro de cada .form-card -su estado (a qué
-        // evento/campo pertenece) se repuebla en cada populateAssignWidget(),
-        // no hace falta volver a insertarlo.
-        function buildAssignWidgetHTML(fieldId) {
-            return `<div class="assign-widget" id="assign_widget_${fieldId}">${buildAssignFieldsHTML(fieldId)}</div>`;
+        // El checkbox "Asignar" va al lado de la etiqueta del campo (no
+        // debajo): se envuelve la <label> existente en una fila flex y el
+        // checkbox se inserta junto a ella. La caja desplegable (usuario +
+        // resuelto) sigue apareciendo debajo, como antes, cuando se marca.
+        function buildAssignToggleHTML(fieldId) {
+            return `<label class="checkbox-row assign-toggle">
+                <input type="checkbox" id="assign_chk_${fieldId}" onchange="onAssignToggle('${fieldId}')">
+                Asignar
+            </label>`;
+        }
+
+        function buildAssignBoxHTML(fieldId) {
+            return `<div class="assign-widget" id="assign_widget_${fieldId}">
+                <div id="assign_box_${fieldId}" class="assign-box">
+                    <select id="assign_user_${fieldId}" onchange="onAssignUserChange('${fieldId}')">
+                        <option value="">-- Elegir usuario --</option>
+                    </select>
+                    <label class="checkbox-row">
+                        <input type="checkbox" id="assign_resolved_${fieldId}" onchange="onAssignResolvedChange('${fieldId}')">
+                        Resuelto
+                    </label>
+                </div>
+            </div>`;
         }
 
         function injectAssignWidgets() {
             allFields.forEach(f => {
                 const input = document.getElementById(f);
                 const card = input && input.closest('.form-card');
-                if (!card || card.querySelector('.assign-widget')) return;
-                card.insertAdjacentHTML('beforeend', buildAssignWidgetHTML(f));
+                if (!card) return;
+                if (document.getElementById('assign_widget_' + f)) return; // ya insertado para ESTE campo
+
+                // Campos "detalle" (p.ej. prod_rider_empresa, prod_efectos_detalle)
+                // viven dentro de una .conditional-box que comparte .form-card con
+                // su campo padre (Rider, Efectos...). Hay que usar SU propia
+                // etiqueta -la de dentro de la caja-, no la del campo padre, y
+                // colgar la caja de asignación ahí mismo -así además queda
+                // oculta junto con el campo cuando el padre está en "No".
+                const scope = input.closest('.conditional-box') || card;
+                const label = scope.querySelector('label');
+                if (label && !label.parentElement.classList.contains('field-label-row')) {
+                    const row = document.createElement('div');
+                    row.className = 'field-label-row';
+                    label.replaceWith(row);
+                    row.appendChild(label);
+                    row.insertAdjacentHTML('beforeend', buildAssignToggleHTML(f));
+                }
+                scope.insertAdjacentHTML('beforeend', buildAssignBoxHTML(f));
             });
         }
 

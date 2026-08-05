@@ -48,6 +48,8 @@ ALTER TABLE public.events ADD COLUMN IF NOT EXISTS anotaciones TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS ubicacion TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS start_time TIME;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS end_time TIME;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS efectos_detalle TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS pirotecnia_detalle TEXT;
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$

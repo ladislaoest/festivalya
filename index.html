@@ -1817,7 +1817,8 @@
                             <button type="button" class="btn-add-event" onclick="syncFromGoogleCalendar()" style="flex:1;">Sincronizar ahora</button>
                             <button type="button" class="btn-logout" onclick="disconnectGoogleCalendar()">Desconectar</button>
                         </div>
-                        <div style="font-size:11px; color:var(--text-muted); margin-top:10px;">Los festivales que crees en festivalya se copian solos al calendario elegido. Los eventos que crees ahí (con fecha) se importan como festivales nuevos al sincronizar.</div>
+                        <button type="button" class="btn-add-event" onclick="syncAllEventsToGoogle()" style="width:100%; margin-top:8px;">Enviar festivales existentes a Google</button>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:10px;">Los festivales que crees en festivalya se copian solos al calendario elegido. Los eventos que crees ahí (con fecha) se importan como festivales nuevos al sincronizar. Los festivales que ya tenías antes de conectar Google no se copian solos: usá "Enviar festivales existentes" una vez.</div>
                     </div>
                 </div>
             </div>
@@ -2683,6 +2684,32 @@
             } else if (!silent) {
                 alert('No hay festivales nuevos para importar.');
             }
+        }
+
+        // "Enviar festivales existentes a Google": syncEventToGoogle() solo
+        // se dispara al crear/editar un festival desde el modal, así que los
+        // que ya existían antes de conectar Google Calendar nunca se habían
+        // copiado. Este botón los empuja todos de una vez (uno por uno, para
+        // no saturar la API de Google); a los que ya tienen google_event_id
+        // los actualiza en vez de duplicarlos, así que se puede repetir sin
+        // problema.
+        async function syncAllEventsToGoogle() {
+            if (!gcalStatus.connected || !gcalStatus.calendarId) {
+                alert('Conectá Google Calendar y elegí un calendario primero.');
+                return;
+            }
+            const ids = Object.keys(eventsCache);
+            if (ids.length === 0) { alert('No hay festivales que enviar.'); return; }
+            if (!confirm(`¿Enviar los ${ids.length} festival(es) de festivalya al calendario "${gcalStatus.calendarName}"?`)) return;
+
+            let sent = 0;
+            for (const id of ids) {
+                if (!eventsCache[id].event_date) continue; // sin fecha no se puede crear en Google
+                await syncEventToGoogle(id);
+                sent++;
+            }
+            await loadAllData();
+            alert(`Listo: ${sent} festival(es) enviado(s) a Google Calendar.`);
         }
 
         async function createNewUser() {

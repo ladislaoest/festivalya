@@ -1391,7 +1391,7 @@
             </div>
         </div>
         <div id="current_event_bar" class="no-event">
-            <span id="current_event_bar_text">Ningún evento seleccionado — elegí uno en Eventos</span>
+            <span id="current_event_bar_text">Ningún evento seleccionado</span>
         </div>
         <div class="event-selector-zone">
             <button id="admin_add_event_btn" class="btn-add-event" onclick="openCreateEventModal()">
@@ -3979,7 +3979,7 @@
                 text.textContent = `📍 ${event.name}`;
                 bar.classList.remove('no-event');
             } else {
-                text.textContent = 'Ningún evento seleccionado — elegí uno en Eventos';
+                text.textContent = 'Ningún evento seleccionado';
                 bar.classList.add('no-event');
             }
         }

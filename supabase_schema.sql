@@ -50,6 +50,10 @@ ALTER TABLE public.events ADD COLUMN IF NOT EXISTS start_time TIME;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS end_time TIME;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS efectos_detalle TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS pirotecnia_detalle TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS lona TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS memoria TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS foto_ids JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS video_ids JSONB NOT NULL DEFAULT '[]';
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -84,6 +88,18 @@ CREATE TABLE IF NOT EXISTS public.escenarios (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     measures TEXT
+);
+
+-- Vídeo/Foto en Producción: selección múltiple (un evento puede llevar
+-- varios), ids referenciados desde events.foto_ids/video_ids (JSONB).
+CREATE TABLE IF NOT EXISTS public.fotografos (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS public.videografos (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL
 );
 
 -- Registro de actividad: qué usuario cambió qué en qué evento.
@@ -223,6 +239,8 @@ ON CONFLICT (id) DO NOTHING;
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.app_users ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.escenarios ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.fotografos ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.videografos ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.activity_log ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_files ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.event_design_status ENABLE ROW LEVEL SECURITY;
@@ -239,6 +257,12 @@ CREATE POLICY "public access app_users" ON public.app_users FOR ALL USING (true)
 
 DROP POLICY IF EXISTS "public access escenarios" ON public.escenarios;
 CREATE POLICY "public access escenarios" ON public.escenarios FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access fotografos" ON public.fotografos;
+CREATE POLICY "public access fotografos" ON public.fotografos FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "public access videografos" ON public.videografos;
+CREATE POLICY "public access videografos" ON public.videografos FOR ALL USING (true) WITH CHECK (true);
 
 DROP POLICY IF EXISTS "public access activity_log" ON public.activity_log;
 CREATE POLICY "public access activity_log" ON public.activity_log FOR ALL USING (true) WITH CHECK (true);

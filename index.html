@@ -1547,16 +1547,6 @@
                 </div>
 
                 <div class="form-card">
-                    <label>Vallas Antipánico</label>
-                    <input type="text" id="prod_vallas_antipanico" class="mention-field" placeholder="Ej: 15 metros lineales frente a escenario">
-                </div>
-
-                <div class="form-card">
-                    <label>Vallas Bajas (Ayuntamiento)</label>
-                    <input type="text" id="prod_vallas_bajas" class="mention-field" placeholder="Ej: Ayuntamiento de Porriño - 60 unidades">
-                </div>
-
-                <div class="form-card">
                     <label>Efectos FX</label>
                     <select id="prod_efectos" onchange="toggleEfectosDetalle()">
                         <option value="no">No</option>
@@ -1565,25 +1555,45 @@
                     </select>
                     <div id="box_efectos_detalle" class="conditional-box">
                         <label>Detalle de los efectos</label>
-                        <input type="text" id="prod_efectos_detalle" class="mention-field" placeholder="Ej: 4 cañones CO2, confeti al final...">
+                        <input type="text" id="prod_efectos_detalle" class="mention-field" placeholder="Ej: máquina de fuego, pirotecnia, 4 cañones CO2, confeti al final...">
                     </div>
                 </div>
 
                 <div class="form-card">
-                    <label>Pirotecnia</label>
-                    <select id="prod_pirotecnia" onchange="togglePirotecniaDetalle()">
-                        <option value="no">No</option>
-                        <option value="si">Sí</option>
-                    </select>
-                    <div id="box_pirotecnia_detalle" class="conditional-box">
-                        <label>Detalle de la pirotecnia</label>
-                        <input type="text" id="prod_pirotecnia_detalle" class="mention-field" placeholder="Ej: Empresa autorizada, horario del disparo...">
-                    </div>
+                    <label>Vídeo (Videógrafos)</label>
+                    <div id="video_selected_chips" class="card-group" style="margin-bottom:8px;"></div>
+                    <button type="button" class="btn-add-event" onclick="openPersonPicker('video')" style="width:100%;">Elegir videógrafos</button>
+                </div>
+
+                <div class="form-card">
+                    <label>Foto (Fotógrafos)</label>
+                    <div id="foto_selected_chips" class="card-group" style="margin-bottom:8px;"></div>
+                    <button type="button" class="btn-add-event" onclick="openPersonPicker('foto')" style="width:100%;">Elegir fotógrafos</button>
+                </div>
+
+                <div class="form-card">
+                    <label>Speaker</label>
+                    <input type="text" id="media_speaker" class="mention-field" placeholder="Presentadores o locutores del festival...">
+                </div>
+
+                <div class="form-card">
+                    <label>Lona</label>
+                    <input type="text" id="prod_lona" class="mention-field" placeholder="Ej: Lona escenario 6x3m, diseño enviado a imprenta...">
                 </div>
 
                 <div class="form-card">
                     <label>Generadores / Energía</label>
                     <input type="text" id="prod_generadores" class="mention-field" placeholder="Ej: 2x Grupos Insonorizados 150KVA">
+                </div>
+
+                <div class="form-card">
+                    <label>Vallas Bajas (Ayuntamiento)</label>
+                    <input type="text" id="prod_vallas_bajas" class="mention-field" placeholder="Ej: Ayuntamiento de Porriño - 60 unidades">
+                </div>
+
+                <div class="form-card">
+                    <label>Vallas Antipánico</label>
+                    <input type="text" id="prod_vallas_antipanico" class="mention-field" placeholder="Ej: 15 metros lineales frente a escenario">
                 </div>
 
                 <div class="form-card">
@@ -1621,6 +1631,11 @@
                     <div id="anotaciones_files_list" class="card-group" style="margin-top: 10px;"></div>
                 </div>
 
+                <div class="form-card">
+                    <label>Memoria</label>
+                    <textarea id="prod_memoria" class="mention-field" rows="4" placeholder="Memoria del evento..."></textarea>
+                </div>
+
             </div>
             <button type="submit" class="btn-save-all">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -1632,20 +1647,8 @@
             <h2>Equipo de Media / Prensa</h2>
             <div class="card-group">
                 <div class="form-card">
-                    <label>Vídeo</label>
-                    <input type="text" id="media_video" class="mention-field" placeholder="Operadores, horarios de entrega de reels...">
-                </div>
-                <div class="form-card">
-                    <label>Foto</label>
-                    <input type="text" id="media_foto" class="mention-field" placeholder="Fotógrafos asignados, enlaces rápidos...">
-                </div>
-                <div class="form-card">
                     <label>Drone</label>
                     <input type="text" id="media_drone" class="mention-field" placeholder="Piloto autorizado, plan de vuelo e id drone...">
-                </div>
-                <div class="form-card">
-                    <label>Speaker</label>
-                    <input type="text" id="media_speaker" class="mention-field" placeholder="Presentadores o locutores del festival...">
                 </div>
             </div>
             <button type="submit" class="btn-save-all">
@@ -1882,6 +1885,24 @@
         </div>
     </div>
 
+    <div id="person-picker-overlay" class="modal-overlay">
+        <div class="modal-card">
+            <h3 id="person_picker_title">Elegir</h3>
+            <div class="form-card" style="margin-bottom:10px;">
+                <label>Crear nuevo</label>
+                <div class="inline-row">
+                    <input type="text" id="person_picker_new_name" placeholder="Nombre...">
+                    <button type="button" class="btn-add-event" onclick="addPickerPerson()">+ Crear</button>
+                </div>
+            </div>
+            <div id="person_picker_list" class="card-group"></div>
+            <div class="modal-actions">
+                <button type="button" class="btn-logout" onclick="closePersonPicker()">Cancelar</button>
+                <button type="button" class="btn-add-event" onclick="savePersonPicker()">Guardar</button>
+            </div>
+        </div>
+    </div>
+
     <div id="employee-modal-overlay" class="modal-overlay">
         <div class="modal-card">
             <h3 id="employee_modal_title">Añadir Empleado</h3>
@@ -2097,6 +2118,10 @@
 
         // Caches en memoria, recargadas desde Supabase
         let masterEscenarios = {};
+        let masterFotografos = {};
+        let masterVideografos = {};
+        let personPickerType = null; // 'foto' | 'video'
+        let personPickerSelected = new Set();
         let usersCache = {};
         let eventsCache = {};
         let currentUser = localStorage.getItem('festivalya_user') || null;
@@ -2119,12 +2144,18 @@
         // eventMatchesStatusFilter).
         let eventsStatusFilter = 'all';
 
+        // Orden real en Producción: escenario, rider, efectos, vídeo, foto,
+        // speaker, lona, generadores, vallas bajas, antipánico, baños,
+        // ambulancia, seguridad, contenedores, limpieza, anotaciones, memoria.
+        // Vídeo/Foto no son campos de texto (son selección múltiple de
+        // fotógrafos/videógrafos, ver openPersonPicker) así que no entran en
+        // este sistema genérico de guardado por input -se guardan aparte.
         const allFields = [
-            'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_vallas_antipanico',
-            'prod_vallas_bajas', 'prod_efectos', 'prod_efectos_detalle', 'prod_pirotecnia', 'prod_pirotecnia_detalle', 'prod_generadores',
+            'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_efectos', 'prod_efectos_detalle',
+            'media_speaker', 'prod_lona', 'prod_generadores', 'prod_vallas_bajas', 'prod_vallas_antipanico',
             'prod_banos', 'prod_ambulancia', 'prod_seguridad', 'prod_contenedores', 'prod_limpieza',
-            'prod_anotaciones',
-            'media_video', 'media_foto', 'media_drone', 'media_speaker',
+            'prod_anotaciones', 'prod_memoria',
+            'media_drone',
             'host_barras', 'host_foodtrucks', 'log_transfers', 'log_camerinos'
         ];
 
@@ -2133,23 +2164,21 @@
             prod_escenario: 'escenario_id',
             prod_rider: 'rider',
             prod_rider_empresa: 'rider_empresa',
-            prod_vallas_antipanico: 'vallas_antipanico',
-            prod_vallas_bajas: 'vallas_bajas',
             prod_efectos: 'efectos',
             prod_efectos_detalle: 'efectos_detalle',
-            prod_pirotecnia: 'pirotecnia',
-            prod_pirotecnia_detalle: 'pirotecnia_detalle',
+            media_speaker: 'media_speaker',
+            prod_lona: 'lona',
             prod_generadores: 'generadores',
+            prod_vallas_bajas: 'vallas_bajas',
+            prod_vallas_antipanico: 'vallas_antipanico',
             prod_banos: 'banos',
             prod_ambulancia: 'ambulancia',
             prod_seguridad: 'seguridad',
             prod_contenedores: 'contenedores',
             prod_limpieza: 'limpieza',
             prod_anotaciones: 'anotaciones',
-            media_video: 'media_video',
-            media_foto: 'media_foto',
+            prod_memoria: 'memoria',
             media_drone: 'media_drone',
-            media_speaker: 'media_speaker',
             host_barras: 'host_barras',
             host_foodtrucks: 'host_foodtrucks',
             log_transfers: 'log_transfers',
@@ -2161,23 +2190,21 @@
             prod_escenario: { label: 'Escenario', tab: 'tab_produccion' },
             prod_rider: { label: 'Rider', tab: 'tab_produccion' },
             prod_rider_empresa: { label: 'Empresa de Sonido/Iluminación', tab: 'tab_produccion' },
-            prod_vallas_antipanico: { label: 'Vallas Antipánico', tab: 'tab_produccion' },
-            prod_vallas_bajas: { label: 'Vallas Bajas', tab: 'tab_produccion' },
             prod_efectos: { label: 'Efectos FX', tab: 'tab_produccion' },
             prod_efectos_detalle: { label: 'Detalle de los efectos', tab: 'tab_produccion' },
-            prod_pirotecnia: { label: 'Pirotecnia', tab: 'tab_produccion' },
-            prod_pirotecnia_detalle: { label: 'Detalle de la pirotecnia', tab: 'tab_produccion' },
+            media_speaker: { label: 'Speaker', tab: 'tab_produccion' },
+            prod_lona: { label: 'Lona', tab: 'tab_produccion' },
             prod_generadores: { label: 'Generadores / Energía', tab: 'tab_produccion' },
+            prod_vallas_bajas: { label: 'Vallas Bajas', tab: 'tab_produccion' },
+            prod_vallas_antipanico: { label: 'Vallas Antipánico', tab: 'tab_produccion' },
             prod_banos: { label: 'Baños', tab: 'tab_produccion' },
             prod_ambulancia: { label: 'Ambulancia / Asistencia', tab: 'tab_produccion' },
             prod_seguridad: { label: 'Seguridad', tab: 'tab_produccion' },
             prod_contenedores: { label: 'Contenedores', tab: 'tab_produccion' },
             prod_limpieza: { label: 'Limpieza', tab: 'tab_produccion' },
             prod_anotaciones: { label: 'Anotaciones', tab: 'tab_produccion' },
-            media_video: { label: 'Vídeo', tab: 'tab_media' },
-            media_foto: { label: 'Foto', tab: 'tab_media' },
+            prod_memoria: { label: 'Memoria', tab: 'tab_produccion' },
             media_drone: { label: 'Drone', tab: 'tab_media' },
-            media_speaker: { label: 'Speaker', tab: 'tab_media' },
             host_barras: { label: 'Barras', tab: 'tab_hosteleria' },
             host_foodtrucks: { label: 'Food Trucks', tab: 'tab_hosteleria' },
             log_transfers: { label: 'Transfers', tab: 'tab_logistica' },
@@ -2237,6 +2264,27 @@
                     if (!fieldAssignments[a.event_id]) fieldAssignments[a.event_id] = {};
                     fieldAssignments[a.event_id][a.field_id] = a;
                 });
+            }
+
+            // Tablas nuevas (ver migracion_media_personas.sql): igual que
+            // field_assignments, si falta ejecutar la migración no debe
+            // romper el resto de la carga -Vídeo/Foto simplemente no
+            // tendrán opciones para elegir hasta que se cree la tabla.
+            const [{ data: fotografos, error: fotoErr }, { data: videografos, error: videoErr }] = await Promise.all([
+                sb.from('fotografos').select('*'),
+                sb.from('videografos').select('*')
+            ]);
+            masterFotografos = {};
+            if (fotoErr) {
+                console.warn('No se pudieron cargar los fotógrafos (¿falta ejecutar migracion_media_personas.sql?):', fotoErr.message);
+            } else {
+                (fotografos || []).forEach(p => { masterFotografos[p.id] = { name: p.name }; });
+            }
+            masterVideografos = {};
+            if (videoErr) {
+                console.warn('No se pudieron cargar los videógrafos (¿falta ejecutar migracion_media_personas.sql?):', videoErr.message);
+            } else {
+                (videografos || []).forEach(p => { masterVideografos[p.id] = { name: p.name }; });
             }
         }
 
@@ -2557,6 +2605,160 @@
             saveSingleField('prod_escenario');
         }
 
+        // --- Fotógrafos / Videógrafos (selección múltiple por evento, ver
+        // Vídeo/Foto en Producción). A diferencia de Escenario (un único
+        // valor guardado directo en un <select>), aquí un evento puede
+        // llevar varios: se guardan como array de ids en foto_ids/video_ids
+        // (columnas JSONB, ver migracion_media_personas.sql) y se eligen
+        // desde un modal con checkboxes en vez de un <select> simple.
+        function personPickerTable(type) { return type === 'foto' ? 'fotografos' : 'videografos'; }
+        function personPickerMaster(type) { return type === 'foto' ? masterFotografos : masterVideografos; }
+        function personPickerColumn(type) { return type === 'foto' ? 'foto_ids' : 'video_ids'; }
+        function personPickerLabel(type) { return type === 'foto' ? 'fotógrafos' : 'videógrafos'; }
+
+        function getEventPersonIds(type) {
+            if (!currentEvent || !eventsCache[currentEvent]) return [];
+            return eventsCache[currentEvent][personPickerColumn(type)] || [];
+        }
+
+        function renderPersonChips(type) {
+            const box = document.getElementById(`${type}_selected_chips`);
+            if (!box) return;
+            const master = personPickerMaster(type);
+            const ids = getEventPersonIds(type);
+            if (ids.length === 0) {
+                box.innerHTML = `<div style="font-size:12px; color:var(--text-muted);">Nadie asignado todavía.</div>`;
+                return;
+            }
+            box.innerHTML = ids.map(id => {
+                const p = master[id];
+                const name = p ? p.name : '(eliminado)';
+                return `<div class="event-card" style="padding:8px 12px; cursor:default;">
+                    <span>${escapeHtml(name)}</span>
+                    <button type="button" class="btn-logout" style="padding:4px 8px;" onclick="removePersonFromEvent('${type}', '${id}')">&times;</button>
+                </div>`;
+            }).join('');
+        }
+
+        async function removePersonFromEvent(type, id) {
+            if (!currentEvent || !eventsCache[currentEvent]) return;
+            const col = personPickerColumn(type);
+            const ids = (eventsCache[currentEvent][col] || []).filter(x => x !== id);
+            const { error } = await sb.from('events').update({ [col]: ids }).eq('id', currentEvent);
+            if (error) { alert('Error quitando: ' + error.message); return; }
+            eventsCache[currentEvent][col] = ids;
+            renderPersonChips(type);
+        }
+
+        function openPersonPicker(type) {
+            if (!currentEvent) { alert('Elegí primero un evento.'); return; }
+            personPickerType = type;
+            personPickerSelected = new Set(getEventPersonIds(type));
+            document.getElementById('person_picker_title').textContent = 'Elegir ' + personPickerLabel(type);
+            document.getElementById('person_picker_new_name').value = '';
+            renderPersonPickerList();
+            document.getElementById('person-picker-overlay').style.display = 'flex';
+        }
+
+        function closePersonPicker() {
+            document.getElementById('person-picker-overlay').style.display = 'none';
+            personPickerType = null;
+        }
+
+        function renderPersonPickerList() {
+            const list = document.getElementById('person_picker_list');
+            const master = personPickerMaster(personPickerType);
+            const entries = Object.entries(master).sort((a, b) => a[1].name.localeCompare(b[1].name));
+            if (entries.length === 0) {
+                list.innerHTML = `<p class="empty-hint">Todavía no hay ${personPickerLabel(personPickerType)}. Creá uno arriba.</p>`;
+                return;
+            }
+            list.innerHTML = entries.map(([id, p]) => `
+                <div class="event-card" style="padding:10px 12px; cursor:default;">
+                    <label class="checkbox-row" style="flex:1;">
+                        <input type="checkbox" class="person-picker-checkbox" value="${id}" ${personPickerSelected.has(id) ? 'checked' : ''} onchange="onPersonPickerCheck('${id}', this.checked)">
+                        ${escapeHtml(p.name)}
+                    </label>
+                    <div style="display:flex; gap:4px;">
+                        <button type="button" class="btn-logout" style="padding:4px 8px;" onclick="editPickerPerson('${id}')" title="Editar">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                        </button>
+                        <button type="button" class="btn-logout" style="padding:4px 8px;" onclick="deletePickerPerson('${id}')" title="Eliminar">
+                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function onPersonPickerCheck(id, checked) {
+            if (checked) personPickerSelected.add(id); else personPickerSelected.delete(id);
+        }
+
+        async function addPickerPerson() {
+            const input = document.getElementById('person_picker_new_name');
+            const name = input.value.trim();
+            if (!name) return;
+            const table = personPickerTable(personPickerType);
+            const id = (personPickerType === 'foto' ? 'foto_' : 'video_') + Date.now();
+
+            const { error } = await sb.from(table).insert({ id, name });
+            if (error) { alert(`Error creando ${personPickerLabel(personPickerType)}: ` + error.message); return; }
+
+            personPickerMaster(personPickerType)[id] = { name };
+            personPickerSelected.add(id);
+            input.value = '';
+            renderPersonPickerList();
+        }
+
+        async function editPickerPerson(id) {
+            const master = personPickerMaster(personPickerType);
+            const current = master[id];
+            if (!current) return;
+            const name = prompt('Nombre:', current.name);
+            if (!name) return;
+
+            const table = personPickerTable(personPickerType);
+            const { error } = await sb.from(table).update({ name }).eq('id', id);
+            if (error) { alert('Error actualizando: ' + error.message); return; }
+
+            master[id] = { name };
+            renderPersonPickerList();
+        }
+
+        async function deletePickerPerson(id) {
+            const master = personPickerMaster(personPickerType);
+            const current = master[id];
+            if (!current) return;
+
+            const col = personPickerColumn(personPickerType);
+            const usedBy = Object.values(eventsCache).filter(e => (e[col] || []).includes(id)).length;
+            const warning = usedBy > 0 ? `\n\nOjo: ${usedBy} evento(s) lo tienen asignado y se quedarán sin él.` : '';
+            if (!confirm(`¿Eliminar a "${current.name}"?${warning}`)) return;
+
+            const table = personPickerTable(personPickerType);
+            const { error } = await sb.from(table).delete().eq('id', id);
+            if (error) { alert('Error eliminando: ' + error.message); return; }
+
+            delete master[id];
+            personPickerSelected.delete(id);
+            renderPersonPickerList();
+        }
+
+        async function savePersonPicker() {
+            if (!currentEvent) { closePersonPicker(); return; }
+            const type = personPickerType;
+            const col = personPickerColumn(type);
+            const ids = Array.from(personPickerSelected);
+
+            const { error } = await sb.from('events').update({ [col]: ids }).eq('id', currentEvent);
+            if (error) { alert('Error guardando: ' + error.message); return; }
+
+            eventsCache[currentEvent][col] = ids;
+            closePersonPicker();
+            renderPersonChips(type);
+        }
+
         function toggleRiderEmpresa() {
             const riderVal = document.getElementById('prod_rider').value;
             const box = document.getElementById('box_rider_empresa');
@@ -2566,11 +2768,6 @@
         function toggleEfectosDetalle() {
             const val = document.getElementById('prod_efectos').value;
             document.getElementById('box_efectos_detalle').style.display = (val === 'si') ? 'block' : 'none';
-        }
-
-        function togglePirotecniaDetalle() {
-            const val = document.getElementById('prod_pirotecnia').value;
-            document.getElementById('box_pirotecnia_detalle').style.display = (val === 'si') ? 'block' : 'none';
         }
 
         function canUserSeeEvent(eventId) {
@@ -2660,8 +2857,9 @@
             handleEscenarioChange();
             toggleRiderEmpresa();
             toggleEfectosDetalle();
-            togglePirotecniaDetalle();
             renderFieldAssignments();
+            renderPersonChips('video');
+            renderPersonChips('foto');
             // Suscripción push para este (usuario, evento): sin gesto de
             // usuario de por medio no muestra ningún diálogo nuevo si el
             // permiso ya se concedió o denegó antes, así que es seguro

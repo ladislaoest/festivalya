@@ -1603,14 +1603,40 @@
 
                 <div class="form-card">
                     <label>Vídeo (Videógrafos)</label>
-                    <div id="video_selected_chips" class="card-group" style="margin-bottom:8px;"></div>
-                    <button type="button" class="btn-add-event" onclick="openPersonPicker('video')" style="width:100%;">Elegir videógrafos</button>
+                    <div class="inline-row" style="margin-bottom: 8px; align-items:flex-start;">
+                        <select id="prod_video_select" multiple size="4" onchange="savePersonSelection('video')" style="flex:1;"></select>
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            <button type="button" class="btn-add-event" onclick="addPersonToMaster('video')" title="Crear videógrafo">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            </button>
+                            <button type="button" class="btn-logout" onclick="editSelectedPerson('video')" title="Editar seleccionado">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            </button>
+                            <button type="button" class="btn-logout" onclick="deleteSelectedPerson('video')" title="Eliminar seleccionado(s)">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted);">Mantené Ctrl (o Cmd en Mac) pulsado para elegir varios.</div>
                 </div>
 
                 <div class="form-card">
                     <label>Foto (Fotógrafos)</label>
-                    <div id="foto_selected_chips" class="card-group" style="margin-bottom:8px;"></div>
-                    <button type="button" class="btn-add-event" onclick="openPersonPicker('foto')" style="width:100%;">Elegir fotógrafos</button>
+                    <div class="inline-row" style="margin-bottom: 8px; align-items:flex-start;">
+                        <select id="prod_foto_select" multiple size="4" onchange="savePersonSelection('foto')" style="flex:1;"></select>
+                        <div style="display:flex; flex-direction:column; gap:6px;">
+                            <button type="button" class="btn-add-event" onclick="addPersonToMaster('foto')" title="Crear fotógrafo">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                            </button>
+                            <button type="button" class="btn-logout" onclick="editSelectedPerson('foto')" title="Editar seleccionado">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
+                            </button>
+                            <button type="button" class="btn-logout" onclick="deleteSelectedPerson('foto')" title="Eliminar seleccionado(s)">
+                                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                            </button>
+                        </div>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted);">Mantené Ctrl (o Cmd en Mac) pulsado para elegir varios.</div>
                 </div>
 
                 <div class="form-card">
@@ -1918,23 +1944,6 @@
         </div>
     </div>
 
-    <div id="person-picker-overlay" class="modal-overlay">
-        <div class="modal-card">
-            <h3 id="person_picker_title">Elegir</h3>
-            <div class="form-card" style="margin-bottom:10px;">
-                <label>Crear nuevo</label>
-                <div class="inline-row">
-                    <input type="text" id="person_picker_new_name" placeholder="Nombre...">
-                    <button type="button" class="btn-add-event" onclick="addPickerPerson()">+ Crear</button>
-                </div>
-            </div>
-            <div id="person_picker_list" class="card-group"></div>
-            <div class="modal-actions">
-                <button type="button" class="btn-logout" onclick="closePersonPicker()">Cancelar</button>
-                <button type="button" class="btn-add-event" onclick="savePersonPicker()">Guardar</button>
-            </div>
-        </div>
-    </div>
 
     <div id="employee-modal-overlay" class="modal-overlay">
         <div class="modal-card">
@@ -2150,8 +2159,6 @@
         let masterEscenarios = {};
         let masterFotografos = {};
         let masterVideografos = {};
-        let personPickerType = null; // 'foto' | 'video'
-        let personPickerSelected = new Set();
         let usersCache = {};
         let eventsCache = {};
         let currentUser = localStorage.getItem('festivalya_user') || null;
@@ -2181,9 +2188,9 @@
         // Orden real en Producción: escenario, rider, efectos, vídeo, foto,
         // speaker, lona, generadores, vallas bajas, antipánico, baños,
         // ambulancia, seguridad, contenedores, limpieza, anotaciones, memoria.
-        // Vídeo/Foto no son campos de texto (son selección múltiple de
-        // fotógrafos/videógrafos, ver openPersonPicker) así que no entran en
-        // este sistema genérico de guardado por input -se guardan aparte.
+        // Vídeo/Foto no son campos de texto simples (son <select multiple>
+        // con su propio guardado, ver savePersonSelection) así que no entran
+        // en este sistema genérico de guardado por input -se guardan aparte.
         const allFields = [
             'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_efectos', 'prod_efectos_detalle',
             'media_drone', 'media_speaker', 'prod_lona', 'prod_generadores', 'prod_vallas_bajas', 'prod_vallas_antipanico',
@@ -2639,157 +2646,96 @@
         }
 
         // --- Fotógrafos / Videógrafos (selección múltiple por evento, ver
-        // Vídeo/Foto en Producción). A diferencia de Escenario (un único
-        // valor guardado directo en un <select>), aquí un evento puede
-        // llevar varios: se guardan como array de ids en foto_ids/video_ids
-        // (columnas JSONB, ver migracion_media_personas.sql) y se eligen
-        // desde un modal con checkboxes en vez de un <select> simple.
+        // Vídeo/Foto en Producción). Igual que Escenario (un <select> +
+        // crear/editar/eliminar), pero con "multiple" -Ctrl/Cmd+click para
+        // elegir varios- ya que un evento puede llevar más de uno. Se
+        // guardan como array de ids en foto_ids/video_ids (columnas JSONB,
+        // ver migracion_media_personas.sql).
         function personPickerTable(type) { return type === 'foto' ? 'fotografos' : 'videografos'; }
         function personPickerMaster(type) { return type === 'foto' ? masterFotografos : masterVideografos; }
         function personPickerColumn(type) { return type === 'foto' ? 'foto_ids' : 'video_ids'; }
-        function personPickerLabel(type) { return type === 'foto' ? 'fotógrafos' : 'videógrafos'; }
+        function personPickerLabel(type) { return type === 'foto' ? 'fotógrafo' : 'videógrafo'; }
+        function personSelectId(type) { return type === 'foto' ? 'prod_foto_select' : 'prod_video_select'; }
 
         function getEventPersonIds(type) {
             if (!currentEvent || !eventsCache[currentEvent]) return [];
             return eventsCache[currentEvent][personPickerColumn(type)] || [];
         }
 
-        function renderPersonChips(type) {
-            const box = document.getElementById(`${type}_selected_chips`);
-            if (!box) return;
+        function renderPersonSelect(type) {
+            const select = document.getElementById(personSelectId(type));
+            if (!select) return;
             const master = personPickerMaster(type);
-            const ids = getEventPersonIds(type);
-            if (ids.length === 0) {
-                box.innerHTML = `<div style="font-size:12px; color:var(--text-muted);">Nadie asignado todavía.</div>`;
-                return;
-            }
-            box.innerHTML = ids.map(id => {
-                const p = master[id];
-                const name = p ? p.name : '(eliminado)';
-                return `<div class="event-card" style="padding:8px 12px; cursor:default;">
-                    <span>${escapeHtml(name)}</span>
-                    <button type="button" class="btn-logout" style="padding:4px 8px;" onclick="removePersonFromEvent('${type}', '${id}')">&times;</button>
-                </div>`;
-            }).join('');
-        }
-
-        async function removePersonFromEvent(type, id) {
-            if (!currentEvent || !eventsCache[currentEvent]) return;
-            const col = personPickerColumn(type);
-            const ids = (eventsCache[currentEvent][col] || []).filter(x => x !== id);
-            const { error } = await sb.from('events').update({ [col]: ids }).eq('id', currentEvent);
-            if (error) { alert('Error quitando: ' + error.message); return; }
-            eventsCache[currentEvent][col] = ids;
-            renderPersonChips(type);
-        }
-
-        function openPersonPicker(type) {
-            if (!currentEvent) { alert('Elegí primero un evento.'); return; }
-            personPickerType = type;
-            personPickerSelected = new Set(getEventPersonIds(type));
-            document.getElementById('person_picker_title').textContent = 'Elegir ' + personPickerLabel(type);
-            document.getElementById('person_picker_new_name').value = '';
-            renderPersonPickerList();
-            document.getElementById('person-picker-overlay').style.display = 'flex';
-        }
-
-        function closePersonPicker() {
-            document.getElementById('person-picker-overlay').style.display = 'none';
-            personPickerType = null;
-        }
-
-        function renderPersonPickerList() {
-            const list = document.getElementById('person_picker_list');
-            const master = personPickerMaster(personPickerType);
+            const selectedIds = new Set(getEventPersonIds(type));
             const entries = Object.entries(master).sort((a, b) => a[1].name.localeCompare(b[1].name));
-            if (entries.length === 0) {
-                list.innerHTML = `<p class="empty-hint">Todavía no hay ${personPickerLabel(personPickerType)}. Creá uno arriba.</p>`;
-                return;
-            }
-            list.innerHTML = entries.map(([id, p]) => `
-                <div class="event-card" style="padding:10px 12px; cursor:default;">
-                    <label class="checkbox-row" style="flex:1;">
-                        <input type="checkbox" class="person-picker-checkbox" value="${id}" ${personPickerSelected.has(id) ? 'checked' : ''} onchange="onPersonPickerCheck('${id}', this.checked)">
-                        ${escapeHtml(p.name)}
-                    </label>
-                    <div style="display:flex; gap:4px;">
-                        <button type="button" class="btn-logout" style="padding:4px 8px;" onclick="editPickerPerson('${id}')" title="Editar">
-                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"></path><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"></path></svg>
-                        </button>
-                        <button type="button" class="btn-logout" style="padding:4px 8px;" onclick="deletePickerPerson('${id}')" title="Eliminar">
-                            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
-                        </button>
-                    </div>
-                </div>
-            `).join('');
+            select.innerHTML = entries.map(([id, p]) => `<option value="${id}" ${selectedIds.has(id) ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('');
         }
 
-        function onPersonPickerCheck(id, checked) {
-            if (checked) personPickerSelected.add(id); else personPickerSelected.delete(id);
+        async function savePersonSelection(type) {
+            if (!currentEvent) return;
+            const select = document.getElementById(personSelectId(type));
+            const ids = Array.from(select.selectedOptions).map(o => o.value);
+            const col = personPickerColumn(type);
+            const { error } = await sb.from('events').update({ [col]: ids }).eq('id', currentEvent);
+            if (error) { alert('Error guardando: ' + error.message); return; }
+            eventsCache[currentEvent][col] = ids;
         }
 
-        async function addPickerPerson() {
-            const input = document.getElementById('person_picker_new_name');
-            const name = input.value.trim();
+        async function addPersonToMaster(type) {
+            const name = prompt(`Nombre del nuevo ${personPickerLabel(type)}:`);
             if (!name) return;
-            const table = personPickerTable(personPickerType);
-            const id = (personPickerType === 'foto' ? 'foto_' : 'video_') + Date.now();
+            const table = personPickerTable(type);
+            const id = `${type}_${Date.now()}`;
 
             const { error } = await sb.from(table).insert({ id, name });
-            if (error) { alert(`Error creando ${personPickerLabel(personPickerType)}: ` + error.message); return; }
+            if (error) { alert(`Error creando ${personPickerLabel(type)}: ` + error.message); return; }
 
-            personPickerMaster(personPickerType)[id] = { name };
-            personPickerSelected.add(id);
-            input.value = '';
-            renderPersonPickerList();
+            personPickerMaster(type)[id] = { name };
+            renderPersonSelect(type);
+            const opt = document.getElementById(personSelectId(type)).querySelector(`option[value="${id}"]`);
+            if (opt) opt.selected = true;
+            await savePersonSelection(type);
         }
 
-        async function editPickerPerson(id) {
-            const master = personPickerMaster(personPickerType);
+        async function editSelectedPerson(type) {
+            const select = document.getElementById(personSelectId(type));
+            const selected = Array.from(select.selectedOptions);
+            if (selected.length !== 1) { alert(`Seleccioná exactamente un ${personPickerLabel(type)} para editar.`); return; }
+
+            const id = selected[0].value;
+            const master = personPickerMaster(type);
             const current = master[id];
             if (!current) return;
             const name = prompt('Nombre:', current.name);
             if (!name) return;
 
-            const table = personPickerTable(personPickerType);
+            const table = personPickerTable(type);
             const { error } = await sb.from(table).update({ name }).eq('id', id);
             if (error) { alert('Error actualizando: ' + error.message); return; }
 
             master[id] = { name };
-            renderPersonPickerList();
+            renderPersonSelect(type);
         }
 
-        async function deletePickerPerson(id) {
-            const master = personPickerMaster(personPickerType);
-            const current = master[id];
-            if (!current) return;
+        async function deleteSelectedPerson(type) {
+            const select = document.getElementById(personSelectId(type));
+            const selectedIds = Array.from(select.selectedOptions).map(o => o.value);
+            if (selectedIds.length === 0) { alert(`Seleccioná al menos un ${personPickerLabel(type)} para eliminar.`); return; }
 
-            const col = personPickerColumn(personPickerType);
-            const usedBy = Object.values(eventsCache).filter(e => (e[col] || []).includes(id)).length;
-            const warning = usedBy > 0 ? `\n\nOjo: ${usedBy} evento(s) lo tienen asignado y se quedarán sin él.` : '';
-            if (!confirm(`¿Eliminar a "${current.name}"?${warning}`)) return;
+            const master = personPickerMaster(type);
+            const names = selectedIds.map(id => master[id] ? master[id].name : id).join(', ');
+            const col = personPickerColumn(type);
+            const usedBy = Object.values(eventsCache).filter(e => selectedIds.some(id => (e[col] || []).includes(id))).length;
+            const warning = usedBy > 0 ? `\n\nOjo: ${usedBy} evento(s) los tienen asignados y se quedarán sin ellos.` : '';
+            if (!confirm(`¿Eliminar: ${names}?${warning}`)) return;
 
-            const table = personPickerTable(personPickerType);
-            const { error } = await sb.from(table).delete().eq('id', id);
+            const table = personPickerTable(type);
+            const { error } = await sb.from(table).delete().in('id', selectedIds);
             if (error) { alert('Error eliminando: ' + error.message); return; }
 
-            delete master[id];
-            personPickerSelected.delete(id);
-            renderPersonPickerList();
-        }
-
-        async function savePersonPicker() {
-            if (!currentEvent) { closePersonPicker(); return; }
-            const type = personPickerType;
-            const col = personPickerColumn(type);
-            const ids = Array.from(personPickerSelected);
-
-            const { error } = await sb.from('events').update({ [col]: ids }).eq('id', currentEvent);
-            if (error) { alert('Error guardando: ' + error.message); return; }
-
-            eventsCache[currentEvent][col] = ids;
-            closePersonPicker();
-            renderPersonChips(type);
+            selectedIds.forEach(id => delete master[id]);
+            renderPersonSelect(type);
+            await savePersonSelection(type);
         }
 
         function toggleRiderEmpresa() {
@@ -2890,8 +2836,8 @@
             toggleRiderEmpresa();
             toggleEfectosDetalle();
             renderFieldAssignments();
-            renderPersonChips('video');
-            renderPersonChips('foto');
+            renderPersonSelect('video');
+            renderPersonSelect('foto');
             // Suscripción push para este (usuario, evento): sin gesto de
             // usuario de por medio no muestra ningún diálogo nuevo si el
             // permiso ya se concedió o denegó antes, así que es seguro

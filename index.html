@@ -1777,6 +1777,20 @@
                     <label>Fecha del Evento</label>
                     <input type="date" id="event_modal_date">
                 </div>
+                <div class="form-card">
+                    <label>Horario</label>
+                    <div class="inline-row">
+                        <div style="flex:1;">
+                            <label style="font-weight:400; text-transform:none; letter-spacing:normal; font-size:12px; margin-bottom:4px;">Inicio</label>
+                            <input type="time" id="event_modal_start_time">
+                        </div>
+                        <div style="flex:1;">
+                            <label style="font-weight:400; text-transform:none; letter-spacing:normal; font-size:12px; margin-bottom:4px;">Fin</label>
+                            <input type="time" id="event_modal_end_time">
+                        </div>
+                    </div>
+                    <div style="font-size:11px; color:var(--text-muted); margin-top:6px;">Si el festival acaba de madrugada, poné una hora de fin menor que la de inicio (p. ej. 22:00 - 04:00): se entiende que es al día siguiente.</div>
+                </div>
                 <div class="form-card" id="event_modal_clone_wrap" style="position:relative;">
                     <label>Clonar producción de un festival existente (opcional)</label>
                     <input type="text" id="event_modal_clone_search" placeholder="Buscá por nombre o ubicación..." autocomplete="off">
@@ -2002,6 +2016,8 @@
         const ICON_KEY = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2l-5.5 5.5"></path><path d="M15 8l3 3"></path><path d="M9.5 13.5a5 5 0 1 1-7 7 5 5 0 0 1 7-7z"></path><path d="M13 10l3 3"></path></svg>';
         const ICON_USERS = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>';
         const ICON_CALENDAR = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>';
+        const ICON_LOCATION = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>';
+        const ICON_CLOCK = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>';
         const ICON_CHEVRON = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
         const ICON_DOWNLOAD = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>';
         const ICON_REPLY = '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 14 4 9 9 4"></polyline><path d="M20 20v-7a4 4 0 0 0-4-4H4"></path></svg>';
@@ -3097,6 +3113,8 @@
             document.getElementById('event_modal_name').value = '';
             document.getElementById('event_modal_ubicacion').value = '';
             document.getElementById('event_modal_date').value = '';
+            document.getElementById('event_modal_start_time').value = '';
+            document.getElementById('event_modal_end_time').value = '';
             document.getElementById('event_modal_clone_wrap').style.display = 'block';
             document.getElementById('event_modal_clone_search').value = '';
             document.getElementById('event_modal_clone_source').value = '';
@@ -3115,6 +3133,8 @@
             document.getElementById('event_modal_name_wrap').style.display = 'none';
             document.getElementById('event_modal_ubicacion').value = eventsCache[eventId].ubicacion || '';
             document.getElementById('event_modal_date').value = eventsCache[eventId].event_date || '';
+            document.getElementById('event_modal_start_time').value = (eventsCache[eventId].start_time || '').slice(0, 5);
+            document.getElementById('event_modal_end_time').value = (eventsCache[eventId].end_time || '').slice(0, 5);
             document.getElementById('event_modal_clone_wrap').style.display = 'none';
 
             const allowedFor = Object.entries(usersCache)
@@ -3293,13 +3313,15 @@
             let chosenCloneSourceId = '';
 
             const ubicacion = document.getElementById('event_modal_ubicacion').value.trim();
+            const startTime = document.getElementById('event_modal_start_time').value || null;
+            const endTime = document.getElementById('event_modal_end_time').value || null;
 
             if (eventModalMode === 'create') {
                 const name = document.getElementById('event_modal_name').value.trim();
                 if (!name) { alert("Por favor, introduce un nombre para el evento."); return; }
 
                 eventId = "fest_" + Date.now();
-                const newEvent = { id: eventId, name, ubicacion: ubicacion || null, rider: "no", efectos: "no", pirotecnia: "no", event_date: dateInput.value || null };
+                const newEvent = { id: eventId, name, ubicacion: ubicacion || null, rider: "no", efectos: "no", pirotecnia: "no", event_date: dateInput.value || null, start_time: startTime, end_time: endTime };
                 const { error } = await sb.from('events').insert(newEvent);
                 if (error) { alert("Error creando evento: " + error.message); return; }
 
@@ -3311,7 +3333,7 @@
                     similarMatches = findSimilarEvents(name, ubicacion, eventId);
                 }
             } else {
-                const { error } = await sb.from('events').update({ ubicacion: ubicacion || null, event_date: dateInput.value || null }).eq('id', eventId);
+                const { error } = await sb.from('events').update({ ubicacion: ubicacion || null, event_date: dateInput.value || null, start_time: startTime, end_time: endTime }).eq('id', eventId);
                 if (error) { alert("Error actualizando el evento: " + error.message); return; }
             }
 
@@ -3535,6 +3557,23 @@
             return d.toLocaleDateString('es-ES', { day: '2-digit', month: 'short', year: 'numeric' });
         }
 
+        // Los festivales suelen empezar de noche y acabar de madrugada del
+        // día siguiente: si la hora de fin es "menor" que la de inicio
+        // (comparación de string "HH:MM" funciona igual que numérica), se
+        // marca "+1 día" para que quede claro que no es el mismo día que
+        // event_date.
+        function formatEventHorario(startTime, endTime) {
+            const fmt = (t) => t ? t.slice(0, 5) : '';
+            const start = fmt(startTime);
+            const end = fmt(endTime);
+            if (!start && !end) return '';
+            if (start && end) {
+                const overnight = end < start;
+                return `${start} - ${end}${overnight ? ' (+1 día)' : ''}`;
+            }
+            return start || end;
+        }
+
         function openEventById(eventId, tab) {
             currentEvent = eventId;
             updateEventSelect();
@@ -3563,10 +3602,13 @@
                 const card = document.createElement('div');
                 card.className = 'event-card';
                 const dateLabel = event.event_date ? formatDateEs(event.event_date) : 'Sin fecha asignada';
+                const horarioLabel = formatEventHorario(event.start_time, event.end_time);
                 card.innerHTML = `
                     <div>
                         <div class="event-card-name">${escapeHtml(event.name)}</div>
+                        ${event.ubicacion ? `<div class="event-card-date">${ICON_LOCATION} ${escapeHtml(event.ubicacion)}</div>` : ''}
                         <div class="event-card-date">${ICON_CALENDAR} ${dateLabel}</div>
+                        ${horarioLabel ? `<div class="event-card-date">${ICON_CLOCK} ${horarioLabel}</div>` : ''}
                         ${renderAssignmentBadgeHTML(event.id)}
                     </div>
                     ${ICON_CHEVRON}
@@ -3644,9 +3686,12 @@
             box.innerHTML = ids.map(id => {
                 const e = eventsCache[id];
                 if (!e) return '';
+                const horarioLabel = formatEventHorario(e.start_time, e.end_time);
                 return `<div class="event-card" onclick="openEventById('${id}','tab_produccion')">
                     <div>
                         <div class="event-card-name">${escapeHtml(e.name)}</div>
+                        ${e.ubicacion ? `<div class="event-card-date">${ICON_LOCATION} ${escapeHtml(e.ubicacion)}</div>` : ''}
+                        ${horarioLabel ? `<div class="event-card-date">${ICON_CLOCK} ${horarioLabel}</div>` : ''}
                         ${renderAssignmentBadgeHTML(e.id)}
                     </div>
                     ${ICON_CHEVRON}

@@ -46,6 +46,8 @@ ALTER TABLE public.events ADD COLUMN IF NOT EXISTS map_data JSONB;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS seguridad TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS anotaciones TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS ubicacion TEXT;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS start_time TIME;
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS end_time TIME;
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$

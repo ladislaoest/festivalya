@@ -1349,6 +1349,52 @@
             padding: 0 10px;
             height: 32px;
         }
+
+        /* --- VISTA DE ESCRITORIO ---
+           Todo lo de arriba es mobile-first (una sola columna, ancho fijo
+           520px). En pantallas grandes eso deja la mitad de la pantalla
+           vacía, así que a partir de cierto ancho el contenido se estira y
+           las tarjetas (campos de formulario, eventos, empleados...) se
+           reparten en columnas en vez de apilarse una debajo de otra. El
+           menú inferior se deja igual -no se pidió cambiarlo a lateral. */
+        @media (min-width: 900px) {
+            .app-page {
+                max-width: 1100px;
+            }
+
+            .logo-row,
+            .event-selector-zone,
+            #current_event_bar {
+                max-width: 1100px;
+            }
+
+            /* .card-group se usa tanto para listas de tarjetas cortas
+               (eventos, empleados, campos de Producción...) como para hilos
+               cronológicos (mensajes, historial de Talkie, resultados de
+               búsqueda) -esos últimos deben seguir en una sola columna, ya
+               que partirlos en varias rompe el orden de lectura. */
+            .card-group {
+                display: grid;
+                grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+                align-items: start;
+                gap: 14px;
+            }
+
+            #messages_list,
+            #talkie_history_list,
+            #search_results,
+            #person_picker_list {
+                display: flex;
+                flex-direction: column;
+            }
+
+            /* Los campos largos (textarea, listas de archivos...) ocupan
+               todo el ancho disponible en vez de quedarse en una columna
+               estrecha junto a campos cortos. */
+            .form-card:has(textarea) {
+                grid-column: 1 / -1;
+            }
+        }
     </style>
 </head>
 <body>

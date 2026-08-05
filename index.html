@@ -1055,6 +1055,16 @@
             border: none;
         }
 
+        .cal-day.is-today {
+            border-color: var(--success);
+            box-shadow: 0 0 0 1px var(--success);
+        }
+
+        .cal-day.is-today .cal-day-num {
+            color: var(--success);
+            font-weight: 800;
+        }
+
         .cal-day-num {
             text-align: center;
             margin-bottom: 2px;
@@ -3813,6 +3823,10 @@
             const startOffset = (firstDay.getDay() + 6) % 7;
             const daysInMonth = new Date(year, month + 1, 0).getDate();
 
+            const today = new Date();
+            const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
+            const todayDay = today.getDate();
+
             let html = `
                 <div class="cal-header">
                     <button type="button" class="cal-nav-btn" onclick="shiftCalendar(-1)">${ICON_CHEVRON.replace('9 18 15 12 9 6', '15 18 9 12 15 6')}</button>
@@ -3835,7 +3849,8 @@
                 }).join('');
                 const extra = dayEventIds.length - MAX_NAMES_PER_DAY;
                 const moreHtml = extra > 0 ? `<div class="cal-day-event-name">+${extra} más</div>` : '';
-                html += `<div class="cal-day ${hasEvents ? 'has-events' : ''}" ${hasEvents ? `onclick="showCalendarDay(${day})"` : ''}>
+                const isToday = isCurrentMonth && day === todayDay;
+                html += `<div class="cal-day ${hasEvents ? 'has-events' : ''} ${isToday ? 'is-today' : ''}" ${hasEvents ? `onclick="showCalendarDay(${day})"` : ''}>
                     <span class="cal-day-num">${day}</span>${namesHtml}${moreHtml}
                 </div>`;
             }

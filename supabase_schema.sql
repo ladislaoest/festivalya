@@ -54,6 +54,7 @@ ALTER TABLE public.events ADD COLUMN IF NOT EXISTS lona TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS memoria TEXT;
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS foto_ids JSONB NOT NULL DEFAULT '[]';
 ALTER TABLE public.events ADD COLUMN IF NOT EXISTS video_ids JSONB NOT NULL DEFAULT '[]';
+ALTER TABLE public.events ADD COLUMN IF NOT EXISTS google_event_id TEXT;
 
 CREATE OR REPLACE FUNCTION public.handle_updated_at()
 RETURNS TRIGGER AS $$
@@ -101,6 +102,21 @@ CREATE TABLE IF NOT EXISTS public.videografos (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL
 );
+
+-- Sincronización con Google Calendar (ver migracion_google_calendar.sql
+-- para la explicación completa de por qué esta tabla, a diferencia de
+-- todas las demás, NO lleva una política RLS abierta).
+CREATE TABLE IF NOT EXISTS public.google_calendar_tokens (
+    id TEXT PRIMARY KEY DEFAULT 'main',
+    access_token TEXT,
+    refresh_token TEXT,
+    token_expiry TIMESTAMPTZ,
+    calendar_id TEXT,
+    calendar_name TEXT,
+    connected_by TEXT,
+    connected_at TIMESTAMPTZ DEFAULT NOW()
+);
+ALTER TABLE public.google_calendar_tokens ENABLE ROW LEVEL SECURITY;
 
 -- Registro de actividad: qué usuario cambió qué en qué evento.
 -- `visible_to` guarda una foto de los usuarios con acceso al evento en

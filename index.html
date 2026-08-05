@@ -1796,6 +1796,31 @@
                     <!-- Lista de usuarios inyectada por JS -->
                 </div>
             </div>
+
+            <h2 style="margin-top:24px;">Google Calendar</h2>
+            <div class="card-group">
+                <div class="form-card">
+                    <label>Estado</label>
+                    <div id="gcal_status_text" style="font-size:13px; color:var(--text-muted); margin-bottom:10px;">Comprobando...</div>
+
+                    <div id="gcal_disconnected_box">
+                        <button type="button" class="btn-add-event" onclick="connectGoogleCalendar()" style="width:100%;">Conectar con Google</button>
+                    </div>
+
+                    <div id="gcal_connected_box" style="display:none;">
+                        <label style="margin-top:10px;">Calendario a sincronizar</label>
+                        <div class="inline-row" style="margin-bottom:10px;">
+                            <select id="gcal_calendar_select" style="flex:1;"></select>
+                            <button type="button" class="btn-add-event" onclick="saveGoogleCalendarChoice()">Guardar</button>
+                        </div>
+                        <div class="inline-row">
+                            <button type="button" class="btn-add-event" onclick="syncFromGoogleCalendar()" style="flex:1;">Sincronizar ahora</button>
+                            <button type="button" class="btn-logout" onclick="disconnectGoogleCalendar()">Desconectar</button>
+                        </div>
+                        <div style="font-size:11px; color:var(--text-muted); margin-top:10px;">Los festivales que crees en festivalya se copian solos al calendario elegido. Los eventos que crees ahí (con fecha) se importan como festivales nuevos al sincronizar.</div>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div id="tab_fichaje" class="app-page">
@@ -2343,6 +2368,10 @@
             if (currentUser && usersCache[currentUser]) {
                 overlay.style.display = 'none';
                 setupUIByRole();
+                handleGoogleCalendarRedirect();
+                if (usersCache[currentUser].role === 'admin') {
+                    loadGoogleCalendarStatus().then(() => { if (gcalStatus.connected) syncFromGoogleCalendar(true); });
+                }
                 injectAssignWidgets();
                 injectDesignAssignWidgets();
                 updateEventSelect();
@@ -2414,6 +2443,248 @@
         }
 
         // --- GESTIÓN DE USUARIOS (ADMIN) ---
+        // --- GOOGLE CALENDAR (sincronización, ver api/google-*.js) ---
+        // Los tokens de Google nunca llegan al navegador: todo pasa por las
+        // funciones serverless de /api, que son las únicas con la Service
+        // Role Key para leer/escribir google_calendar_tokens (RLS cerrado a
+        // propósito, ver migracion_google_calendar.sql).
+        let gcalStatus = { connected: false, calendarId: null, calendarName: null };
+
+        // Google vuelve a "/" con ?google_calendar=connected|error después
+        // del consentimiento (ver api/google-oauth-callback.js) -se avisa
+        // una vez y se limpia el parámetro de la URL.
+        function handleGoogleCalendarRedirect() {
+            const params = new URLSearchParams(location.search);
+            const status = params.get('google_calendar');
+            if (!status) return;
+            if (status === 'connected') alert('Google Calendar conectado. Elegí qué calendario sincronizar en Admin.');
+            else if (status === 'error') alert('No se pudo conectar con Google Calendar. Revisá las credenciales configuradas en Vercel.');
+            params.delete('google_calendar');
+            const newUrl = location.pathname + (params.toString() ? '?' + params.toString() : '') + location.hash;
+            history.replaceState(history.state, '', newUrl);
+        }
+
+        async function loadGoogleCalendarStatus() {
+            try {
+                const resp = await fetch('/api/google-calendar?action=status');
+                gcalStatus = await resp.json();
+            } catch (err) {
+                console.warn('No se pudo comprobar el estado de Google Calendar:', err.message);
+                gcalStatus = { connected: false };
+            }
+            renderGoogleCalendarStatus();
+        }
+
+        function renderGoogleCalendarStatus() {
+            const statusText = document.getElementById('gcal_status_text');
+            const disconnectedBox = document.getElementById('gcal_disconnected_box');
+            const connectedBox = document.getElementById('gcal_connected_box');
+            if (!statusText) return;
+
+            if (gcalStatus.connected) {
+                statusText.textContent = gcalStatus.calendarName
+                    ? `Conectado. Sincronizando con: ${gcalStatus.calendarName}`
+                    : 'Conectado. Elegí qué calendario sincronizar.';
+                disconnectedBox.style.display = 'none';
+                connectedBox.style.display = 'block';
+                loadGoogleCalendarsForSelect();
+            } else {
+                statusText.textContent = 'No conectado.';
+                disconnectedBox.style.display = 'block';
+                connectedBox.style.display = 'none';
+            }
+        }
+
+        function connectGoogleCalendar() {
+            window.location.href = '/api/google-oauth-start';
+        }
+
+        async function disconnectGoogleCalendar() {
+            if (!confirm('¿Desconectar Google Calendar? Dejará de sincronizarse hasta que vuelvas a conectarlo.')) return;
+            try {
+                await fetch('/api/google-calendar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'disconnect' }) });
+            } catch (err) { /* seguimos igual para reflejar el estado local */ }
+            await loadGoogleCalendarStatus();
+        }
+
+        async function loadGoogleCalendarsForSelect() {
+            const select = document.getElementById('gcal_calendar_select');
+            if (!select) return;
+            try {
+                const resp = await fetch('/api/google-calendar?action=list-calendars');
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error);
+                select.innerHTML = (data.calendars || []).map(c =>
+                    `<option value="${escapeHtml(c.id)}" data-name="${escapeHtml(c.name)}" ${c.id === gcalStatus.calendarId ? 'selected' : ''}>${escapeHtml(c.name)}</option>`
+                ).join('');
+            } catch (err) {
+                select.innerHTML = `<option value="">Error cargando calendarios</option>`;
+            }
+        }
+
+        async function saveGoogleCalendarChoice() {
+            const select = document.getElementById('gcal_calendar_select');
+            const opt = select.selectedOptions[0];
+            if (!opt) return;
+            try {
+                const resp = await fetch('/api/google-calendar', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'set-calendar', calendarId: opt.value, calendarName: opt.dataset.name })
+                });
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error);
+                alert('Calendario guardado.');
+                await loadGoogleCalendarStatus();
+            } catch (err) {
+                alert('Error guardando el calendario: ' + err.message);
+            }
+        }
+
+        // Festivalya -> Google: convierte un festival al formato de evento de
+        // Google Calendar. Si acaba de madrugada (end_time < start_time, ver
+        // formatEventHorario) el final cae al día siguiente de event_date.
+        function buildGoogleEventPayload(event) {
+            if (!event.event_date) return null;
+            const payload = { summary: event.name || 'Festival' };
+            if (event.ubicacion) payload.location = event.ubicacion;
+
+            const withSeconds = (t) => (t && t.length === 5 ? t + ':00' : t);
+            if (event.start_time) {
+                let endDate = event.event_date;
+                const endTime = event.end_time || event.start_time;
+                if (event.end_time && event.end_time < event.start_time) {
+                    const d = new Date(event.event_date + 'T00:00:00');
+                    d.setDate(d.getDate() + 1);
+                    endDate = d.toISOString().slice(0, 10);
+                }
+                payload.start = { dateTime: `${event.event_date}T${withSeconds(event.start_time)}`, timeZone: 'Europe/Madrid' };
+                payload.end = { dateTime: `${endDate}T${withSeconds(endTime)}`, timeZone: 'Europe/Madrid' };
+            } else {
+                // Evento de día completo: el "end.date" de Google es
+                // EXCLUSIVO, hay que sumarle un día para que cubra event_date.
+                const d = new Date(event.event_date + 'T00:00:00');
+                d.setDate(d.getDate() + 1);
+                payload.start = { date: event.event_date };
+                payload.end = { date: d.toISOString().slice(0, 10) };
+            }
+            return payload;
+        }
+
+        // Se llama después de crear/editar un festival (ver submitEventModal).
+        // No interrumpe ni avisa con alert si falla -Google Calendar es un
+        // plus, nunca debe impedir guardar el festival en festivalya.
+        async function syncEventToGoogle(eventId) {
+            if (!gcalStatus.connected || !gcalStatus.calendarId) return;
+            const event = eventsCache[eventId];
+            if (!event) return;
+            const payload = buildGoogleEventPayload(event);
+            if (!payload) return;
+
+            try {
+                if (event.google_event_id) {
+                    await fetch('/api/google-calendar', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'update-event', googleEventId: event.google_event_id, event: payload })
+                    });
+                } else {
+                    const resp = await fetch('/api/google-calendar', {
+                        method: 'POST', headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ action: 'create-event', event: payload })
+                    });
+                    const data = await resp.json();
+                    if (resp.ok && data.event && data.event.id) {
+                        await sb.from('events').update({ google_event_id: data.event.id }).eq('id', eventId);
+                        if (eventsCache[eventId]) eventsCache[eventId].google_event_id = data.event.id;
+                    }
+                }
+            } catch (err) {
+                console.warn('No se pudo sincronizar el festival con Google Calendar:', err.message);
+            }
+        }
+
+        async function deleteEventFromGoogle(googleEventId) {
+            if (!googleEventId || !gcalStatus.connected) return;
+            try {
+                await fetch('/api/google-calendar', {
+                    method: 'POST', headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'delete-event', googleEventId })
+                });
+            } catch (err) {
+                console.warn('No se pudo borrar el evento en Google Calendar:', err.message);
+            }
+        }
+
+        // Google -> Festivalya: un evento de Google con fecha que todavía no
+        // esté enlazado a ningún festival (google_event_id) se importa como
+        // festival nuevo. No pisa festivales ya importados -si alguien edita
+        // uno de los dos lados después de importar, no hay reconciliación
+        // automática, para no arriesgarse a sobreescribir cambios locales.
+        function parseGoogleEventToFestival(gEvent) {
+            let event_date = null, start_time = null, end_time = null;
+            if (gEvent.start) {
+                if (gEvent.start.date) {
+                    event_date = gEvent.start.date;
+                } else if (gEvent.start.dateTime) {
+                    event_date = gEvent.start.dateTime.slice(0, 10);
+                    start_time = gEvent.start.dateTime.slice(11, 16);
+                }
+            }
+            if (gEvent.end && gEvent.end.dateTime) {
+                end_time = gEvent.end.dateTime.slice(11, 16);
+            }
+            return {
+                name: gEvent.summary || 'Evento sin nombre',
+                event_date, start_time, end_time,
+                ubicacion: gEvent.location || null,
+                google_event_id: gEvent.id
+            };
+        }
+
+        async function syncFromGoogleCalendar(silent) {
+            if (!gcalStatus.connected || !gcalStatus.calendarId) {
+                if (!silent) alert('Conectá Google Calendar y elegí un calendario primero.');
+                return;
+            }
+
+            let events;
+            try {
+                const resp = await fetch('/api/google-calendar?action=list-events');
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error);
+                events = data.events || [];
+            } catch (err) {
+                if (silent) console.warn('Sync automática con Google Calendar falló:', err.message);
+                else alert('Error consultando Google Calendar: ' + err.message);
+                return;
+            }
+
+            const knownGoogleIds = new Set(Object.values(eventsCache).map(e => e.google_event_id).filter(Boolean));
+            const toImport = events.filter(e => e.status !== 'cancelled' && e.id && e.start && !knownGoogleIds.has(e.id));
+
+            let imported = 0;
+            for (const gEvent of toImport) {
+                const parsed = parseGoogleEventToFestival(gEvent);
+                if (!parsed.event_date) continue;
+                const id = `fest_${Date.now()}_${Math.floor(Math.random() * 10000)}`;
+                const { error } = await sb.from('events').insert({
+                    id, name: parsed.name, event_date: parsed.event_date,
+                    start_time: parsed.start_time, end_time: parsed.end_time,
+                    ubicacion: parsed.ubicacion, google_event_id: parsed.google_event_id,
+                    rider: 'no', efectos: 'no'
+                });
+                if (!error) imported++;
+            }
+
+            if (imported > 0) {
+                await loadAllData();
+                refreshEventsBrowser();
+                if (silent) showAutoSaveToast(`${imported} festival(es) importado(s) de Google Calendar`);
+                else alert(`Se importaron ${imported} festival(es) nuevo(s) de Google Calendar.`);
+            } else if (!silent) {
+                alert('No hay festivales nuevos para importar.');
+            }
+        }
+
         async function createNewUser() {
             const usernameInput = document.getElementById('new_username');
             const passwordInput = document.getElementById('new_password');
@@ -2793,12 +3064,14 @@
             if(!confirm(`¿Estás seguro de eliminar el evento "${eventsCache[currentId].name}"?`)) return;
 
             const eventName = eventsCache[currentId].name;
+            const googleEventId = eventsCache[currentId].google_event_id;
 
             const { error } = await sb.from('events').delete().eq('id', currentId);
             if (error) {
                 alert("Error eliminando evento: " + error.message);
                 return;
             }
+            deleteEventFromGoogle(googleEventId); // en segundo plano
 
             await logActivity(currentId, eventName, 'delete', 'Eliminó el evento');
 
@@ -3691,6 +3964,7 @@
             if (currentEvent) loadEventData();
             renderAdminPanel();
             refreshEventsBrowser();
+            syncEventToGoogle(eventId); // en segundo plano, no bloquea ni avisa si falla
 
             if (wasCreate && chosenCloneSourceId) {
                 await cloneEventProduction(eventId, chosenCloneSourceId);

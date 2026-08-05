@@ -145,6 +145,26 @@
             max-width: 520px;
         }
 
+        /* Recuerda en todo momento en qué evento se está trabajando (ver
+           updateCurrentEventBanner) -rojo si no hay ninguno seleccionado. */
+        #current_event_bar {
+            width: 100%;
+            max-width: 520px;
+            padding: 8px 14px;
+            border-radius: 10px;
+            background: var(--accent-gold-dim);
+            color: var(--accent-gold-bright);
+            font-size: 13px;
+            font-weight: 700;
+            text-align: center;
+            margin-top: 10px;
+        }
+
+        #current_event_bar.no-event {
+            background: var(--danger-dim);
+            color: var(--danger);
+        }
+
         select, input, textarea {
             background: var(--bg-elevated);
             color: var(--text-main);
@@ -1370,6 +1390,9 @@
                 </button>
             </div>
         </div>
+        <div id="current_event_bar" class="no-event">
+            <span id="current_event_bar_text">Ningún evento seleccionado — elegí uno en Eventos</span>
+        </div>
         <div class="event-selector-zone">
             <button id="admin_add_event_btn" class="btn-add-event" onclick="openCreateEventModal()">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
@@ -1572,6 +1595,11 @@
                 </div>
 
                 <div class="form-card">
+                    <label>Drone</label>
+                    <input type="text" id="media_drone" class="mention-field" placeholder="Piloto autorizado, plan de vuelo e id drone...">
+                </div>
+
+                <div class="form-card">
                     <label>Speaker</label>
                     <input type="text" id="media_speaker" class="mention-field" placeholder="Presentadores o locutores del festival...">
                 </div>
@@ -1636,20 +1664,6 @@
                     <textarea id="prod_memoria" class="mention-field" rows="4" placeholder="Memoria del evento..."></textarea>
                 </div>
 
-            </div>
-            <button type="submit" class="btn-save-all">
-                <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
-                Guardar Cambios
-            </button>
-        </div>
-
-        <div id="tab_media" class="app-page">
-            <h2>Equipo de Media / Prensa</h2>
-            <div class="card-group">
-                <div class="form-card">
-                    <label>Drone</label>
-                    <input type="text" id="media_drone" class="mention-field" placeholder="Piloto autorizado, plan de vuelo e id drone...">
-                </div>
             </div>
             <button type="submit" class="btn-save-all">
                 <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>
@@ -2043,9 +2057,6 @@
         <button class="nav-item" data-tab="tab_produccion" onclick="switchTab('tab_produccion')" title="Producción" aria-label="Producción">
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg>
         </button>
-        <button class="nav-item" data-tab="tab_media" onclick="switchTab('tab_media')" title="Media" aria-label="Media">
-            <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path><circle cx="12" cy="13" r="4"></circle></svg>
-        </button>
         <button class="nav-item" data-tab="tab_hosteleria" onclick="switchTab('tab_hosteleria')" title="Hostelería" aria-label="Hostelería">
             <svg class="icon icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8h1a4 4 0 0 1 0 8h-1"></path><path d="M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z"></path><line x1="6" y1="1" x2="6" y2="4"></line><line x1="10" y1="1" x2="10" y2="4"></line><line x1="14" y1="1" x2="14" y2="4"></line></svg>
         </button>
@@ -2125,7 +2136,11 @@
         let usersCache = {};
         let eventsCache = {};
         let currentUser = localStorage.getItem('festivalya_user') || null;
-        let currentEvent = localStorage.getItem('festivalya_last_event') || null;
+        // Ya no se recuerda el último evento entre sesiones (ver
+        // updateEventSelect/switchTab): cada vez que se abre la app hay que
+        // elegir un evento a propósito, para no acabar editando el
+        // equivocado sin darse cuenta.
+        let currentEvent = null;
 
         let activityLog = [];
         let realtimeSubscribed = false;
@@ -2152,10 +2167,9 @@
         // este sistema genérico de guardado por input -se guardan aparte.
         const allFields = [
             'prod_escenario', 'prod_rider', 'prod_rider_empresa', 'prod_efectos', 'prod_efectos_detalle',
-            'media_speaker', 'prod_lona', 'prod_generadores', 'prod_vallas_bajas', 'prod_vallas_antipanico',
+            'media_drone', 'media_speaker', 'prod_lona', 'prod_generadores', 'prod_vallas_bajas', 'prod_vallas_antipanico',
             'prod_banos', 'prod_ambulancia', 'prod_seguridad', 'prod_contenedores', 'prod_limpieza',
             'prod_anotaciones', 'prod_memoria',
-            'media_drone',
             'host_barras', 'host_foodtrucks', 'log_transfers', 'log_camerinos'
         ];
 
@@ -2204,7 +2218,7 @@
             prod_limpieza: { label: 'Limpieza', tab: 'tab_produccion' },
             prod_anotaciones: { label: 'Anotaciones', tab: 'tab_produccion' },
             prod_memoria: { label: 'Memoria', tab: 'tab_produccion' },
-            media_drone: { label: 'Drone', tab: 'tab_media' },
+            media_drone: { label: 'Drone', tab: 'tab_produccion' },
             host_barras: { label: 'Barras', tab: 'tab_hosteleria' },
             host_foodtrucks: { label: 'Food Trucks', tab: 'tab_hosteleria' },
             log_transfers: { label: 'Transfers', tab: 'tab_logistica' },
@@ -2786,21 +2800,20 @@
         // pero esta función sigue haciendo falta: valida que currentEvent
         // siga siendo un evento visible para el usuario, y si no, cae al
         // primero disponible (o lo deja vacío si no hay ninguno).
+        // No elige un evento por defecto aunque haya alguno visible: hay que
+        // entrar a propósito desde la lista o el calendario (ver
+        // openEventById) -así nunca se edita un evento sin darse cuenta.
         function updateEventSelect() {
             const visibleIds = Object.keys(eventsCache).filter(canUserSeeEvent);
 
             if (!visibleIds.includes(currentEvent)) {
-                if (visibleIds.length > 0) {
-                    currentEvent = visibleIds[0];
-                    loadEventData();
-                } else {
-                    currentEvent = "";
-                    allFields.forEach(f => {
-                        const el = document.getElementById(f);
-                        if (el) el.value = "";
-                    });
-                }
+                currentEvent = "";
+                allFields.forEach(f => {
+                    const el = document.getElementById(f);
+                    if (el) el.value = "";
+                });
             }
+            updateCurrentEventBanner();
         }
 
         function refreshEventsBrowser() {
@@ -2842,8 +2855,8 @@
 
         function loadEventData() {
             renderEventSummaryHeader();
+            updateCurrentEventBanner();
             if (!currentEvent) return;
-            localStorage.setItem('festivalya_last_event', currentEvent);
 
             const event = eventsCache[currentEvent];
 
@@ -3953,6 +3966,22 @@
             document.getElementById('event_summary_meta').innerHTML = parts
                 .map(p => `<span style="display:flex; align-items:center; gap:4px;">${p}</span>`)
                 .join('');
+        }
+
+        // Aviso fijo en la cabecera, visible en cualquier pestaña, de en qué
+        // evento se está trabajando -o de que no hay ninguno elegido.
+        function updateCurrentEventBanner() {
+            const bar = document.getElementById('current_event_bar');
+            const text = document.getElementById('current_event_bar_text');
+            if (!bar || !text) return;
+            const event = currentEvent ? eventsCache[currentEvent] : null;
+            if (event) {
+                text.textContent = `📍 ${event.name}`;
+                bar.classList.remove('no-event');
+            } else {
+                text.textContent = 'Ningún evento seleccionado — elegí uno en Eventos';
+                bar.classList.add('no-event');
+            }
         }
 
         function openEventById(eventId, tab) {
@@ -5184,8 +5213,18 @@
         // cambio de pestaña real (no al re-entrar en la misma) se apila en el
         // historial, así que "atrás" vuelve al menú anterior en vez de salir
         // de la app o no hacer nada -ver el listener de 'popstate' más abajo.
+        // Pestañas que dependen de un evento elegido -sin uno, no tiene
+        // sentido dejar entrar (los campos saldrían vacíos y cualquier
+        // cambio no se guardaría en ningún sitio).
+        const EVENT_SCOPED_TABS = new Set(['tab_produccion', 'tab_hosteleria', 'tab_logistica', 'tab_mapa', 'tab_disenos']);
+
         function switchTab(tabId, opts) {
             opts = opts || {};
+            if (EVENT_SCOPED_TABS.has(tabId) && !currentEvent) {
+                alert('Seleccioná primero un evento en la pestaña Eventos.');
+                tabId = 'tab_eventos';
+            }
+
             const previousActive = document.querySelector('.app-page.active');
             const isSameTab = previousActive && previousActive.id === tabId;
 

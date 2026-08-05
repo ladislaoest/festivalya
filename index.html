@@ -1474,6 +1474,10 @@
 
         <div id="tab_produccion" class="app-page">
             <h2>Módulo de Producción</h2>
+            <div id="event_summary_header" class="form-card" style="margin-bottom:14px; display:none;">
+                <div id="event_summary_name" style="font-size:18px; font-weight:800; color:var(--text-main);"></div>
+                <div id="event_summary_meta" style="display:flex; flex-wrap:wrap; gap:14px; margin-top:8px; font-size:13px; color:var(--text-muted);"></div>
+            </div>
             <div id="assignment_summary_panel"></div>
             <div class="card-group">
 
@@ -2536,6 +2540,7 @@
         }
 
         function loadEventData() {
+            renderEventSummaryHeader();
             if (!currentEvent) return;
             localStorage.setItem('festivalya_last_event', currentEvent);
 
@@ -3584,6 +3589,29 @@
                 return `${start} - ${end}${overnight ? ' (+1 día)' : ''}`;
             }
             return start || end;
+        }
+
+        // Resumen del festival (nombre, lugar, fecha, horario) mostrado en
+        // Producción antes del Escenario, para verlo de un vistazo nada más
+        // entrar en el evento sin tener que ir a "Editar evento".
+        function renderEventSummaryHeader() {
+            const box = document.getElementById('event_summary_header');
+            if (!box) return;
+            const event = currentEvent ? eventsCache[currentEvent] : null;
+            if (!event) { box.style.display = 'none'; return; }
+            box.style.display = 'block';
+
+            document.getElementById('event_summary_name').textContent = event.name;
+
+            const parts = [];
+            if (event.ubicacion) parts.push(`${ICON_LOCATION} ${escapeHtml(event.ubicacion)}`);
+            parts.push(`${ICON_CALENDAR} ${event.event_date ? formatDateEs(event.event_date) : 'Sin fecha asignada'}`);
+            const horario = formatEventHorario(event.start_time, event.end_time);
+            if (horario) parts.push(`${ICON_CLOCK} ${horario}`);
+
+            document.getElementById('event_summary_meta').innerHTML = parts
+                .map(p => `<span style="display:flex; align-items:center; gap:4px;">${p}</span>`)
+                .join('');
         }
 
         function openEventById(eventId, tab) {

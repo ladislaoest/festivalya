@@ -1880,6 +1880,7 @@
                     <button type="button" class="view-toggle-btn" id="fichaje_gestoria_btn" onclick="createGestoriaFiles()">Generar Archivo Gestoría</button>
                     <button type="button" class="view-toggle-btn" id="fichaje_reset_btn" onclick="resetEvent()">Reiniciar Evento</button>
                     <button type="button" class="view-toggle-btn" id="fichaje_finalize_btn" onclick="finalizeEvent()">Finalizar Evento</button>
+                    <button type="button" class="view-toggle-btn" id="fichaje_final_report_btn" onclick="generateFinalSalaryReport()">Descargar Informe Final</button>
                     <button type="button" class="view-toggle-btn" id="fichaje_public_link_btn" onclick="copyFichajePublicLink()">Enlace Público de Fichaje</button>
                 </div>
 
@@ -5959,7 +5960,7 @@
             eventParticipantsCache = data || [];
 
             document.querySelectorAll('#fichaje_event_detail .view-toggle-btn, #fichaje_event_detail .btn-add-event').forEach(btn => {
-                if (btn.id === 'fichaje_reset_btn' || btn.id === 'fichaje_public_link_btn') return; // el reset y el enlace público siempre quedan disponibles
+                if (btn.id === 'fichaje_reset_btn' || btn.id === 'fichaje_public_link_btn' || btn.id === 'fichaje_final_report_btn') return; // el reset, el enlace público y el informe final siempre quedan disponibles
                 btn.disabled = finalized;
                 btn.style.opacity = finalized ? '0.5' : '';
                 btn.style.pointerEvents = finalized ? 'none' : '';
@@ -6000,7 +6001,7 @@
                         </div>
                     </td>
                     <td><span class="status-badge ${badgeClass}">${label}</span></td>
-                    <td><button type="button" class="btn-add-event" style="padding:6px 10px; white-space:nowrap;" onclick="toggleClock('${p.id}')" ${finalized ? 'disabled' : ''}>${p.status === 'in' ? 'Fichar Salida' : 'Fichar Entrada'}</button></td>
+                    <td><button type="button" class="btn-add-event" style="padding:6px 10px; white-space:nowrap;" onclick="toggleClock('${p.id}')" ${(finalized && p.status !== 'in') ? 'disabled' : ''} title="${finalized ? 'El evento está finalizado: solo se puede fichar salida para corregir una sesión que quedó abierta' : ''}">${p.status === 'in' ? 'Fichar Salida' : 'Fichar Entrada'}</button></td>
                     <td id="time_${p.id}" style="font-family:monospace;">00:00:00</td>
                     <td style="font-family:monospace;">€<span id="salary_${p.id}">0.00</span></td>
                 </tr>`;
@@ -6244,9 +6245,16 @@
         // --- Finalizar / reiniciar evento ---
         async function finalizeEvent() {
             if (!currentFichajeEventId) return;
-            if (!confirm('¿Seguro que quieres finalizar este evento? Se generará el informe final de sueldos y se bloqueará el fichaje hasta que lo reinicies.')) return;
+            if (!confirm('¿Seguro que quieres finalizar este evento? Se generará el informe final de sueldos, se pararán todos los relojes en marcha y se bloqueará el fichaje hasta que lo reinicies.')) return;
 
-            const stillIn = eventParticipantsCache.filter(p => p.status === 'in');
+            // Se relee de la base de datos en vez de usar eventParticipantsCache
+            // (podía estar desactualizado si alguien fichó entrada justo antes
+            // de finalizar) -así se garantiza que se cierra TODA sesión
+            // realmente abierta, no solo las que la app tenía en memoria.
+            const { data: freshParticipants, error: fetchErr } = await groovySb.from('participants').select('*').eq('event_id', currentFichajeEventId);
+            if (fetchErr) { alert('Error leyendo el personal del evento: ' + fetchErr.message); return; }
+
+            const stillIn = (freshParticipants || []).filter(p => p.status === 'in');
             for (const p of stillIn) {
                 const sessions = p.sessions || [];
                 if (sessions.length > 0 && !sessions[sessions.length - 1].clockOut) {

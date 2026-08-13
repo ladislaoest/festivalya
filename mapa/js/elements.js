@@ -17,6 +17,14 @@ const festivalConfig = {
     'signal-exit': { label: 'SALIDA EMERGENCIA', color: '#27ae60', icon: 'exit', defaultLen: 4, defaultWid: 4 },
     'signal-no-entry': { label: 'PROHIBIDO EL PASO', color: '#e74c3c', icon: 'no-entry', defaultLen: 4, defaultWid: 4 },
     'signal-wc': { label: 'WC', color: '#3498db', icon: 'wc', defaultLen: 4, defaultWid: 4 },
+    // Rótulo de carretera/acceso (tipo "CARRETERA N-550" en los planos de
+    // orientación reales): solo texto en caja roja, sin icono de sticker;
+    // se renombra desde "Editar nombre" para poner la vía que corresponda.
+    'signal-road': { label: 'CARRETERA', color: '#e74c3c', icon: 'road-label', defaultLen: 8, defaultWid: 4 },
+    // Flecha de dirección a una población cercana (tipo "REDONDELA"/"PORRIÑO"
+    // en los planos reales): se orienta con la rotación del elemento y se
+    // renombra desde "Editar nombre" para poner el destino.
+    'signal-arrow': { label: 'DIRECCIÓN', color: '#e74c3c', icon: 'arrow-direction', defaultLen: 6, defaultWid: 6 },
     'entrance': { label: 'ENTRADA', color: '#f1c40f', icon: 'entrance', defaultLen: 6, defaultWid: 2 },
     'zone-vip': { label: 'ZONA VIP', color: '#f1c40f', icon: 'star', defaultLen: 20, defaultWid: 20 },
     'zone-camping': { label: 'ZONA ACAMPADA', color: '#27ae60', icon: 'tent', defaultLen: 30, defaultWid: 30 },
@@ -482,7 +490,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
             const hiddenClass = showLabels ? '' : 'hidden-label';
 
             if (isZone) {
-                // Área traslúcida a escala real, con una etiqueta centrada (sin pin).
+                // Área traslúcida a escala real, con una etiqueta centrada y,
+                // además, un icono real (mismo sticker que los elementos
+                // puntuales): antes una "ZONA PARKING" era solo un rectángulo
+                // de color sin ningún símbolo -que es justo lo que hacía que
+                // no se distinguiera de cualquier otra zona ni se "viera" la
+                // señal-, así que ahora también lleva su icono encima.
                 const mapBearing = (map.getBearing ? map.getBearing() : 0);
                 const totalRotation = element.rotation + mapBearing;
                 const pCenter = map.latLngToLayerPoint(center);
@@ -493,7 +506,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
 
                 element.rectangle.setStyle({ fillOpacity: 0.35, weight: 2, color: element.color });
 
-                const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; display:flex; align-items:center; justify-content:center; transform:rotate(${totalRotation}deg);">
+                const zoneBg = element.color || '#7f8c8d';
+                const zoneIconSvg = getPinIconSVG(iconKey, zoneBg);
+                const zoneBadgeSize = Math.max(28, Math.min(56, Math.min(wPx, hPx) * 0.5));
+
+                const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; transform:rotate(${totalRotation}deg);">
+                    <div class="map-pin-badge" style="width:${zoneBadgeSize}px;height:${zoneBadgeSize}px;">${zoneIconSvg}</div>
                     <div class="map-pin-area-label ${hiddenClass}">${displayName}</div>
                 </div>`;
                 element.labelMarker.setIcon(L.divIcon({
@@ -504,6 +522,15 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
             } else if (element.isLine) {
                 // Vallas: fila de icono a escala real, sin pin ni nombre (son lineales,
                 // y con muchas vallas juntas los nombres tapan todo el mapa).
+                // El labelMarker es arrastrable de forma independiente (para
+                // apartar la etiqueta "35m/18 vallas" del modo normal y que
+                // no tape la línea), así que puede llevar guardado un
+                // desplazamiento manual antiguo. En el Mapa Ilustrado esa
+                // etiqueta pasa a ser la fila de iconos de la valla en sí, y
+                // tiene que coincidir SIEMPRE con la línea real -si no, la
+                // valla "aparece movida" de su sitio original-, así que se
+                // fuerza aquí al centro real antes de dibujarla.
+                element.labelMarker.setLatLng(center);
                 const pCenter = map.latLngToLayerPoint(center);
                 const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
                 const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
@@ -524,6 +551,41 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     // la valla "orbita" alrededor de otro punto al girar
                     // el mapa y parece que cambia de sitio.
                     iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
+                }));
+            } else if (iconKey === 'road-label') {
+                // Rótulo de carretera/acceso: caja de color plana con el
+                // texto (que el usuario renombra a "N-550", "EP-2601"...),
+                // sin icono/sticker -como en los planos de orientación reales-.
+                const roadW = Math.max(70, Math.min(220, displayName.length * 9 + 26));
+                const roadH = 30;
+                const iconHTML = `<div class="map-road-label" style="width:${roadW}px;height:${roadH}px;background:${element.color || '#e74c3c'};">${displayName}</div>`;
+                element.labelMarker.setIcon(L.divIcon({
+                    className: 'illustrated-label',
+                    html: iconHTML,
+                    iconSize: [roadW, roadH], iconAnchor: [roadW / 2, roadH / 2]
+                }));
+            } else if (iconKey === 'arrow-direction') {
+                // Flecha de dirección a población cercana: el nombre (que el
+                // usuario renombra al destino, ej. "REDONDELA") se queda fijo
+                // y legible, pero la flecha en sí sí que gira con la
+                // rotación del elemento (y con el giro del mapa), para poder
+                // apuntar realmente hacia el sitio.
+                const badgeSize = 52;
+                const bg = element.color || '#e74c3c';
+                const iconSvg = getPinIconSVG(iconKey, bg);
+                const mapBearing = (map.getBearing ? map.getBearing() : 0);
+                const bubbleH = isIllustratedMode ? 20 : 0;
+                const boxW = isIllustratedMode ? Math.max(50, Math.min(160, displayName.length * 5 + 18)) : badgeSize;
+                const totalH = bubbleH + badgeSize;
+
+                const iconHTML = `<div class="map-pin" style="width:${boxW}px;" title="${displayName}">
+                    ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
+                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px; transform:rotate(${element.rotation + mapBearing}deg);">${iconSvg}</div>
+                </div>`;
+                element.labelMarker.setIcon(L.divIcon({
+                    className: 'illustrated-label',
+                    html: iconHTML,
+                    iconSize: [boxW, totalH], iconAnchor: [boxW / 2, bubbleH + badgeSize / 2]
                 }));
             } else {
                 // Elementos puntuales: sticker ilustrado a todo color (sin
@@ -1280,9 +1342,10 @@ function getPinIconSVG(iconKey, color) {
             <circle cx="26" cy="41" r="9" fill="none" stroke="#fff" stroke-width="3"/>
         </svg>`,
         'noparking': `<svg viewBox="0 0 64 64">${shadow}
-            <circle cx="32" cy="32" r="22" fill="#3498db" stroke="${D}" stroke-width="2.5"/>
-            <circle cx="32" cy="32" r="22" fill="none" stroke="#e74c3c" stroke-width="6"/>
-            <line x1="18" y1="18" x2="46" y2="46" stroke="#e74c3c" stroke-width="6" stroke-linecap="round"/>
+            <circle cx="32" cy="32" r="22" fill="#fff" stroke="${D}" stroke-width="2.5"/>
+            <text x="30" y="42" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#3498db" text-anchor="middle">P</text>
+            <circle cx="32" cy="32" r="22" fill="none" stroke="#e74c3c" stroke-width="6.5"/>
+            <line x1="17" y1="17" x2="47" y2="47" stroke="#e74c3c" stroke-width="6.5" stroke-linecap="round"/>
         </svg>`,
         'no-entry': `<svg viewBox="0 0 64 64">${shadow}
             <circle cx="32" cy="32" r="22" fill="#e74c3c" stroke="${D}" stroke-width="2.5"/>
@@ -1306,6 +1369,12 @@ function getPinIconSVG(iconKey, color) {
             <path d="M32 20v24M20 32h24" stroke="#fff" stroke-width="7" stroke-linecap="round"/>
         </svg>`,
         'fence': `<svg viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.8" stroke-linecap="round"><path d="M4 4v16M9 4v16M15 4v16M20 4v16"/><path d="M2 9h20M2 15h20"/></svg>`,
+        // Flecha grande de dirección (tipo cartel de carretera hacia una
+        // población cercana): sin sombra elíptica porque suele ir apoyada en
+        // el borde del mapa, no "flotando" sobre el césped como el resto.
+        'arrow-direction': `<svg viewBox="0 0 64 64">
+            <path d="M32 3 58 32H44v29H20V32H6Z" fill="${bg}" stroke="${D}" stroke-width="2.8" stroke-linejoin="round"/>
+        </svg>`,
         'panic-fence': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16"/><path d="M6 6v12M18 6v12"/></svg>`,
         'security': `<svg viewBox="0 0 64 64">${shadow}
             <path d="M32 8 52 16v16c0 14-9 22-20 26C21 54 12 46 12 32V16Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
@@ -1362,7 +1431,9 @@ function getGenericIconUrl(type) {
         'noparking': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzM0OThkYiIgc3Ryb2tlPSIjZTc0YzNjIiBzdHJva2Utd2lkdGg9IjEwIi8+PGxpbmUgeDE9IjE4IiB5MT0iMTgiIHgyPSI4MiIgeTI9IjgyIiBzdHJva2U9IiNlNzRjM2MiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=',
         'exit': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMjdhZTYwIi8+PHBhdGggZD0iTTMwIDIwaDQwdjYwSDMwek03NSA1MGwtMTUgMTBNNzUgNTBsLTE1LTEwIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjgiLz48L3N2Zz4=',
         'star': 'https://upload.wikimedia.org/wikipedia/commons/e/e5/Full_Star_Yellow.svg',
-        'wc_signal': 'https://upload.wikimedia.org/wikipedia/commons/4/40/Restroom_sign.svg'
-    }; 
-    return genericIcons[type] || 'assets/icons/default.svg'; 
+        'wc_signal': 'https://upload.wikimedia.org/wikipedia/commons/4/40/Restroom_sign.svg',
+        'road-label': 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="60"><rect width="100%" height="100%" rx="8" fill="#e74c3c"/><text x="50" y="36" font-family="Arial" font-size="16" fill="#fff" text-anchor="middle" font-weight="bold">VIA</text></svg>'),
+        'arrow-direction': 'data:image/svg+xml;base64,' + btoa('<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100"><path d="M50 5 90 50h-22v45h-36V50H6Z" fill="#e74c3c" stroke="#242424" stroke-width="4"/></svg>')
+    };
+    return genericIcons[type] || 'assets/icons/default.svg';
 }

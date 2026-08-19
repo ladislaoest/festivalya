@@ -438,6 +438,9 @@ function illustratedTerrainQuery(bboxStr) {
         way["natural"="wood"](${bboxStr});
         way["landuse"~"^(forest|wood)$"](${bboxStr});
         way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${bboxStr});
+        way["building"](${bboxStr});
+        way["leisure"="sports_centre"](${bboxStr});
+        way["amenity"="sports_centre"](${bboxStr});
     );out geom;`;
 }
 
@@ -472,7 +475,7 @@ async function fetchIllustratedTerrain(bbox) {
         }
     }
 
-    const empty = { water: [], rivers: [], beaches: [], forests: [], roads: [] };
+    const empty = { water: [], rivers: [], beaches: [], forests: [], roads: [], buildings: [] };
     if (!rawElements) return empty;
 
     // El bosque es lo único que pinta una textura de manchas por celda (ver
@@ -481,6 +484,11 @@ async function fetchIllustratedTerrain(bbox) {
     // (varios segundos bloqueando la pestaña). El resto (agua/playa/
     // carretera) es solo relleno/trazo, barato aunque haya muchos.
     const ILLUSTRATED_TERRAIN_MAX_FORESTS = 15;
+    // Los edificios son solo relleno de polígono (barato), pero en un centro
+    // urbano denso puede haber cientos en un bbox con el padding amplio del
+    // fondo -mismo tope que MAP_FEATURES_MAX_BUILDINGS en view3d.js, para no
+    // mandar un mensaje descomunal al canvas ni al propio Overpass.
+    const ILLUSTRATED_TERRAIN_MAX_BUILDINGS = 150;
 
     for (const el of rawElements) {
         if (el.type !== 'way' || !el.tags || !Array.isArray(el.geometry) || el.geometry.length < 2) continue;
@@ -492,6 +500,9 @@ async function fetchIllustratedTerrain(bbox) {
         else if (el.tags.natural === 'beach') empty.beaches.push({ points, name });
         else if (el.tags.natural === 'wood' || el.tags.landuse === 'forest' || el.tags.landuse === 'wood') {
             if (empty.forests.length < ILLUSTRATED_TERRAIN_MAX_FORESTS) empty.forests.push({ points, name });
+        }
+        else if (el.tags.building || el.tags.leisure === 'sports_centre' || el.tags.amenity === 'sports_centre') {
+            if (empty.buildings.length < ILLUSTRATED_TERRAIN_MAX_BUILDINGS) empty.buildings.push({ points, name });
         }
         else if (el.tags.highway) empty.roads.push({ points, name });
     }
@@ -574,6 +585,12 @@ function fillProjectedPolygon(ctx, pts, color) {
     ctx.restore();
 }
 
+function tracePolygonPath(ctx, pts) {
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
+    ctx.closePath();
+}
+
 function clipToProjectedPolygon(ctx, pts) {
     ctx.beginPath();
     pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
@@ -647,18 +664,57 @@ function drawRoadLabel(ctx, roadPts, name) {
     ctx.restore();
 }
 
+// Nombre de un edificio real notable (pabellón, iglesia, centro deportivo...)
+// centrado sobre su huella -mismo estilo (blanco con borde oscuro) que
+// drawRoadLabel, pero sin rotar: un edificio no tiene un "ángulo de tramo"
+// como una calle.
+function drawBuildingLabel(ctx, pts, name) {
+    if (!name || pts.length < 3) return;
+    const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
+    const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
+    ctx.save();
+    ctx.font = '700 13px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(35,35,35,0.8)';
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(name, cx, cy);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(name, cx, cy);
+    ctx.restore();
+}
+
 // Pinta el canvas de fondo completo para unos bounds dados y devuelve su
 // data URL. La proyección lat/lng -> píxel es una interpolación LINEAL
 // simple respecto a esos mismos bounds -es exactamente la misma
 // interpolación que usa L.imageOverlay para estirar la imagen entre las
 // esquinas de esos bounds, así que no hay ningún desajuste entre lo pintado
 // aquí y dónde acaba cayendo sobre el mapa real-.
-function paintIllustratedBackdrop(bounds, terrain) {
+//
+// Resolución del canvas: NO es un tamaño fijo en píxeles. Los bounds que se
+// pintan son los del contenedor del mapa ampliados con ILLUSTRATED_PAD_RATIO
+// (ver refreshIllustratedBackdrop), así que para que se vea nítido -y no
+// entintado/emborronado por Leaflet al estirar la imagen para rellenar esos
+// mismos bounds sobre la pantalla- el canvas tiene que pintarse a, como
+// mínimo, "tamaño del contenedor en pantalla × ese mismo factor de margen".
+// Con un tamaño fijo (p.ej. 1600px) a un zoom alto y un contenedor grande,
+// el navegador tenía que ampliar la imagen bastante más de lo que su propia
+// resolución permitía, y todo lo dibujado -texto de rótulos, líneas de
+// carretera...- salía visiblemente más grande y borroso de lo pintado.
+function paintIllustratedBackdrop(bounds, terrain, viewportPx) {
     const west = bounds.getWest(), east = bounds.getEast();
     const north = bounds.getNorth(), south = bounds.getSouth();
     const lngSpan = Math.max(east - west, 1e-9), latSpan = Math.max(north - south, 1e-9);
     const aspect = lngSpan / latSpan;
-    const MAX_SIDE = 1600;
+
+    const padMultiplier = 1 + 2 * ILLUSTRATED_PAD_RATIO;
+    const vpW = (viewportPx && viewportPx.x) || 1200;
+    const vpH = (viewportPx && viewportPx.y) || 900;
+    // Lado mayor a resolución nativa (contenedor × margen), con un tope por
+    // memoria/rendimiento y un suelo para que un contenedor diminuto no deje
+    // el fondo pixelado.
+    const MAX_SIDE = Math.max(900, Math.min(3200, Math.round(Math.max(vpW, vpH) * padMultiplier)));
     const canvasW = aspect >= 1 ? MAX_SIDE : Math.max(500, Math.round(MAX_SIDE * aspect));
     const canvasH = aspect >= 1 ? Math.max(500, Math.round(MAX_SIDE / aspect)) : MAX_SIDE;
 
@@ -720,8 +776,36 @@ function paintIllustratedBackdrop(bounds, terrain) {
     });
     if (bestRoadPts) drawRoadLabel(ctx, bestRoadPts, bestRoadName);
 
+    // 6. Edificios reales cercanos (dan contexto real de dónde cae el
+    // recinto -un colegio, el pabellón de deportes, la iglesia...-, igual
+    // que ya se hace en la vista 3D con applyMapFeatures): bloque plano
+    // color teja por encima de la carretera, con el nombre solo en los que
+    // lo tienen (no todos, para no saturar un centro urbano denso).
+    const buildingLabelsShown = [];
+    (terrain.buildings || []).forEach(b => {
+        const pts = projectPoints(b.points, project);
+        if (pts.length < 3) return;
+        fillProjectedPolygon(ctx, pts, '#cbb28c');
+        ctx.save();
+        ctx.strokeStyle = '#8f7350';
+        ctx.lineWidth = 1.4;
+        tracePolygonPath(ctx, pts);
+        ctx.stroke();
+        ctx.restore();
+        if (b.name && buildingLabelsShown.length < 15) {
+            buildingLabelsShown.push(1);
+            drawBuildingLabel(ctx, pts, b.name);
+        }
+    });
+
     return canvas.toDataURL('image/png');
 }
+
+// Margen de la lámina pintada respecto al encuadre actual (ver
+// refreshIllustratedBackdrop): tiene que coincidir con el multiplicador de
+// resolución usado en paintIllustratedBackdrop, si no el canvas se pinta a
+// una densidad que no es la que Leaflet necesita para verse nítido.
+const ILLUSTRATED_PAD_RATIO = 0.8;
 
 // Genera (o reutiliza el terreno ya cacheado si el área nueva sigue cubierta)
 // el fondo pintado para la vista actual y lo coloca sobre el mapa. Se llama
@@ -735,7 +819,8 @@ async function refreshIllustratedBackdrop(forceRefetch) {
     // fondo ya actualizado por la más nueva -mismo patrón que
     // myTerrainRequestId en view3d.js-.
     const myRequestId = ++illustratedBackdropRequestId;
-    const bounds = map.getBounds().pad(0.8);
+    const bounds = map.getBounds().pad(ILLUSTRATED_PAD_RATIO);
+    const viewportPx = map.getSize();
 
     const coveredByLastFetch = !forceRefetch && illustratedTerrainData && illustratedTerrainQueryBounds && illustratedTerrainQueryBounds.contains(bounds);
     if (!coveredByLastFetch) {
@@ -748,7 +833,7 @@ async function refreshIllustratedBackdrop(forceRefetch) {
 
     if (!isIllustratedMode || myRequestId !== illustratedBackdropRequestId) return;
 
-    const dataUrl = paintIllustratedBackdrop(bounds, illustratedTerrainData);
+    const dataUrl = paintIllustratedBackdrop(bounds, illustratedTerrainData, viewportPx);
     if (illustratedBackdropLayer) map.removeLayer(illustratedBackdropLayer);
     illustratedBackdropLayer = L.imageOverlay(dataUrl, bounds, { interactive: false }).addTo(map);
     illustratedBackdropBounds = bounds;

@@ -225,6 +225,9 @@ app.post('/api/illustrated-terrain', async (req, res) => {
         `way["natural"="wood"](${bboxStr});` +
         `way["landuse"~"^(forest|wood)$"](${bboxStr});` +
         `way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${bboxStr});` +
+        `way["building"](${bboxStr});` +
+        `way["leisure"="sports_centre"](${bboxStr});` +
+        `way["amenity"="sports_centre"](${bboxStr});` +
         `);out geom;`;
 
     let data = null;

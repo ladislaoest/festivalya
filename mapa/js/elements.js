@@ -373,7 +373,7 @@ async function loadNearbyPlaceNames() {
     const key = nearbyPlacesBboxKey(bbox);
     if (nearbyPlacesFetchKey === key) {
         // Ya se pidió para esta misma zona: solo falta volver a mostrarla.
-        if (nearbyPlacesLayer && isIllustratedMode) nearbyPlacesLayer.addTo(map);
+        if (nearbyPlacesLayer && isIllustratedMode && showRealContextLabels) nearbyPlacesLayer.addTo(map);
         return;
     }
 
@@ -432,7 +432,7 @@ async function loadNearbyPlaceNames() {
         nearbyPlacesLayer.addLayer(marker);
     }
     nearbyPlacesFetchKey = key;
-    if (isIllustratedMode) nearbyPlacesLayer.addTo(map);
+    if (isIllustratedMode && showRealContextLabels) nearbyPlacesLayer.addTo(map);
 }
 
 // --- Fondo pintado del Mapa Ilustrado ---
@@ -906,9 +906,19 @@ function toggleRealContextLabels() {
         btn.classList.toggle('active', !showRealContextLabels);
         btn.innerText = showRealContextLabels ? 'OCULTAR NOMBRES REALES' : 'MOSTRAR NOMBRES REALES';
     }
-    if (!illustratedContextLabelsLayer) return;
-    if (showRealContextLabels) illustratedContextLabelsLayer.addTo(map);
-    else map.removeLayer(illustratedContextLabelsLayer);
+    // Cubre las dos fuentes de nombres reales: calles/edificios (ver
+    // buildIllustratedContextLabels) y los lugares con nombre de
+    // loadNearbyPlaceNames (colegios, plazas, iglesias...) -antes solo
+    // tapaba la primera, así que una plaza podía seguir apareciendo aunque
+    // se pulsara "OCULTAR NOMBRES REALES"-.
+    if (illustratedContextLabelsLayer) {
+        if (showRealContextLabels) illustratedContextLabelsLayer.addTo(map);
+        else map.removeLayer(illustratedContextLabelsLayer);
+    }
+    if (nearbyPlacesLayer) {
+        if (showRealContextLabels) nearbyPlacesLayer.addTo(map);
+        else map.removeLayer(nearbyPlacesLayer);
+    }
 }
 
 function escapeHtmlText(str) {

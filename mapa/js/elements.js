@@ -341,6 +341,55 @@ function toggleIllustratedMode() {
 let nearbyPlacesLayer = null;
 let nearbyPlacesFetchKey = null;
 
+// Nombres reales (calles, plazas, edificios, colegios...) ocultados uno a
+// uno a mano -a diferencia de showRealContextLabels (todo o nada), esto
+// deja quitar SOLO el que molesta y dejar el resto-. Se guarda con el
+// proyecto (ver getProjectData/loadProject en save-load.js).
+let hiddenContextNames = new Set();
+
+// Un único pin de nombre real (calle, edificio, plaza, colegio...):
+// clicable para ocultar solo ese, con confirmación -es fácil dar sin
+// querer a un pin pequeño mientras se mira el mapa, y no hay forma de
+// deshacer un solo nombre suelto (solo "RESTABLECER" los devuelve todos)-.
+function addContextNamePill(layer, latlng, name) {
+    if (!name || hiddenContextNames.has(name)) return;
+    const marker = L.marker(latlng, {
+        icon: L.divIcon({
+            className: 'nearby-place-label',
+            html: `<div class="nearby-place-pill" title="Clic para ocultar «${escapeHtmlText(name)}»">${escapeHtmlText(name)}</div>`,
+            iconSize: [1, 1]
+        }),
+        interactive: true
+    });
+    marker.on('click', (e) => {
+        L.DomEvent.stopPropagation(e);
+        if (!confirm(`¿Ocultar el nombre «${name}»? Puedes recuperarlo con "RESTABLECER NOMBRES OCULTOS".`)) return;
+        hiddenContextNames.add(name);
+        refreshContextNameLayers();
+    });
+    layer.addLayer(marker);
+}
+
+// Reconstruye las dos capas de nombres reales respetando hiddenContextNames
+// -se llama tras ocultar/restablecer uno, sin tener que volver a pedir
+// nada a Overpass (los datos ya están en illustratedTerrainData/la última
+// respuesta de nearby-places, solo cambia qué pines se dibujan)-.
+function refreshContextNameLayers() {
+    if (illustratedContextLabelsLayer) map.removeLayer(illustratedContextLabelsLayer);
+    if (illustratedTerrainData) {
+        illustratedContextLabelsLayer = buildIllustratedContextLabels(illustratedTerrainData);
+        if (showRealContextLabels) illustratedContextLabelsLayer.addTo(map);
+    }
+    if (nearbyPlacesLayer && lastNearbyPlacesElements) {
+        buildNearbyPlacesLayer(lastNearbyPlacesElements);
+    }
+}
+
+function resetHiddenContextNames() {
+    hiddenContextNames.clear();
+    refreshContextNameLayers();
+}
+
 function nearbyPlacesBboxKey(bbox) {
     const r = n => Math.round(n * 1000) / 1000; // ~110m, de sobra para no repetir la consulta al mover un pelín el mapa
     return `${r(bbox.minLat)},${r(bbox.minLng)},${r(bbox.maxLat)},${r(bbox.maxLng)}`;
@@ -356,6 +405,30 @@ function nearbyPlacesQuery(bboxStr) {
         way["natural"="water"]["name"](${bboxStr});
         node["tourism"]["name"](${bboxStr});
     );out center;`;
+}
+
+// Construye (o reconstruye, tras ocultar/restablecer un nombre a mano) la
+// capa de lugares cercanos con nombre a partir de los elementos ya
+// obtenidos de Overpass -sin volver a pedir red-.
+let lastNearbyPlacesElements = null;
+function buildNearbyPlacesLayer(rawElements) {
+    lastNearbyPlacesElements = rawElements;
+    if (nearbyPlacesLayer) map.removeLayer(nearbyPlacesLayer);
+    nearbyPlacesLayer = L.layerGroup();
+    const seenNames = new Set();
+    let count = 0;
+    for (const el of rawElements) {
+        if (count >= 25) break; // tope para no saturar el mapa de texto
+        const name = el.tags && el.tags.name;
+        if (!name || seenNames.has(name)) continue;
+        const lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
+        const lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
+        if (!isFinite(lat) || !isFinite(lon)) continue;
+        seenNames.add(name);
+        count++;
+        addContextNamePill(nearbyPlacesLayer, [lat, lon], name);
+    }
+    if (isIllustratedMode && showRealContextLabels) nearbyPlacesLayer.addTo(map);
 }
 
 async function loadNearbyPlaceNames() {
@@ -408,31 +481,8 @@ async function loadNearbyPlaceNames() {
     }
     if (!elements) return;
 
-    if (nearbyPlacesLayer) map.removeLayer(nearbyPlacesLayer);
-    nearbyPlacesLayer = L.layerGroup();
-    const seenNames = new Set();
-    let count = 0;
-    for (const el of elements) {
-        if (count >= 25) break; // tope para no saturar el mapa de texto
-        const name = el.tags && el.tags.name;
-        if (!name || seenNames.has(name)) continue;
-        const lat = el.lat !== undefined ? el.lat : (el.center && el.center.lat);
-        const lon = el.lon !== undefined ? el.lon : (el.center && el.center.lon);
-        if (!isFinite(lat) || !isFinite(lon)) continue;
-        seenNames.add(name);
-        count++;
-        const marker = L.marker([lat, lon], {
-            icon: L.divIcon({
-                className: 'nearby-place-label',
-                html: `<div class="nearby-place-pill">${escapeHtmlText(name)}</div>`,
-                iconSize: [1, 1]
-            }),
-            interactive: false
-        });
-        nearbyPlacesLayer.addLayer(marker);
-    }
+    buildNearbyPlacesLayer(elements);
     nearbyPlacesFetchKey = key;
-    if (isIllustratedMode && showRealContextLabels) nearbyPlacesLayer.addTo(map);
 }
 
 // --- Fondo pintado del Mapa Ilustrado ---
@@ -826,14 +876,7 @@ function buildIllustratedContextLabels(terrain) {
     const addPill = (latlng, name) => {
         if (!name || seenNames.has(name)) return;
         seenNames.add(name);
-        layer.addLayer(L.marker(latlng, {
-            icon: L.divIcon({
-                className: 'nearby-place-label',
-                html: `<div class="nearby-place-pill">${escapeHtmlText(name)}</div>`,
-                iconSize: [1, 1]
-            }),
-            interactive: false
-        }));
+        addContextNamePill(layer, latlng, name);
     };
 
     (terrain.roads || []).forEach(rd => {
@@ -1271,6 +1314,13 @@ function setupElementEvents() {
 
     const realLabelsBtn = document.getElementById('toggle-real-labels-btn');
     if (realLabelsBtn) realLabelsBtn.onclick = toggleRealContextLabels;
+
+    const resetLabelsBtn = document.getElementById('reset-hidden-labels-btn');
+    if (resetLabelsBtn) resetLabelsBtn.onclick = () => {
+        if (hiddenContextNames.size === 0) { alert('No hay ningún nombre real oculto.'); return; }
+        if (!confirm(`¿Volver a mostrar los ${hiddenContextNames.size} nombre(s) reales que ocultaste a mano?`)) return;
+        resetHiddenContextNames();
+    };
 
     const measureBtn = document.getElementById('measure-btn');
     if (measureBtn) measureBtn.onclick = toggleMeasureMode;

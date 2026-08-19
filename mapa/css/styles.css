@@ -320,7 +320,18 @@ select.form-control option {
     padding: 2px 7px;
     border-radius: 9px;
     white-space: nowrap;
+    /* El contenedor (.nearby-place-label) bloquea el resto del mapa a
+       propósito (no debe robarle el arrastre), pero la propia píldora sí
+       tiene que poder recibir el clic con el que se oculta un nombre suelto
+       -ver addContextNamePill en elements.js-. */
+    pointer-events: auto;
+    cursor: pointer;
     transform: translate(-50%, -50%);
+    transition: background 0.15s;
+}
+.nearby-place-pill:hover {
+    background: rgba(231, 76, 60, 0.85);
+    color: #fff;
 }
 
 /* Mejora del Popup de Edición */

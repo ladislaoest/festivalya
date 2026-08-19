@@ -67,7 +67,10 @@ function getProjectData() {
             illustratedHidden: el.illustratedHidden || false,
             illustratedOffset: el.illustratedOffset || { dx: 0, dy: 0 },
             pathCoords: el.pathCoords || null
-        }))
+        })),
+        // Nombres reales (calles, plazas, edificios...) ocultados uno a uno
+        // a mano en el Mapa Ilustrado -ver hiddenContextNames en elements.js-.
+        hiddenContextNames: typeof hiddenContextNames !== 'undefined' ? Array.from(hiddenContextNames) : []
     };
 }
 
@@ -154,6 +157,13 @@ function loadProjectData(data) {
     const viewData = !Array.isArray(data) ? data.view : null;
 
     if (elementsData.length === 0 && !viewData) return;
+
+    // Nombres reales ocultados uno a uno a mano (ver hiddenContextNames en
+    // elements.js): formato antiguo (array directo) no los tenía, de ahí
+    // el fallback a array vacío.
+    if (typeof hiddenContextNames !== 'undefined') {
+        hiddenContextNames = new Set((!Array.isArray(data) && data.hiddenContextNames) || []);
+    }
 
     // Restaurar vista si existe
     if (viewData) {

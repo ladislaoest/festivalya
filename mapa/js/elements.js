@@ -469,10 +469,15 @@ async function fetchIllustratedTerrain(bbox) {
     let rawElements = null;
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        // 9s, no 20: el proxy propio (/api/illustrated-terrain) ya prueba
+        // los mismos espejos EN PARALELO en el servidor y ha demostrado ser
+        // rápido y fiable -si algún espejo público se queda colgado sin
+        // responder aquí, mejor caer al proxy pronto que hacer esperar casi
+        // medio minuto antes de intentarlo siquiera-.
+        const timeoutId = setTimeout(() => controller.abort(), 9000);
         rawElements = await raceFirstNonEmpty(
             OVERPASS_ENDPOINTS.map(endpoint => () => queryOverpassMirror(endpoint, illustratedTerrainQuery(bboxStr), controller.signal)),
-            20000
+            9000
         );
         clearTimeout(timeoutId);
     } catch (err) {
@@ -500,7 +505,13 @@ async function fetchIllustratedTerrain(bbox) {
     }
 
     const empty = { water: [], rivers: [], beaches: [], forests: [], roads: [], buildings: [] };
-    if (!rawElements) return empty;
+    // "ok: false" distingue un FALLO real (los 4 espejos y el proxy caídos)
+    // de una zona que de verdad no tiene nada que dibujar -si no, ver
+    // refreshIllustratedBackdrop, un fallo puntual se quedaba cacheado para
+    // siempre como "aquí no hay nada", y ni reentrando en el Modo Ilustrado
+    // se volvía a intentar-.
+    if (!rawElements) { empty.ok = false; return empty; }
+    empty.ok = true;
 
     // El bosque es lo único que pinta una textura de manchas por celda (ver
     // paintCellTexture): con un padding amplio y una zona muy boscosa, sin
@@ -855,11 +866,18 @@ async function refreshIllustratedBackdrop(forceRefetch) {
     if (!coveredByLastFetch) {
         setIllustratedLoading(true);
         try {
-            illustratedTerrainData = await fetchIllustratedTerrain({
+            const fetched = await fetchIllustratedTerrain({
                 minLat: bounds.getSouth(), maxLat: bounds.getNorth(),
                 minLng: bounds.getWest(), maxLng: bounds.getEast()
             });
-            illustratedTerrainQueryBounds = bounds;
+            illustratedTerrainData = fetched;
+            // Solo se marca como "cubierto" (y por tanto reutilizable la
+            // próxima vez que se reentra en el Modo Ilustrado) si Overpass
+            // respondió de verdad -si falló (fetched.ok === false), NO se
+            // guarda el bbox: si no, un fallo puntual de red se quedaba
+            // cacheado para siempre como "aquí no hay nada que dibujar", y
+            // ni saliendo y volviendo a entrar se reintentaba-.
+            if (fetched.ok !== false) illustratedTerrainQueryBounds = bounds;
         } finally {
             if (myRequestId === illustratedBackdropRequestId) setIllustratedLoading(false);
         }

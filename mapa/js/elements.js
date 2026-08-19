@@ -267,7 +267,13 @@ function toggleIllustratedMode() {
     }
 
     elements.forEach(el => {
-        const shouldShowControls = !isIllustratedMode && !isFestivalMode;
+        // Los "Edificio (referencia)" representan un edificio real: su
+        // posición/rotación tiene que ser la misma en todos los planos, así
+        // que conservan sus asas de mover/girar de verdad también dentro
+        // del Mapa Ilustrado -a diferencia del resto de elementos, que ahí
+        // solo se pueden reajustar de forma cosmética (illustratedOffset)-.
+        const isDirectlyEditableInIllustrated = isIllustratedMode && el.type === 'custom-building';
+        const shouldShowControls = (!isIllustratedMode && !isFestivalMode) || (isDirectlyEditableInIllustrated && !isFestivalMode);
 
         // Al SALIR del Mapa Ilustrado, el icono vuelve a su posición real
         // -si no, un ajuste hecho allí para separar dos iconos pegados se
@@ -284,10 +290,18 @@ function toggleIllustratedMode() {
         // propósito. El icono/sticker del Mapa Ilustrado SÍ se puede
         // arrastrar -ver bindIllustratedDrag-, para poder separar iconos que
         // quedan pegados unos a otros sin tocar la posición real del
-        // elemento (esa función solo actualiza illustratedOffset).
+        // elemento (esa función solo actualiza illustratedOffset). Los
+        // edificios quedan fuera -se mueven con su propia asa real, no
+        // arrastrando el bloque entero, para no confundir los dos gestos-.
         if (el.labelMarker) {
             el.labelMarker.getElement().style.pointerEvents = 'auto';
-            if (isIllustratedMode) el.labelMarker.dragging.enable();
+            // Fuera del Mapa Ilustrado no se toca el estado de arrastre del
+            // labelMarker -las vallas dependen de que se quede como estaba
+            // (habilitado, ver el comentario de labelCoords más arriba)-.
+            if (isIllustratedMode) {
+                if (el.type === 'custom-building') el.labelMarker.dragging.disable();
+                else el.labelMarker.dragging.enable();
+            }
         }
 
         if (el.moveMarker) {
@@ -298,7 +312,7 @@ function toggleIllustratedMode() {
                 map.removeLayer(el.moveMarker);
             }
         }
-        
+
         if (el.rotateMarker) {
             if (shouldShowControls) {
                 if (!map.hasLayer(el.rotateMarker)) el.rotateMarker.addTo(map);
@@ -1004,12 +1018,18 @@ function meterOffsetBetween(center, pos) {
 // que la posición real (2D técnico, 3D, medidas) no se entera de este ajuste.
 function bindIllustratedDrag(element) {
     element.labelMarker.on('drag', () => {
-        if (!isIllustratedMode) return;
+        // Los "Edificio (referencia)" no usan este ajuste solo-visual: se
+        // mueven/giran de verdad (ver shouldShowControls en
+        // toggleIllustratedMode, que les deja el asa de mover/girar real
+        // también dentro del Mapa Ilustrado) porque representan un edificio
+        // real y su posición/orientación tiene que ser la misma en todos
+        // los planos, no solo un ajuste de composición.
+        if (!isIllustratedMode || element.type === 'custom-building') return;
         const center = element.moveMarker.getLatLng();
         element.illustratedOffset = meterOffsetBetween(center, element.labelMarker.getLatLng());
     });
     element.labelMarker.on('dragend', () => {
-        if (!isIllustratedMode) return;
+        if (!isIllustratedMode || element.type === 'custom-building') return;
         saveHistory();
     });
 }
@@ -1094,11 +1114,13 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 // Edificio de referencia: un bloque sólido a escala real (no
                 // un pin/sticker) del mismo aspecto que los edificios reales
                 // pintados en el fondo -"un recuadro como los que ya
-                // existen"-, que se puede moldear/alargar con los mismos
-                // campos Largo/Ancho de cualquier elemento. La posición
-                // dentro del Mapa Ilustrado respeta illustratedOffset (igual
-                // que los stickers puntuales) para poder separarlo sin
-                // tocar la posición real -ver bindIllustratedDrag-.
+                // existen"-, que se puede moldear/alargar/girar con los
+                // mismos campos y asas que cualquier elemento -incluida el
+                // asa de girar, visible también en el Mapa Ilustrado para
+                // este tipo, ver shouldShowControls-. A propósito NO usa
+                // illustratedOffset: representa un edificio real, así que su
+                // posición tiene que ser la misma en todos los planos, no
+                // solo un ajuste de composición del plano ilustrado.
                 const mapBearing = (map.getBearing ? map.getBearing() : 0);
                 const totalRotation = element.rotation + mapBearing;
                 const pCenter = map.latLngToLayerPoint(center);
@@ -1112,7 +1134,7 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     <div style="width:100%; height:100%; background:${bg}; border:2px solid #8f7350; border-radius:2px; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>
                     <div class="map-pin-bubble ${hiddenClass}" style="position:absolute; left:50%; bottom:100%; margin-bottom:4px; transform:translateX(-50%) rotate(${-totalRotation}deg); transform-origin:center;">${displayName}</div>
                 </div>`;
-                element.labelMarker.setLatLng(isIllustratedMode ? offsetLatLngMeters(center, element.illustratedOffset) : center);
+                element.labelMarker.setLatLng(center);
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
@@ -1417,6 +1439,12 @@ function setupElementEvents() {
         } else if (type === 'security' && document.getElementById('patrol-mode').value === 'draw') {
             const name = document.getElementById('element-name').value || festivalConfig[type].label;
             startPatrolPathDrawing(type, name);
+        } else if (type === 'custom-building') {
+            // Pinchar y arrastrar en el mapa para dibujar el rectángulo
+            // directamente a su tamaño real, en vez de soltarlo en el
+            // centro y tener que ajustar Largo/Ancho a mano después.
+            const name = document.getElementById('element-name').value || festivalConfig[type].label;
+            startCustomBuildingDrawing(name);
         } else {
             const config = festivalConfig[type], name = document.getElementById('element-name').value || config.label;
             const length = isFenceType(type) ? parseFloat(document.getElementById('fence-fixed-length').value) : parseFloat(document.getElementById('element-length').value);
@@ -1557,6 +1585,61 @@ function startFenceDrawing(type = 'fence') {
             saveHistory();
         });
 	});
+}
+
+// Dibuja un "Edificio (referencia)" pinchando y arrastrando directamente
+// sobre el mapa (un solo gesto: bajar el ratón en una esquina, arrastrar a
+// la esquina opuesta, soltar) en vez de soltarlo en el centro del mapa y
+// tener que ajustar Largo/Ancho a mano después -mismo patrón de eventos que
+// startFenceDrawing, pero con mousedown/mousemove/mouseup (un gesto
+// continuo) en lugar de dos clics sueltos, porque aquí hace falta previsualizar
+// un RECTÁNGULO, no una línea-.
+function startCustomBuildingDrawing(name) {
+    map.dragging.disable();
+    map.getContainer().style.cursor = 'crosshair';
+    let startLatLng = null;
+    let previewRect = null;
+
+    function onMouseMove(e) {
+        if (!previewRect) return;
+        previewRect.setBounds(L.latLngBounds(startLatLng, e.latlng));
+    }
+
+    function finishDrawing(endLatLng) {
+        map.off('mousemove', onMouseMove);
+        map.off('mouseup', onMouseUp);
+        map.dragging.enable();
+        map.getContainer().style.cursor = '';
+        if (previewRect) { map.removeLayer(previewRect); previewRect = null; }
+
+        // Un clic suelto sin arrastre real (o un arrastre minúsculo,
+        // temblor de mano/trackpad) no debe crear un edificio de 0x0m.
+        const pStart = map.latLngToLayerPoint(startLatLng);
+        const pEnd = map.latLngToLayerPoint(endLatLng);
+        if (pStart.distanceTo(pEnd) < 6) return;
+
+        const centerLat = (startLatLng.lat + endLatLng.lat) / 2;
+        const centerLng = (startLatLng.lng + endLatLng.lng) / 2;
+        const latScale = Math.cos(centerLat * Math.PI / 180);
+        const length = Math.max(2, Math.round(Math.abs(endLatLng.lng - startLatLng.lng) * 111320 * latScale * 10) / 10);
+        const width = Math.max(2, Math.round(Math.abs(endLatLng.lat - startLatLng.lat) * 111320 * 10) / 10);
+
+        const element = addRectangleToMap(name, 'custom-building', L.latLng(centerLat, centerLng), length, width);
+        elements.push(element); updateElementCard(element); bindMarkerEvents(element);
+        updateStats();
+        saveHistory();
+    }
+
+    function onMouseUp(e) { finishDrawing(e.latlng); }
+
+    map.once('mousedown', (e) => {
+        startLatLng = e.latlng;
+        previewRect = L.rectangle(L.latLngBounds(startLatLng, startLatLng), {
+            color: '#8f7350', weight: 2, fillColor: '#cbb28c', fillOpacity: 0.4, dashArray: '4,4', interactive: false
+        }).addTo(map);
+        map.on('mousemove', onMouseMove);
+        map.once('mouseup', onMouseUp);
+    });
 }
 
 function addFixedFenceToMap(len, center = map.getCenter(), rotation = 0, type = 'fence') {
@@ -1964,12 +2047,18 @@ function getPinIconSVG(iconKey, color, rotationDeg) {
             <circle cx="23" cy="19" r="3.4" fill="#8bc34a" stroke="${D}" stroke-width="1.3"/>
             <path d="M23 19 30 25" stroke="${D}" stroke-width="1.8" stroke-linecap="round"/>
         </svg>`,
+        // Furgoneta de comida en silueta plana (caja + cabina con parabrisas
+        // inclinado, ruedas redondas, plato+cubiertos en el lateral) -pedido
+        // explícito por el usuario a partir de una imagen de referencia-.
         'food': `<svg viewBox="0 0 64 64">${shadow}
-            <path d="M12 28c0-9 9-16 20-16s20 7 20 16H12Z" fill="#e8b656" stroke="${D}" stroke-width="2.5"/>
-            <circle cx="22" cy="18" r="1.6" fill="#fff"/><circle cx="32" cy="15" r="1.6" fill="#fff"/><circle cx="42" cy="18" r="1.6" fill="#fff"/>
-            <rect x="11" y="28" width="42" height="6" fill="${bg}" stroke="${D}" stroke-width="2"/>
-            <path d="M10 34c2 4 8 5 22 5s20-1 22-5" fill="#6b3f22" stroke="${D}" stroke-width="2.5"/>
-            <rect x="12" y="42" width="40" height="9" rx="4" fill="#e8b656" stroke="${D}" stroke-width="2.5"/>
+            <path d="M4 18h32v26H6a2 2 0 0 1-2-2V20a2 2 0 0 1 2-2Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M36 18h9l11 12v10a2 2 0 0 1-2 2H36Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M42 23h3l8 7H42Z" fill="#dff0fa" stroke="${D}" stroke-width="1.4" stroke-linejoin="round"/>
+            <circle cx="16" cy="46" r="7.5" fill="${D}"/><circle cx="16" cy="46" r="3.6" fill="#fff"/>
+            <circle cx="46" cy="46" r="7.5" fill="${D}"/><circle cx="46" cy="46" r="3.6" fill="#fff"/>
+            <circle cx="14" cy="29" r="6" fill="none" stroke="#fff" stroke-width="2.2"/>
+            <path d="M23 22v14M21.3 22v5c0 1 .7 1.6 1.7 1.6s1.7-.6 1.7-1.6v-5" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/>
+            <path d="M29 22c2.5 0 3.5 2 3.5 4.5S31.5 30 29 30v6" stroke="#fff" stroke-width="1.7" stroke-linecap="round" fill="none"/>
         </svg>`,
         'custom': `<svg viewBox="0 0 64 64">${shadow}
             <rect x="14" y="12" width="36" height="40" rx="10" fill="${bg}" stroke="${D}" stroke-width="2.5"/>

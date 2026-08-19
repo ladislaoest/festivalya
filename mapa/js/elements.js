@@ -1087,9 +1087,38 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
             const displayName = element.name !== config.label ? element.name : config.label;
             const iconKey = config.icon;
             const isZone = element.type.startsWith('zone');
+            const isCustomBuilding = element.type === 'custom-building';
             const hiddenClass = showLabels ? '' : 'hidden-label';
 
-            if (isZone) {
+            if (isCustomBuilding) {
+                // Edificio de referencia: un bloque sólido a escala real (no
+                // un pin/sticker) del mismo aspecto que los edificios reales
+                // pintados en el fondo -"un recuadro como los que ya
+                // existen"-, que se puede moldear/alargar con los mismos
+                // campos Largo/Ancho de cualquier elemento. La posición
+                // dentro del Mapa Ilustrado respeta illustratedOffset (igual
+                // que los stickers puntuales) para poder separarlo sin
+                // tocar la posición real -ver bindIllustratedDrag-.
+                const mapBearing = (map.getBearing ? map.getBearing() : 0);
+                const totalRotation = element.rotation + mapBearing;
+                const pCenter = map.latLngToLayerPoint(center);
+                const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
+                const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
+                const wPx = Math.max(6, length * pxPerMeter);
+                const hPx = Math.max(6, width * pxPerMeter);
+                const bg = element.color || '#cbb28c';
+
+                const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; position:relative; transform:rotate(${totalRotation}deg);" title="${displayName}">
+                    <div style="width:100%; height:100%; background:${bg}; border:2px solid #8f7350; border-radius:2px; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>
+                    <div class="map-pin-bubble ${hiddenClass}" style="position:absolute; left:50%; bottom:100%; margin-bottom:4px; transform:translateX(-50%) rotate(${-totalRotation}deg); transform-origin:center;">${displayName}</div>
+                </div>`;
+                element.labelMarker.setLatLng(isIllustratedMode ? offsetLatLngMeters(center, element.illustratedOffset) : center);
+                element.labelMarker.setIcon(L.divIcon({
+                    className: 'illustrated-label',
+                    html: iconHTML,
+                    iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
+                }));
+            } else if (isZone) {
                 // Área traslúcida a escala real, con una etiqueta centrada y,
                 // además, un icono real (mismo sticker que los elementos
                 // puntuales): antes una "ZONA PARKING" era solo un rectángulo

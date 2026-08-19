@@ -201,8 +201,15 @@ function toggleIllustratedMode() {
         // un plano de festival dibujado a mano) en vez de la foto satélite
         // real -ver refreshIllustratedBackdrop-: se pidió explícitamente que
         // dejara de parecer una foto aérea con pines encima.
+        //
+        // "false" (no forzar recarga): si el recinto no se ha movido desde
+        // la última vez, refreshIllustratedBackdrop ya sabe reutilizar el
+        // terreno cacheado (ver illustratedTerrainQueryBounds.contains) en
+        // vez de volver a golpear a Overpass -entrar y salir del Modo
+        // Ilustrado repetidas veces no debe tardar ni variar cada vez, solo
+        // la PRIMERA vez (o si de verdad se cambió de zona) hace falta red-.
         map.removeLayer(currentMapLayer);
-        refreshIllustratedBackdrop(true);
+        refreshIllustratedBackdrop(false);
 
         // Se puede mover (arrastrar) y rotar el mapa para orientar y encuadrar
         // el diseño; solo se desactiva el zoom y la edición de elementos.
@@ -252,14 +259,26 @@ function toggleIllustratedMode() {
 
     elements.forEach(el => {
         const shouldShowControls = !isIllustratedMode && !isFestivalMode;
-        
-        // Etiquetas y Marcadores totalmente no interactivos en modo ilustrado
+
+        // Al SALIR del Mapa Ilustrado, el icono vuelve a su posición real
+        // -si no, un ajuste hecho allí para separar dos iconos pegados se
+        // quedaba "colado" como desplazamiento del texto en el 2D técnico,
+        // que es justo lo que no se quería-. Las vallas quedan fuera: esas
+        // sí llevan de antes su propia etiqueta reposicionable a mano en
+        // modo normal (ver labelCoords en save-load.js), independiente de
+        // illustratedOffset.
+        if (!isIllustratedMode && el.labelMarker && !el.isLine) {
+            el.labelMarker.setLatLng(el.moveMarker.getLatLng());
+        }
+
+        // Las etiquetas de texto (modo normal) siguen sin ser arrastrables a
+        // propósito. El icono/sticker del Mapa Ilustrado SÍ se puede
+        // arrastrar -ver bindIllustratedDrag-, para poder separar iconos que
+        // quedan pegados unos a otros sin tocar la posición real del
+        // elemento (esa función solo actualiza illustratedOffset).
         if (el.labelMarker) {
-            if (isIllustratedMode) {
-                el.labelMarker.getElement().style.pointerEvents = 'none';
-            } else {
-                el.labelMarker.getElement().style.pointerEvents = 'auto';
-            }
+            el.labelMarker.getElement().style.pointerEvents = 'auto';
+            if (isIllustratedMode) el.labelMarker.dragging.enable();
         }
 
         if (el.moveMarker) {
@@ -461,11 +480,15 @@ async function fetchIllustratedTerrain(bbox) {
 
     if (!rawElements) {
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 15000);
             const res = await fetch('/api/illustrated-terrain', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bbox })
+                body: JSON.stringify({ bbox }),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
             if (res.ok) {
                 const json = await res.json();
                 if (Array.isArray(json.elements)) rawElements = json.elements;
@@ -807,6 +830,24 @@ function paintIllustratedBackdrop(bounds, terrain, viewportPx) {
 // una densidad que no es la que Leaflet necesita para verse nítido.
 const ILLUSTRATED_PAD_RATIO = 0.8;
 
+// Aviso de "cargando" mientras se espera a Overpass (puede tardar varios
+// segundos, sobre todo la primera vez): sin esto, mientras carga solo se ve
+// césped liso y parece que el fondo pintado ha fallado del todo.
+let illustratedLoadingEl = null;
+function setIllustratedLoading(show) {
+    const mapEl = document.getElementById('map');
+    if (show) {
+        if (illustratedLoadingEl || !mapEl) return;
+        illustratedLoadingEl = document.createElement('div');
+        illustratedLoadingEl.className = 'illustrated-loading-badge';
+        illustratedLoadingEl.textContent = 'Dibujando el mapa ilustrado…';
+        mapEl.appendChild(illustratedLoadingEl);
+    } else if (illustratedLoadingEl) {
+        illustratedLoadingEl.remove();
+        illustratedLoadingEl = null;
+    }
+}
+
 // Genera (o reutiliza el terreno ya cacheado si el área nueva sigue cubierta)
 // el fondo pintado para la vista actual y lo coloca sobre el mapa. Se llama
 // al activar el Modo Ilustrado y, con margen de seguridad, al arrastrar el
@@ -824,11 +865,16 @@ async function refreshIllustratedBackdrop(forceRefetch) {
 
     const coveredByLastFetch = !forceRefetch && illustratedTerrainData && illustratedTerrainQueryBounds && illustratedTerrainQueryBounds.contains(bounds);
     if (!coveredByLastFetch) {
-        illustratedTerrainData = await fetchIllustratedTerrain({
-            minLat: bounds.getSouth(), maxLat: bounds.getNorth(),
-            minLng: bounds.getWest(), maxLng: bounds.getEast()
-        });
-        illustratedTerrainQueryBounds = bounds;
+        setIllustratedLoading(true);
+        try {
+            illustratedTerrainData = await fetchIllustratedTerrain({
+                minLat: bounds.getSouth(), maxLat: bounds.getNorth(),
+                minLng: bounds.getWest(), maxLng: bounds.getEast()
+            });
+            illustratedTerrainQueryBounds = bounds;
+        } finally {
+            if (myRequestId === illustratedBackdropRequestId) setIllustratedLoading(false);
+        }
     }
 
     if (!isIllustratedMode || myRequestId !== illustratedBackdropRequestId) return;
@@ -843,6 +889,42 @@ function escapeHtmlText(str) {
     const div = document.createElement('div');
     div.textContent = str;
     return div.innerHTML;
+}
+
+// Desplazamiento "solo visual" del icono en el Mapa Ilustrado (ver
+// element.illustratedOffset, en metros, NO rotado con el elemento -al
+// contrario que getRotatedLatLng dentro de updateElementShape-: es un ajuste
+// de composición del plano, no algo que deba girar si el usuario rota la
+// valla o el escenario). No toca moveMarker/rectangle/line -la posición
+// real que usan el 2D técnico, el 3D y las medidas (vallas, distancias...)
+// no se entera de este ajuste-, así que separar/juntar iconos en el Mapa
+// Ilustrado para que no se amontonen no puede "mover" el elemento de verdad.
+function offsetLatLngMeters(center, offset) {
+    if (!offset || (!offset.dx && !offset.dy)) return center;
+    const latScale = Math.cos(center.lat * Math.PI / 180);
+    return L.latLng(center.lat + offset.dy / 111320, center.lng + offset.dx / (111320 * latScale));
+}
+
+function meterOffsetBetween(center, pos) {
+    const latScale = Math.cos(center.lat * Math.PI / 180);
+    return { dx: (pos.lng - center.lng) * 111320 * latScale, dy: (pos.lat - center.lat) * 111320 };
+}
+
+// Arrastrar el propio icono en el Mapa Ilustrado: solo activo con
+// isIllustratedMode (ver toggleIllustratedMode, que habilita/deshabilita
+// labelMarker.dragging igual que ya hace con moveMarker/rotateMarker fuera
+// de él), y solo actualiza element.illustratedOffset -nunca moveMarker- así
+// que la posición real (2D técnico, 3D, medidas) no se entera de este ajuste.
+function bindIllustratedDrag(element) {
+    element.labelMarker.on('drag', () => {
+        if (!isIllustratedMode) return;
+        const center = element.moveMarker.getLatLng();
+        element.illustratedOffset = meterOffsetBetween(center, element.labelMarker.getLatLng());
+    });
+    element.labelMarker.on('dragend', () => {
+        if (!isIllustratedMode) return;
+        saveHistory();
+    });
 }
 
 function updateElementShape(element, updateLabel = false, onlyLabel = false) {
@@ -964,6 +1046,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 const roadW = Math.max(70, Math.min(220, displayName.length * 9 + 26));
                 const roadH = 30;
                 const iconHTML = `<div class="map-road-label" style="width:${roadW}px;height:${roadH}px;background:${element.color || '#e74c3c'};">${displayName}</div>`;
+                // Posición del icono/etiqueta: centro real + illustratedOffset
+                // en Modo Ilustrado, centro real a secas fuera de él -así una
+                // separación hecha en el Mapa Ilustrado para desatascar dos
+                // iconos pegados no "se cuela" como desplazamiento del texto
+                // en el 2D técnico al salir de él-.
+                element.labelMarker.setLatLng(isIllustratedMode ? offsetLatLngMeters(center, element.illustratedOffset) : center);
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
@@ -987,6 +1075,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
                     <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px; transform:rotate(${element.rotation + mapBearing}deg);">${iconSvg}</div>
                 </div>`;
+                // Posición del icono/etiqueta: centro real + illustratedOffset
+                // en Modo Ilustrado, centro real a secas fuera de él -así una
+                // separación hecha en el Mapa Ilustrado para desatascar dos
+                // iconos pegados no "se cuela" como desplazamiento del texto
+                // en el 2D técnico al salir de él-.
+                element.labelMarker.setLatLng(isIllustratedMode ? offsetLatLngMeters(center, element.illustratedOffset) : center);
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
@@ -1018,6 +1112,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
                     <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;${badgeTransform}">${iconSvg}</div>
                 </div>`;
+                // Posición del icono/etiqueta: centro real + illustratedOffset
+                // en Modo Ilustrado, centro real a secas fuera de él -así una
+                // separación hecha en el Mapa Ilustrado para desatascar dos
+                // iconos pegados no "se cuela" como desplazamiento del texto
+                // en el 2D técnico al salir de él-.
+                element.labelMarker.setLatLng(isIllustratedMode ? offsetLatLngMeters(center, element.illustratedOffset) : center);
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
                     html: iconHTML,
@@ -1347,8 +1447,9 @@ function addFixedFenceToMap(len, center = map.getCenter(), rotation = 0, type = 
     }
 
     const name = type === 'panic-fence' ? 'Valla Antipánico' : 'Valla';
-    const element = { id: Date.now(), type, name, line, labelMarker, moveMarker, length: len, numVallas: Math.ceil(len / 2), isLine: true, isRectangle: false, color: config.color, iconUrl: getGenericIconUrl(config.icon), rotation: rotation };
+    const element = { id: Date.now(), type, name, line, labelMarker, moveMarker, length: len, numVallas: Math.ceil(len / 2), isLine: true, isRectangle: false, color: config.color, iconUrl: getGenericIconUrl(config.icon), rotation: rotation, illustratedOffset: { dx: 0, dy: 0 } };
     addRotateHandle(element);
+    bindIllustratedDrag(element);
     
     function onDragStart(e) {
         element.lastPos = e.target.getLatLng ? e.target.getLatLng() : moveMarker.getLatLng();
@@ -1409,7 +1510,8 @@ function addRectangleToMap(name, type, center, length, width, rotation = 0, path
         labelMarker.addTo(map);
     }
 
-    const element = { id: Date.now(), type, name, rectangle, labelMarker, moveMarker, length, width, rotation: rotation, isRectangle: true, color: config.color, iconUrl: getGenericIconUrl(config.icon) };
+    const element = { id: Date.now(), type, name, rectangle, labelMarker, moveMarker, length, width, rotation: rotation, isRectangle: true, color: config.color, iconUrl: getGenericIconUrl(config.icon), illustratedOffset: { dx: 0, dy: 0 } };
+    bindIllustratedDrag(element);
 
     // Trayecto dibujado a mano opcional: línea guía en el propio mapa 2D,
     // aparte de la huella/rectángulo del elemento.

@@ -193,6 +193,31 @@ select.form-control option {
     user-select: none !important;
 }
 
+/* Aviso mientras se pide el terreno real a Overpass para el fondo pintado
+   (ver setIllustratedLoading en elements.js): sin esto, mientras carga solo
+   se ve césped liso y parece que el fondo ha fallado del todo. */
+.illustrated-loading-badge {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    background: rgba(20, 18, 10, 0.85);
+    color: #f2c85c;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 8px 16px;
+    border-radius: 20px;
+    border: 1.5px solid #f2c85c;
+    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+    pointer-events: none;
+    animation: illustrated-loading-pulse 1.4s ease-in-out infinite;
+}
+@keyframes illustrated-loading-pulse {
+    0%, 100% { opacity: 0.75; }
+    50% { opacity: 1; }
+}
+
 .label-bubble {
     background: white;
     color: #333;

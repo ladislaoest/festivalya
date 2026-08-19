@@ -65,6 +65,7 @@ function getProjectData() {
             width: el.width,
             color: el.color,
             illustratedHidden: el.illustratedHidden || false,
+            illustratedOffset: el.illustratedOffset || { dx: 0, dy: 0 },
             pathCoords: el.pathCoords || null
         }))
     };
@@ -193,6 +194,7 @@ function loadProjectData(data) {
         }
         element.rotation = el.rotation || 0;
         element.illustratedHidden = el.illustratedHidden || false;
+        element.illustratedOffset = el.illustratedOffset || { dx: 0, dy: 0 };
         if (el.labelCoords) element.labelMarker.setLatLng(el.labelCoords);
         elements.push(element);
         updateElementShape(element, true);

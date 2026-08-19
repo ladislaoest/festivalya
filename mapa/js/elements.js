@@ -241,6 +241,7 @@ function toggleIllustratedMode() {
         currentMapLayer = mapLayers['esri-satellite'];
         currentMapLayer.addTo(map);
         if (nearbyPlacesLayer) map.removeLayer(nearbyPlacesLayer);
+        if (illustratedContextLabelsLayer) map.removeLayer(illustratedContextLabelsLayer);
 
         // Reactivar navegación total
         map.dragging.enable();
@@ -658,56 +659,6 @@ function paintWaterRipples(ctx, pts, canvasW, canvasH) {
     }
 }
 
-// Nombre de la carretera más relevante (la de geometría más larga con
-// nombre), escrito una vez a lo largo de su tramo central -sin intentar un
-// curveado completo tipo texto-en-path, basta con orientarlo al ángulo local
-// de ese tramo para leerse como "escrito sobre la vía".
-function drawRoadLabel(ctx, roadPts, name) {
-    if (!name || roadPts.length < 2) return;
-    const mid = Math.floor(roadPts.length / 2);
-    const a = roadPts[Math.max(0, mid - 1)];
-    const b = roadPts[Math.min(roadPts.length - 1, mid)];
-    const midX = (a[0] + b[0]) / 2, midY = (a[1] + b[1]) / 2;
-    let angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
-    if (angle > Math.PI / 2) angle -= Math.PI;
-    if (angle < -Math.PI / 2) angle += Math.PI;
-
-    ctx.save();
-    ctx.translate(midX, midY);
-    ctx.rotate(angle);
-    ctx.font = '700 20px Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.strokeStyle = 'rgba(35,35,35,0.75)';
-    ctx.lineWidth = 4;
-    ctx.lineJoin = 'round';
-    ctx.strokeText(name, 0, 0);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(name, 0, 0);
-    ctx.restore();
-}
-
-// Nombre de un edificio real notable (pabellón, iglesia, centro deportivo...)
-// centrado sobre su huella -mismo estilo (blanco con borde oscuro) que
-// drawRoadLabel, pero sin rotar: un edificio no tiene un "ángulo de tramo"
-// como una calle.
-function drawBuildingLabel(ctx, pts, name) {
-    if (!name || pts.length < 3) return;
-    const cx = pts.reduce((s, p) => s + p[0], 0) / pts.length;
-    const cy = pts.reduce((s, p) => s + p[1], 0) / pts.length;
-    ctx.save();
-    ctx.font = '700 13px Arial, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.strokeStyle = 'rgba(35,35,35,0.8)';
-    ctx.lineWidth = 3;
-    ctx.lineJoin = 'round';
-    ctx.strokeText(name, cx, cy);
-    ctx.fillStyle = '#ffffff';
-    ctx.fillText(name, cx, cy);
-    ctx.restore();
-}
-
 // Pinta el canvas de fondo completo para unos bounds dados y devuelve su
 // data URL. La proyección lat/lng -> píxel es una interpolación LINEAL
 // simple respecto a esos mismos bounds -es exactamente la misma
@@ -788,23 +739,23 @@ function paintIllustratedBackdrop(bounds, terrain, viewportPx) {
         strokeProjectedLine(ctx, pts, { strokeStyle: '#8cc8e6', lineWidth: Math.max(2, widthPx * 0.35), lineDash: [widthPx * 1.2, widthPx * 1.6] });
     });
 
-    // 5. Carreteras: cinta gris + línea central discontinua blanca + nombre
-    let bestRoadPts = null, bestRoadName = null, bestRoadLen = -1;
+    // 5. Carreteras: cinta gris + línea central discontinua blanca. Los
+    // nombres de calle NO se pintan aquí -salen como etiquetas aparte (ver
+    // buildIllustratedContextLabels), independientes y que se pueden ocultar
+    // con el botón "OCULTAR NOMBRES REALES" sin tener que repintar todo el
+    // fondo-.
     (terrain.roads || []).forEach(rd => {
         const pts = projectPoints(rd.points, project);
         const widthPx = Math.max(7, Math.min(canvasW, canvasH) * 0.016);
         strokeProjectedLine(ctx, pts, { strokeStyle: '#8a8a8c', lineWidth: widthPx });
         strokeProjectedLine(ctx, pts, { strokeStyle: '#f5f3ea', lineWidth: Math.max(1.5, widthPx * 0.12), lineDash: [widthPx * 0.6, widthPx * 0.9] });
-        if (rd.name && pts.length > bestRoadLen) { bestRoadLen = pts.length; bestRoadPts = pts; bestRoadName = rd.name; }
     });
-    if (bestRoadPts) drawRoadLabel(ctx, bestRoadPts, bestRoadName);
 
     // 6. Edificios reales cercanos (dan contexto real de dónde cae el
     // recinto -un colegio, el pabellón de deportes, la iglesia...-, igual
     // que ya se hace en la vista 3D con applyMapFeatures): bloque plano
-    // color teja por encima de la carretera, con el nombre solo en los que
-    // lo tienen (no todos, para no saturar un centro urbano denso).
-    const buildingLabelsShown = [];
+    // color teja por encima de la carretera. El nombre, igual que el de las
+    // calles, sale como etiqueta aparte -ver buildIllustratedContextLabels-.
     (terrain.buildings || []).forEach(b => {
         const pts = projectPoints(b.points, project);
         if (pts.length < 3) return;
@@ -815,10 +766,6 @@ function paintIllustratedBackdrop(bounds, terrain, viewportPx) {
         tracePolygonPath(ctx, pts);
         ctx.stroke();
         ctx.restore();
-        if (b.name && buildingLabelsShown.length < 15) {
-            buildingLabelsShown.push(1);
-            drawBuildingLabel(ctx, pts, b.name);
-        }
     });
 
     return canvas.toDataURL('image/png');
@@ -846,6 +793,47 @@ function setIllustratedLoading(show) {
         illustratedLoadingEl.remove();
         illustratedLoadingEl = null;
     }
+}
+
+// Nombres reales (calles, el pabellón de deportes, la iglesia...) como
+// etiquetas aparte -no pintadas dentro del canvas, ver paintIllustratedBackdrop-
+// para que se puedan mostrar VARIAS a la vez (no solo una carretera "la más
+// larga") y ocultar de golpe sin tener que repintar todo el fondo -ver
+// toggleRealContextLabels-. Mismo estilo de píldora que ya se usa para los
+// lugares cercanos con nombre (nearby-place-pill).
+let illustratedContextLabelsLayer = null;
+let showRealContextLabels = true;
+
+function buildIllustratedContextLabels(terrain) {
+    const layer = L.layerGroup();
+    const seenNames = new Set();
+
+    const addPill = (latlng, name) => {
+        if (!name || seenNames.has(name)) return;
+        seenNames.add(name);
+        layer.addLayer(L.marker(latlng, {
+            icon: L.divIcon({
+                className: 'nearby-place-label',
+                html: `<div class="nearby-place-pill">${escapeHtmlText(name)}</div>`,
+                iconSize: [1, 1]
+            }),
+            interactive: false
+        }));
+    };
+
+    (terrain.roads || []).forEach(rd => {
+        if (!rd.name || rd.points.length < 1) return;
+        const mid = rd.points[Math.floor(rd.points.length / 2)];
+        addPill([mid.lat, mid.lon], rd.name);
+    });
+    (terrain.buildings || []).forEach(b => {
+        if (!b.name || b.points.length < 3) return;
+        const cLat = b.points.reduce((s, p) => s + p.lat, 0) / b.points.length;
+        const cLon = b.points.reduce((s, p) => s + p.lon, 0) / b.points.length;
+        addPill([cLat, cLon], b.name);
+    });
+
+    return layer;
 }
 
 // Genera (o reutiliza el terreno ya cacheado si el área nueva sigue cubierta)
@@ -883,6 +871,22 @@ async function refreshIllustratedBackdrop(forceRefetch) {
     if (illustratedBackdropLayer) map.removeLayer(illustratedBackdropLayer);
     illustratedBackdropLayer = L.imageOverlay(dataUrl, bounds, { interactive: false }).addTo(map);
     illustratedBackdropBounds = bounds;
+
+    if (illustratedContextLabelsLayer) map.removeLayer(illustratedContextLabelsLayer);
+    illustratedContextLabelsLayer = buildIllustratedContextLabels(illustratedTerrainData);
+    if (showRealContextLabels) illustratedContextLabelsLayer.addTo(map);
+}
+
+function toggleRealContextLabels() {
+    showRealContextLabels = !showRealContextLabels;
+    const btn = document.getElementById('toggle-real-labels-btn');
+    if (btn) {
+        btn.classList.toggle('active', !showRealContextLabels);
+        btn.innerText = showRealContextLabels ? 'OCULTAR NOMBRES REALES' : 'MOSTRAR NOMBRES REALES';
+    }
+    if (!illustratedContextLabelsLayer) return;
+    if (showRealContextLabels) illustratedContextLabelsLayer.addTo(map);
+    else map.removeLayer(illustratedContextLabelsLayer);
 }
 
 function escapeHtmlText(str) {
@@ -1233,6 +1237,9 @@ function setupElementEvents() {
     const fencesBtn = document.getElementById('toggle-fences-btn');
     if (fencesBtn) fencesBtn.onclick = toggleFencesIllustrated;
 
+    const realLabelsBtn = document.getElementById('toggle-real-labels-btn');
+    if (realLabelsBtn) realLabelsBtn.onclick = toggleRealContextLabels;
+
     const measureBtn = document.getElementById('measure-btn');
     if (measureBtn) measureBtn.onclick = toggleMeasureMode;
 
@@ -1311,14 +1318,8 @@ function setupElementEvents() {
 
 	document.getElementById('delete-element-btn').onclick = () => {
 		if (editingElement) {
-			if (editingElement.isRectangle) map.removeLayer(editingElement.rectangle); else if (editingElement.isLine) map.removeLayer(editingElement.line);
-            map.removeLayer(editingElement.labelMarker); map.removeLayer(editingElement.moveMarker);
-            if (editingElement.routeLine) map.removeLayer(editingElement.routeLine);
-			document.getElementById(`element-card-${editingElement.id}`).remove();
-			elements = elements.filter(el => el.id !== editingElement.id);
-			document.getElementById('edit-panel').style.display = 'none'; editingElement = null;
-            updateStats();
-            saveHistory();
+            deleteElement(editingElement); // en Modo Ilustrado esto oculta en vez de borrar, ver deleteElement
+            document.getElementById('edit-panel').style.display = 'none'; editingElement = null;
 		}
 	};
 }
@@ -1721,7 +1722,24 @@ function showEditPopup(element, latlng) {
     }, 50);
 }
 
+// "Borrar" en Modo Ilustrado nunca borra de verdad -el elemento es el mismo
+// en todos los planos (2D técnico, 3D, medidas), así que borrarlo ahí lo
+// borraría de todos ellos, justo lo que no se quiere al estar solo
+// retocando el aspecto del plano ilustrado-. En su lugar se oculta con el
+// mismo mecanismo que el botón de ojo (◉/◌) de la lista, reversible desde
+// ahí en cualquier momento.
+function hideElementFromIllustrated(element) {
+    element.illustratedHidden = true;
+    updateElementCard(element);
+    updateElementShape(element, true);
+    saveHistory();
+}
+
 function deleteElement(element) {
+    if (isIllustratedMode) {
+        hideElementFromIllustrated(element);
+        return;
+    }
 	if (element.isRectangle) map.removeLayer(element.rectangle); else if (element.isLine) map.removeLayer(element.line);
     map.removeLayer(element.labelMarker); map.removeLayer(element.moveMarker);
     if (element.rotateMarker) map.removeLayer(element.rotateMarker);
@@ -1811,18 +1829,16 @@ function getPinIconSVG(iconKey, color) {
             <circle cx="44" cy="13" r="2.6" fill="#ffe27a" stroke="${D}" stroke-width="1.2"/>
             <circle cx="55" cy="13" r="2.6" fill="#ffe27a" stroke="${D}" stroke-width="1.2"/>
         </svg>`,
+        // Copa de cóctel: icono simple y reconocible al vuelo (el anterior,
+        // una barra con toldo y botellitas, quedaba demasiado cargado a
+        // tamaño pequeño y no convencía).
         'bar': `<svg viewBox="0 0 64 64">${shadow}
-            <path d="M6 20 32 8 58 20 58 27 6 27Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
-            <path d="M11 21h8l2.6 6h-8ZM24.6 21h8l2.6 6h-8ZM38.2 21h8l2.6 6h-8Z" fill="#fff6df"/>
-            <rect x="11" y="27" width="3" height="19" fill="${D}"/>
-            <rect x="50" y="27" width="3" height="19" fill="${D}"/>
-            <rect x="16" y="29" width="4" height="13" fill="#3fae5c" stroke="${D}" stroke-width="1"/>
-            <rect x="23" y="27" width="4" height="15" fill="#c0392b" stroke="${D}" stroke-width="1"/>
-            <rect x="30" y="30" width="4" height="12" fill="#f4c430" stroke="${D}" stroke-width="1"/>
-            <rect x="37" y="28" width="4" height="14" fill="#3498db" stroke="${D}" stroke-width="1"/>
-            <rect x="44" y="30" width="4" height="12" fill="#8e44ad" stroke="${D}" stroke-width="1"/>
-            <rect x="7" y="42" width="50" height="12" rx="1.5" fill="#8a5a34" stroke="${D}" stroke-width="2.5"/>
-            <rect x="7" y="42" width="50" height="4" rx="1.5" fill="#a97a4d"/>
+            <path d="M12 12h40L34 36h-4L12 12Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M17 17h30l-5 6H22Z" fill="#fff6df" opacity="0.85"/>
+            <rect x="29" y="34" width="6" height="15" fill="${bg}" stroke="${D}" stroke-width="2.2"/>
+            <rect x="17" y="48" width="30" height="7" rx="2.5" fill="${bg}" stroke="${D}" stroke-width="2.2"/>
+            <circle cx="23" cy="19" r="3.4" fill="#8bc34a" stroke="${D}" stroke-width="1.3"/>
+            <path d="M23 19 30 25" stroke="${D}" stroke-width="1.8" stroke-linecap="round"/>
         </svg>`,
         'food': `<svg viewBox="0 0 64 64">${shadow}
             <path d="M12 28c0-9 9-16 20-16s20 7 20 16H12Z" fill="#e8b656" stroke="${D}" stroke-width="2.5"/>

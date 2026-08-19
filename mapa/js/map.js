@@ -108,6 +108,25 @@ function initMap() {
         }
     });
 
+    // Regenerar el fondo pintado del Mapa Ilustrado si, al arrastrar, la
+    // vista se acerca al borde de la lámina ya pintada (que se generó con
+    // margen amplio, así que esto no salta en casi ningún arrastre normal).
+    // La rotación no necesita esto: el fondo vive en el mismo pane que antes
+    // la capa satélite, así que rota con él igual.
+    let illustratedBackdropRefreshTimer = null;
+    map.on('moveend', () => {
+        if (typeof isIllustratedMode === 'undefined' || !isIllustratedMode) return;
+        if (illustratedBackdropRefreshTimer) clearTimeout(illustratedBackdropRefreshTimer);
+        illustratedBackdropRefreshTimer = setTimeout(() => {
+            if (!isIllustratedMode) return;
+            const view = map.getBounds();
+            const safeMargin = illustratedBackdropBounds ? illustratedBackdropBounds.pad(-0.15) : null;
+            if (!safeMargin || !safeMargin.contains(view)) {
+                refreshIllustratedBackdrop(false);
+            }
+        }, 500);
+    });
+
 	map.on('locationerror', () => {
 		alert("No se pudo obtener tu ubicación. Asegúrate de dar permisos de GPS.");
 	});

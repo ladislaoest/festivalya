@@ -197,12 +197,12 @@ function toggleIllustratedMode() {
     const mapContainer = document.getElementById('map');
     if (isIllustratedMode) {
         mapContainer.classList.add('illustrated-style');
-        // Foto satélite real (Esri World Imagery, la misma que la vista
-        // normal) como base, no el mapa de calles Voyager: se pidió
-        // explícitamente que fuera sobre la satelital, tipo Google Maps.
+        // Fondo pintado (césped/agua/playa/carretera reales con la paleta de
+        // un plano de festival dibujado a mano) en vez de la foto satélite
+        // real -ver refreshIllustratedBackdrop-: se pidió explícitamente que
+        // dejara de parecer una foto aérea con pines encima.
         map.removeLayer(currentMapLayer);
-        currentMapLayer = mapLayers['esri-satellite'];
-        currentMapLayer.addTo(map);
+        refreshIllustratedBackdrop(true);
 
         // Se puede mover (arrastrar) y rotar el mapa para orientar y encuadrar
         // el diseño; solo se desactiva el zoom y la edición de elementos.
@@ -230,7 +230,7 @@ function toggleIllustratedMode() {
 
     } else {
         mapContainer.classList.remove('illustrated-style');
-        map.removeLayer(currentMapLayer);
+        if (illustratedBackdropLayer) { map.removeLayer(illustratedBackdropLayer); illustratedBackdropLayer = null; }
         currentMapLayer = mapLayers['esri-satellite'];
         currentMapLayer.addTo(map);
         if (nearbyPlacesLayer) map.removeLayer(nearbyPlacesLayer);
@@ -296,9 +296,16 @@ function toggleIllustratedMode() {
                 interactive: !isIllustratedMode 
             });
         } else if (el.isLine) {
+            // En Modo Ilustrado la valla ya no se pinta como fila de iconos
+            // (ver updateElementShape): es la propia línea, como un simple
+            // perímetro amarillo punteado -tipo plano de festival dibujado a
+            // mano-, salvo que el toggle "OCULTAR VALLAS" la quite del todo.
+            const hiddenByToggle = isIllustratedMode && !showFencesIllustrated;
             el.line.setStyle({
-                weight: isIllustratedMode ? 0 : 5,
-                opacity: isIllustratedMode ? 0 : 1,
+                weight: isIllustratedMode ? (hiddenByToggle ? 0 : (el.type === 'panic-fence' ? 3 : 4)) : 5,
+                opacity: isIllustratedMode ? (hiddenByToggle ? 0 : 1) : 1,
+                color: isIllustratedMode ? '#ffcc00' : el.color,
+                dashArray: isIllustratedMode ? '2, 10' : null,
                 interactive: !isIllustratedMode
             });
         }
@@ -406,6 +413,345 @@ async function loadNearbyPlaceNames() {
     }
     nearbyPlacesFetchKey = key;
     if (isIllustratedMode) nearbyPlacesLayer.addTo(map);
+}
+
+// --- Fondo pintado del Mapa Ilustrado ---
+// En vez de la foto satélite real, el Modo Ilustrado pinta una única "lámina"
+// (canvas) con césped/agua/playa/carretera con la paleta de un plano de
+// festival dibujado a mano, y la coloca con L.imageOverlay -ver
+// refreshIllustratedBackdrop, enganchado en toggleIllustratedMode-. El
+// terreno real cercano (agua, playa, bosque, carreteras) se pide a Overpass
+// con el mismo patrón que loadNearbyPlaceNames/fetchMapFeatures (directo
+// desde el navegador primero, proxy propio /api/illustrated-terrain si eso
+// falla), pero pidiendo geometría real (`out geom;`) porque aquí hace falta
+// el contorno para poder rellenarlo/trazarlo, no solo un punto central.
+let illustratedBackdropLayer = null;
+let illustratedBackdropBounds = null;
+let illustratedTerrainData = null;
+let illustratedTerrainQueryBounds = null; // bounds ya cubiertos por illustratedTerrainData
+
+function illustratedTerrainQuery(bboxStr) {
+    return `[out:json][timeout:20];(
+        way["natural"="water"](${bboxStr});
+        way["waterway"~"^(river|stream|canal)$"](${bboxStr});
+        way["natural"="beach"](${bboxStr});
+        way["natural"="wood"](${bboxStr});
+        way["landuse"~"^(forest|wood)$"](${bboxStr});
+        way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${bboxStr});
+    );out geom;`;
+}
+
+async function fetchIllustratedTerrain(bbox) {
+    const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    let rawElements = null;
+    try {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
+        rawElements = await raceFirstNonEmpty(
+            OVERPASS_ENDPOINTS.map(endpoint => () => queryOverpassMirror(endpoint, illustratedTerrainQuery(bboxStr), controller.signal)),
+            20000
+        );
+        clearTimeout(timeoutId);
+    } catch (err) {
+        console.warn('[Mapa Ilustrado] Fallo consultando Overpass directo para el terreno, se prueba el proxy propio.', err);
+    }
+
+    if (!rawElements) {
+        try {
+            const res = await fetch('/api/illustrated-terrain', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ bbox })
+            });
+            if (res.ok) {
+                const json = await res.json();
+                if (Array.isArray(json.elements)) rawElements = json.elements;
+            }
+        } catch (err) {
+            console.warn('[Mapa Ilustrado] No se pudo obtener el terreno real (ni directo ni por el proxy), se pinta solo césped.', err);
+        }
+    }
+
+    const empty = { water: [], rivers: [], beaches: [], forests: [], roads: [] };
+    if (!rawElements) return empty;
+
+    // El bosque es lo único que pinta una textura de manchas por celda (ver
+    // paintCellTexture): con un padding amplio y una zona muy boscosa, sin
+    // tope el número de polígonos podía disparar el tiempo de pintado
+    // (varios segundos bloqueando la pestaña). El resto (agua/playa/
+    // carretera) es solo relleno/trazo, barato aunque haya muchos.
+    const ILLUSTRATED_TERRAIN_MAX_FORESTS = 15;
+
+    for (const el of rawElements) {
+        if (el.type !== 'way' || !el.tags || !Array.isArray(el.geometry) || el.geometry.length < 2) continue;
+        const points = el.geometry.filter(p => isFinite(p.lat) && isFinite(p.lon));
+        if (points.length < 2) continue;
+        const name = el.tags.name || null;
+        if (el.tags.natural === 'water') empty.water.push({ points, name });
+        else if (el.tags.waterway) empty.rivers.push({ points, name });
+        else if (el.tags.natural === 'beach') empty.beaches.push({ points, name });
+        else if (el.tags.natural === 'wood' || el.tags.landuse === 'forest' || el.tags.landuse === 'wood') {
+            if (empty.forests.length < ILLUSTRATED_TERRAIN_MAX_FORESTS) empty.forests.push({ points, name });
+        }
+        else if (el.tags.highway) empty.roads.push({ points, name });
+    }
+    return empty;
+}
+
+// Hash entero determinista (mismo patrón que un PRNG tipo mulberry32,
+// sembrado con la celda cx,cy): la MISMA celda de mundo siempre da la misma
+// mancha de textura, así el césped no "baraja" sus manchas cada vez que se
+// regenera el fondo al arrastrar el mapa -se ve como una superficie pintada
+// estable, no ruido nuevo en cada repintado-.
+function hashCell(cx, cy) {
+    let h = Math.imul(cx, 374761393) + Math.imul(cy, 668265263);
+    h = Math.imul(h ^ (h >>> 15), 2246822519);
+    h = Math.imul(h ^ (h >>> 13), 3266489917);
+    h ^= h >>> 16;
+    return (h >>> 0) / 4294967296; // [0, 1)
+}
+
+// Rejilla de manchas ancladas a coordenadas de MUNDO (no de canvas): sirve
+// tanto para la textura de césped como, recortada con un clip de polígono,
+// para el bosque o el stipple de la playa.
+function paintCellTexture(ctx, bounds, project, colors, opts) {
+    const { cellMeters, probability, minRadius, maxRadius, alpha } = opts;
+    const centerLat = (bounds.getNorth() + bounds.getSouth()) / 2;
+    const latScale = Math.max(0.15, Math.cos(centerLat * Math.PI / 180));
+    let cellDegLat = cellMeters / 111320;
+    let cellDegLng = cellMeters / (111320 * latScale);
+
+    let cols = Math.ceil((bounds.getEast() - bounds.getWest()) / cellDegLng);
+    let rows = Math.ceil((bounds.getNorth() - bounds.getSouth()) / cellDegLat);
+    // Tope prudente: con el Modo Ilustrado activado en un zoom muy alejado
+    // (antes de encuadrar el recinto), unos bounds enormes no deben poder
+    // bloquear la pestaña varios segundos pintando manchas de textura.
+    const MAX_CELLS = 90000;
+    if (cols * rows > MAX_CELLS) {
+        const scale = Math.sqrt((cols * rows) / MAX_CELLS);
+        cellDegLat *= scale; cellDegLng *= scale;
+    }
+
+    const cxMin = Math.floor(bounds.getWest() / cellDegLng) - 1;
+    const cxMax = Math.ceil(bounds.getEast() / cellDegLng) + 1;
+    const cyMin = Math.floor(bounds.getSouth() / cellDegLat) - 1;
+    const cyMax = Math.ceil(bounds.getNorth() / cellDegLat) + 1;
+
+    ctx.save();
+    if (alpha != null) ctx.globalAlpha = alpha;
+    for (let cx = cxMin; cx <= cxMax; cx++) {
+        for (let cy = cyMin; cy <= cyMax; cy++) {
+            if (hashCell(cx, cy) > probability) continue;
+            const jLng = (hashCell(cx * 92821 + 1, cy * 12841 + 3) - 0.5) * cellDegLng;
+            const jLat = (hashCell(cx * 31337 + 5, cy * 74923 + 9) - 0.5) * cellDegLat;
+            const lng = (cx + 0.5) * cellDegLng + jLng;
+            const lat = (cy + 0.5) * cellDegLat + jLat;
+            const [px, py] = project(lat, lng);
+            const radius = minRadius + hashCell(cx * 5 + 11, cy * 7 + 13) * (maxRadius - minRadius);
+            const color = colors[Math.floor(hashCell(cx * 3 + 17, cy * 9 + 19) * colors.length)];
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            const squash = 0.6 + hashCell(cx * 41, cy * 43) * 0.5;
+            ctx.ellipse(px, py, radius, radius * squash, hashCell(cx * 53, cy * 59) * Math.PI, 0, Math.PI * 2);
+            ctx.fill();
+        }
+    }
+    ctx.restore();
+}
+
+function projectPoints(points, project) {
+    return points.map(p => project(p.lat, p.lon));
+}
+
+function fillProjectedPolygon(ctx, pts, color) {
+    if (pts.length < 3) return;
+    ctx.save();
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+}
+
+function clipToProjectedPolygon(ctx, pts) {
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
+    ctx.closePath();
+    ctx.clip();
+}
+
+function strokeProjectedLine(ctx, pts, style) {
+    if (pts.length < 2) return;
+    ctx.save();
+    ctx.beginPath();
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p[0], p[1]); else ctx.lineTo(p[0], p[1]); });
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
+    if (style.lineDash) ctx.setLineDash(style.lineDash);
+    if (style.strokeStyle) ctx.strokeStyle = style.strokeStyle;
+    if (style.lineWidth) ctx.lineWidth = style.lineWidth;
+    ctx.stroke();
+    ctx.restore();
+}
+
+// Un par de líneas onduladas claras encima del relleno de agua: da el
+// efecto "agua pintada a mano" en vez de una mancha azul lisa.
+function paintWaterRipples(ctx, pts, canvasW, canvasH) {
+    if (pts.length < 3) return;
+    const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+    const minX = Math.max(0, Math.min(...xs)), maxX = Math.min(canvasW, Math.max(...xs));
+    const minY = Math.max(0, Math.min(...ys)), maxY = Math.min(canvasH, Math.max(...ys));
+    if (maxX - minX < 4 || maxY - minY < 4) return;
+    const rowGap = Math.max(14, (maxY - minY) / 8);
+    ctx.strokeStyle = 'rgba(255,255,255,0.32)';
+    ctx.lineWidth = Math.max(1.2, rowGap * 0.08);
+    for (let y = minY + rowGap * 0.5; y < maxY; y += rowGap) {
+        ctx.beginPath();
+        const amp = rowGap * 0.28;
+        const step = Math.max(10, (maxX - minX) / 20);
+        for (let x = minX; x <= maxX; x += step) {
+            const yy = y + Math.sin((x - minX) / (step * 2)) * amp;
+            if (x === minX) ctx.moveTo(x, yy); else ctx.lineTo(x, yy);
+        }
+        ctx.stroke();
+    }
+}
+
+// Nombre de la carretera más relevante (la de geometría más larga con
+// nombre), escrito una vez a lo largo de su tramo central -sin intentar un
+// curveado completo tipo texto-en-path, basta con orientarlo al ángulo local
+// de ese tramo para leerse como "escrito sobre la vía".
+function drawRoadLabel(ctx, roadPts, name) {
+    if (!name || roadPts.length < 2) return;
+    const mid = Math.floor(roadPts.length / 2);
+    const a = roadPts[Math.max(0, mid - 1)];
+    const b = roadPts[Math.min(roadPts.length - 1, mid)];
+    const midX = (a[0] + b[0]) / 2, midY = (a[1] + b[1]) / 2;
+    let angle = Math.atan2(b[1] - a[1], b[0] - a[0]);
+    if (angle > Math.PI / 2) angle -= Math.PI;
+    if (angle < -Math.PI / 2) angle += Math.PI;
+
+    ctx.save();
+    ctx.translate(midX, midY);
+    ctx.rotate(angle);
+    ctx.font = '700 20px Arial, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.strokeStyle = 'rgba(35,35,35,0.75)';
+    ctx.lineWidth = 4;
+    ctx.lineJoin = 'round';
+    ctx.strokeText(name, 0, 0);
+    ctx.fillStyle = '#ffffff';
+    ctx.fillText(name, 0, 0);
+    ctx.restore();
+}
+
+// Pinta el canvas de fondo completo para unos bounds dados y devuelve su
+// data URL. La proyección lat/lng -> píxel es una interpolación LINEAL
+// simple respecto a esos mismos bounds -es exactamente la misma
+// interpolación que usa L.imageOverlay para estirar la imagen entre las
+// esquinas de esos bounds, así que no hay ningún desajuste entre lo pintado
+// aquí y dónde acaba cayendo sobre el mapa real-.
+function paintIllustratedBackdrop(bounds, terrain) {
+    const west = bounds.getWest(), east = bounds.getEast();
+    const north = bounds.getNorth(), south = bounds.getSouth();
+    const lngSpan = Math.max(east - west, 1e-9), latSpan = Math.max(north - south, 1e-9);
+    const aspect = lngSpan / latSpan;
+    const MAX_SIDE = 1600;
+    const canvasW = aspect >= 1 ? MAX_SIDE : Math.max(500, Math.round(MAX_SIDE * aspect));
+    const canvasH = aspect >= 1 ? Math.max(500, Math.round(MAX_SIDE / aspect)) : MAX_SIDE;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext('2d');
+    const project = (lat, lng) => [((lng - west) / lngSpan) * canvasW, ((north - lat) / latSpan) * canvasH];
+
+    // 1. Césped base + textura de manchas
+    ctx.fillStyle = '#7fb055';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+    paintCellTexture(ctx, bounds, project, ['#5f9440', '#6aa348', '#548436'], { cellMeters: 13, probability: 0.4, minRadius: 7, maxRadius: 16, alpha: 0.55 });
+
+    // 2. Bosque (recortado a su polígono real). Tope de defensa adicional
+    // aquí mismo (ya se limita también al pedir el terreno, ver
+    // fetchIllustratedTerrain): cada polígono repite el barrido de celdas
+    // completo, así que es lo único de esta función que puede volverse caro.
+    (terrain.forests || []).slice(0, 15).forEach(f => {
+        const pts = projectPoints(f.points, project);
+        if (pts.length < 3) return;
+        ctx.save();
+        clipToProjectedPolygon(ctx, pts);
+        ctx.fillStyle = '#4f7f38';
+        ctx.fillRect(0, 0, canvasW, canvasH);
+        paintCellTexture(ctx, bounds, project, ['#365c26', '#3f6b2c', '#2f5220'], { cellMeters: 8, probability: 0.8, minRadius: 6, maxRadius: 13, alpha: 0.7 });
+        ctx.restore();
+    });
+
+    // 3. Playa / arena
+    (terrain.beaches || []).forEach(b => {
+        fillProjectedPolygon(ctx, projectPoints(b.points, project), '#e3c988');
+    });
+
+    // 4. Agua (lagos/mar como relleno, ríos/arroyos como cinta)
+    (terrain.water || []).forEach(w => {
+        const pts = projectPoints(w.points, project);
+        fillProjectedPolygon(ctx, pts, '#5fa8d3');
+        ctx.save();
+        clipToProjectedPolygon(ctx, pts);
+        paintWaterRipples(ctx, pts, canvasW, canvasH);
+        ctx.restore();
+    });
+    (terrain.rivers || []).forEach(r => {
+        const pts = projectPoints(r.points, project);
+        const widthPx = Math.max(6, Math.min(canvasW, canvasH) * 0.012);
+        strokeProjectedLine(ctx, pts, { strokeStyle: '#5fa8d3', lineWidth: widthPx });
+        strokeProjectedLine(ctx, pts, { strokeStyle: '#8cc8e6', lineWidth: Math.max(2, widthPx * 0.35), lineDash: [widthPx * 1.2, widthPx * 1.6] });
+    });
+
+    // 5. Carreteras: cinta gris + línea central discontinua blanca + nombre
+    let bestRoadPts = null, bestRoadName = null, bestRoadLen = -1;
+    (terrain.roads || []).forEach(rd => {
+        const pts = projectPoints(rd.points, project);
+        const widthPx = Math.max(7, Math.min(canvasW, canvasH) * 0.016);
+        strokeProjectedLine(ctx, pts, { strokeStyle: '#8a8a8c', lineWidth: widthPx });
+        strokeProjectedLine(ctx, pts, { strokeStyle: '#f5f3ea', lineWidth: Math.max(1.5, widthPx * 0.12), lineDash: [widthPx * 0.6, widthPx * 0.9] });
+        if (rd.name && pts.length > bestRoadLen) { bestRoadLen = pts.length; bestRoadPts = pts; bestRoadName = rd.name; }
+    });
+    if (bestRoadPts) drawRoadLabel(ctx, bestRoadPts, bestRoadName);
+
+    return canvas.toDataURL('image/png');
+}
+
+// Genera (o reutiliza el terreno ya cacheado si el área nueva sigue cubierta)
+// el fondo pintado para la vista actual y lo coloca sobre el mapa. Se llama
+// al activar el Modo Ilustrado y, con margen de seguridad, al arrastrar el
+// mapa dentro de él -ver el listener 'moveend' en map.js-.
+let illustratedBackdropRequestId = 0;
+async function refreshIllustratedBackdrop(forceRefetch) {
+    if (!map) return;
+    // Si se dispara otra llamada (p.ej. un nuevo arrastre) mientras esta
+    // sigue esperando a Overpass, la respuesta más vieja no debe pisar el
+    // fondo ya actualizado por la más nueva -mismo patrón que
+    // myTerrainRequestId en view3d.js-.
+    const myRequestId = ++illustratedBackdropRequestId;
+    const bounds = map.getBounds().pad(0.8);
+
+    const coveredByLastFetch = !forceRefetch && illustratedTerrainData && illustratedTerrainQueryBounds && illustratedTerrainQueryBounds.contains(bounds);
+    if (!coveredByLastFetch) {
+        illustratedTerrainData = await fetchIllustratedTerrain({
+            minLat: bounds.getSouth(), maxLat: bounds.getNorth(),
+            minLng: bounds.getWest(), maxLng: bounds.getEast()
+        });
+        illustratedTerrainQueryBounds = bounds;
+    }
+
+    if (!isIllustratedMode || myRequestId !== illustratedBackdropRequestId) return;
+
+    const dataUrl = paintIllustratedBackdrop(bounds, illustratedTerrainData);
+    if (illustratedBackdropLayer) map.removeLayer(illustratedBackdropLayer);
+    illustratedBackdropLayer = L.imageOverlay(dataUrl, bounds, { interactive: false }).addTo(map);
+    illustratedBackdropBounds = bounds;
 }
 
 function escapeHtmlText(str) {
@@ -520,38 +866,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                     iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
                 }));
             } else if (element.isLine) {
-                // Vallas: fila de icono a escala real, sin pin ni nombre (son lineales,
-                // y con muchas vallas juntas los nombres tapan todo el mapa).
-                // El labelMarker es arrastrable de forma independiente (para
-                // apartar la etiqueta "35m/18 vallas" del modo normal y que
-                // no tape la línea), así que puede llevar guardado un
-                // desplazamiento manual antiguo. En el Mapa Ilustrado esa
-                // etiqueta pasa a ser la fila de iconos de la valla en sí, y
-                // tiene que coincidir SIEMPRE con la línea real -si no, la
-                // valla "aparece movida" de su sitio original-, así que se
-                // fuerza aquí al centro real antes de dibujarla.
-                element.labelMarker.setLatLng(center);
-                const pCenter = map.latLngToLayerPoint(center);
-                const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
-                const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
-                const wPx = length * pxPerMeter;
-                const hPx = Math.min(25, (wPx / element.numVallas) * 0.8);
-                const mapBearing = (map.getBearing ? map.getBearing() : 0);
-                const totalRotation = element.rotation + mapBearing;
-                const vW = wPx / element.numVallas;
-
-                const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; display:flex; transform:rotate(${totalRotation}deg); transform-origin:center center;">
-                    ${Array(element.numVallas).fill(`<img src="${getGenericIconUrl(iconKey)}" style="width:${vW}px; height:100%;">`).join('')}
-                </div>`;
-                element.labelMarker.setIcon(L.divIcon({
-                    className: 'illustrated-label',
-                    html: iconHTML,
-                    // El punto de anclaje tiene que coincidir con el
-                    // transform-origin (centro) del div que rota; si no,
-                    // la valla "orbita" alrededor de otro punto al girar
-                    // el mapa y parece que cambia de sitio.
-                    iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
-                }));
+                // Vallas: en el Mapa Ilustrado el perímetro ya se ve como una
+                // línea amarilla punteada (ver el propio el.line, estilado en
+                // toggleIllustratedMode) tipo plano de festival dibujado a
+                // mano -no hace falta una fila de iconos ni nombre encima que
+                // la tape, sobre todo con muchas vallas seguidas-.
+                element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
             } else if (iconKey === 'road-label') {
                 // Rótulo de carretera/acceso: caja de color plana con el
                 // texto (que el usuario renombra a "N-550", "EP-2601"...),
@@ -601,10 +921,17 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 const bubbleH = isIllustratedMode ? 20 : 0;
                 const boxW = isIllustratedMode ? Math.max(50, Math.min(160, displayName.length * 5 + 18)) : badgeSize;
                 const totalH = bubbleH + badgeSize;
+                // La entrada lleva una flecha curva integrada en su propio
+                // icono (ver getPinIconSVG): a diferencia del resto de
+                // stickers puntuales, el asa de rotación del elemento sí gira
+                // el badge, para poder apuntar la flecha hacia por dónde
+                // entra realmente el público.
+                const mapBearing = (map.getBearing ? map.getBearing() : 0);
+                const badgeTransform = element.type === 'entrance' ? ` transform:rotate(${element.rotation + mapBearing}deg);` : '';
 
                 const iconHTML = `<div class="map-pin" style="width:${boxW}px;" title="${displayName}">
                     ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
-                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;">${iconSvg}</div>
+                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;${badgeTransform}">${iconSvg}</div>
                 </div>`;
                 element.labelMarker.setIcon(L.divIcon({
                     className: 'illustrated-label',
@@ -1332,8 +1659,8 @@ function getPinIconSVG(iconKey, color) {
             <rect x="46" y="44" width="4" height="12" rx="2" fill="#e88ec4" stroke="${D}" stroke-width="2"/>
         </svg>`,
         'parking': `<svg viewBox="0 0 64 64">${shadow}
-            <circle cx="32" cy="32" r="22" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
-            <text x="32" y="42" font-family="Arial, sans-serif" font-size="28" font-weight="800" fill="#fff" text-anchor="middle">P</text>
+            <rect x="10" y="10" width="44" height="44" rx="9" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
+            <text x="32" y="43" font-family="Arial, sans-serif" font-size="30" font-weight="800" fill="#fff" text-anchor="middle">P</text>
         </svg>`,
         'disabled': `<svg viewBox="0 0 64 64">${shadow}
             <circle cx="32" cy="32" r="22" fill="${bg}" stroke="${D}" stroke-width="2.5"/>
@@ -1385,6 +1712,8 @@ function getPinIconSVG(iconKey, color) {
             <rect x="8" y="50" width="10" height="8" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
             <rect x="46" y="50" width="10" height="8" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
             <path d="M22 14l3 6h6l-5 4 2 6-6-4-6 4 2-6-5-4h6Z" fill="#ffd75e" stroke="${D}" stroke-width="1.6" stroke-linejoin="round"/>
+            <path d="M58 6c6 10 2 22-10 26" fill="none" stroke="#ffd400" stroke-width="5" stroke-linecap="round"/>
+            <path d="M42 28l6 4 6-3" fill="none" stroke="#ffd400" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>`,
         'drunk': `<svg viewBox="0 0 64 64">${shadow}
             <circle cx="28" cy="14" r="6" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>

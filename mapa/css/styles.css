@@ -224,39 +224,21 @@ select.form-control option {
     opacity: 0;
     pointer-events: none;
 }
+/* Caja oscura plana con texto blanco (tipo plano de festival ilustrado a
+   mano: "ENTRADA", "ESCENARIO", "BARRA"... flotando sobre el icono), no la
+   burbuja blanca de antes -sin flechita, solo una etiqueta plana-. */
 .map-pin-bubble {
     position: relative;
-    background: #fff;
-    color: #262626;
+    background: #1c1c1c;
+    color: #fff;
     font-weight: 800;
     font-size: 8px;
-    letter-spacing: 0.1px;
-    padding: 2px 6px;
-    border-radius: 10px;
-    border: 1.5px solid #262626;
+    letter-spacing: 0.2px;
+    padding: 2px 7px;
+    border-radius: 5px;
     white-space: nowrap;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+    box-shadow: 0 2px 4px rgba(0,0,0,0.35);
     margin-bottom: 2px;
-}
-.map-pin-bubble::after,
-.map-pin-bubble::before {
-    content: '';
-    position: absolute;
-    left: 50%;
-    transform: translateX(-50%);
-    width: 0;
-    height: 0;
-    border-left: 4px solid transparent;
-    border-right: 4px solid transparent;
-}
-.map-pin-bubble::after {
-    bottom: -5px;
-    border-top: 5px solid #262626;
-}
-.map-pin-bubble::before {
-    bottom: -3.3px;
-    border-top: 4px solid #fff;
-    z-index: 1;
 }
 /* Sticker ilustrado a todo color (sin caja/cuadrado de fondo): el icono
    SVG ya trae su propio color, sombra elíptica y contorno. */
@@ -271,14 +253,13 @@ select.form-control option {
     height: 100%;
 }
 .map-pin-area-label {
-    background: rgba(255,255,255,0.92);
-    color: #262626;
+    background: #1c1c1c;
+    color: #fff;
     font-weight: 800;
     font-size: 11px;
     padding: 4px 10px;
-    border-radius: 12px;
-    border: 2px solid #262626;
-    box-shadow: 0 2px 5px rgba(0,0,0,0.3);
+    border-radius: 6px;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.35);
     white-space: nowrap;
 }
 /* Rótulo de carretera/acceso (ver iconKey "road-label"): caja plana de

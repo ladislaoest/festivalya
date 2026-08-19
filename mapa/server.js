@@ -198,6 +198,70 @@ app.post('/api/nearby-places', async (req, res) => {
     res.json({ elements: data, cached: false });
 });
 
+// Proxy de terreno real (agua, playa, bosque, carreteras) para pintar el
+// fondo del Mapa Ilustrado (ver mapa/js/elements.js, paintIllustratedBackdrop):
+// mismo patrón que /api/map-features y /api/nearby-places (caché + reintento
+// por espejo), pero pidiendo geometría real (`out geom;`) en vez de solo el
+// centro, porque aquí hace falta el contorno para poder rellenarlo/trazarlo.
+const illustratedTerrainCache = new Map(); // misma clave que mapFeaturesCacheKey
+
+app.post('/api/illustrated-terrain', async (req, res) => {
+    const { bbox } = req.body || {};
+    if (!bbox || !isFinite(bbox.minLat) || !isFinite(bbox.minLng) || !isFinite(bbox.maxLat) || !isFinite(bbox.maxLng)) {
+        return res.status(400).json({ message: 'bbox {minLat, minLng, maxLat, maxLng} requerido.' });
+    }
+
+    const cacheKey = mapFeaturesCacheKey(bbox);
+    const cached = illustratedTerrainCache.get(cacheKey);
+    if (cached && (Date.now() - cached.at) < MAP_FEATURES_CACHE_TTL_MS) {
+        return res.json({ elements: cached.data, cached: true });
+    }
+
+    const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    const query = `[out:json][timeout:15];(` +
+        `way["natural"="water"](${bboxStr});` +
+        `way["waterway"~"^(river|stream|canal)$"](${bboxStr});` +
+        `way["natural"="beach"](${bboxStr});` +
+        `way["natural"="wood"](${bboxStr});` +
+        `way["landuse"~"^(forest|wood)$"](${bboxStr});` +
+        `way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${bboxStr});` +
+        `);out geom;`;
+
+    let data = null;
+    for (const endpoint of OVERPASS_ENDPOINTS) {
+        try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 12000);
+            const r = await fetch(endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                body: 'data=' + encodeURIComponent(query),
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+            if (!r.ok) continue;
+            const json = await r.json();
+            if (!Array.isArray(json.elements)) continue;
+            if (json.elements.length > 0) { data = json.elements; break; }
+            if (data === null) data = json.elements;
+        } catch (err) {
+            console.warn(`[illustrated-terrain] Fallo consultando ${endpoint}, se prueba el siguiente:`, err.message);
+        }
+    }
+
+    if (!data) {
+        if (cached) return res.json({ elements: cached.data, cached: true, stale: true });
+        return res.status(502).json({ message: 'No se pudo obtener el terreno real (todos los servidores de Overpass fallaron).' });
+    }
+
+    if (illustratedTerrainCache.size >= MAP_FEATURES_CACHE_MAX_ENTRIES) {
+        const oldestKey = illustratedTerrainCache.keys().next().value;
+        illustratedTerrainCache.delete(oldestKey);
+    }
+    illustratedTerrainCache.set(cacheKey, { data, at: Date.now() });
+    res.json({ elements: data, cached: false });
+});
+
 // Proxy de elevación real del terreno: el propio navegador ya podía llamar
 // directo a Open-Elevation (y de hecho así era antes), pero eso ata la vista
 // 3D a que ESE único servicio gratuito y sin SLA esté arriba en ese momento

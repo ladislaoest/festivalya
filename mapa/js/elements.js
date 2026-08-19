@@ -469,15 +469,19 @@ async function fetchIllustratedTerrain(bbox) {
     let rawElements = null;
     try {
         const controller = new AbortController();
-        // 9s, no 20: el proxy propio (/api/illustrated-terrain) ya prueba
-        // los mismos espejos EN PARALELO en el servidor y ha demostrado ser
-        // rápido y fiable -si algún espejo público se queda colgado sin
-        // responder aquí, mejor caer al proxy pronto que hacer esperar casi
-        // medio minuto antes de intentarlo siquiera-.
-        const timeoutId = setTimeout(() => controller.abort(), 9000);
+        // OJO: 20s a propósito, NO se acorta. Comprobado en vivo (ver
+        // comentarios de fetchMapFeatures en view3d.js/api/map-features.js):
+        // los espejos públicos de Overpass tratan mal el tráfico que sale
+        // desde un rango de IP compartido de nube -el propio proxy
+        // (/api/illustrated-terrain, en Vercel) es en realidad el camino
+        // MENOS fiable de los dos, no el más rápido-, así que este intento
+        // directo desde el navegador (con la IP real de quien lo usa) es el
+        // que de verdad tiene que tener margen para encontrar un espejo sano
+        // entre los 4, no el que hay que acortar.
+        const timeoutId = setTimeout(() => controller.abort(), 20000);
         rawElements = await raceFirstNonEmpty(
             OVERPASS_ENDPOINTS.map(endpoint => () => queryOverpassMirror(endpoint, illustratedTerrainQuery(bboxStr), controller.signal)),
-            9000
+            20000
         );
         clearTimeout(timeoutId);
     } catch (err) {

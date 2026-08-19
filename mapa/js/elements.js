@@ -26,6 +26,14 @@ const festivalConfig = {
     // renombra desde "Editar nombre" para poner el destino.
     'signal-arrow': { label: 'DIRECCIÓN', color: '#e74c3c', icon: 'arrow-direction', defaultLen: 6, defaultWid: 6 },
     'entrance': { label: 'ENTRADA', color: '#f1c40f', icon: 'entrance', defaultLen: 6, defaultWid: 2 },
+    // Edificio de referencia: NO es un elemento del festival, es una marca
+    // manual para rellenar huecos del Mapa Ilustrado -un edificio real que
+    // Overpass no tiene mapeado (p.ej. el pabellón de deportes sin nombre
+    // en OSM), o directamente ponerle nombre a mano a uno que ya se ve pero
+    // sin rótulo-. Mismo color teja que los edificios reales pintados en
+    // el fondo (ver paintIllustratedBackdrop) para que no se note la
+    // diferencia.
+    'custom-building': { label: 'EDIFICIO', color: '#cbb28c', icon: 'building', defaultLen: 15, defaultWid: 10 },
     'zone-vip': { label: 'ZONA VIP', color: '#f1c40f', icon: 'star', defaultLen: 20, defaultWid: 20 },
     'zone-camping': { label: 'ZONA ACAMPADA', color: '#27ae60', icon: 'tent', defaultLen: 30, defaultWid: 30 },
     'zone-parking': { label: 'ZONA PARKING', color: '#3498db', icon: 'parking', defaultLen: 40, defaultWid: 40 }
@@ -1172,24 +1180,28 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 // respeta el toggle "OCULTAR TEXTOS" para evitar que se amontonen.
                 const badgeSize = element.type === 'main-stage' ? 104 : 52;
                 const bg = element.color || '#7f8c8d';
-                const iconSvg = getPinIconSVG(iconKey, bg);
+                // La entrada lleva una flecha curva integrada en su propio
+                // icono (ver getPinIconSVG): a diferencia del resto de
+                // stickers puntuales, el asa de rotación del elemento sí
+                // orienta esa flecha hacia por dónde entra realmente el
+                // público -pero SOLO la flecha (rotada dentro del propio
+                // SVG, ver arrowRotation en getPinIconSVG), no el badge
+                // entero, que si no la puerta/arco dejaba de leerse "de
+                // pie" en cuanto se giraba-.
+                const mapBearing = (map.getBearing ? map.getBearing() : 0);
+                const iconSvg = element.type === 'entrance'
+                    ? getPinIconSVG(iconKey, bg, element.rotation + mapBearing)
+                    : getPinIconSVG(iconKey, bg);
                 // La burbuja con el nombre solo aparece en el Mapa Ilustrado;
                 // fuera de él (caso "security" siempre con insignia) se deja
                 // como antes, solo el icono, para no ensuciar la edición.
                 const bubbleH = isIllustratedMode ? 20 : 0;
                 const boxW = isIllustratedMode ? Math.max(50, Math.min(160, displayName.length * 5 + 18)) : badgeSize;
                 const totalH = bubbleH + badgeSize;
-                // La entrada lleva una flecha curva integrada en su propio
-                // icono (ver getPinIconSVG): a diferencia del resto de
-                // stickers puntuales, el asa de rotación del elemento sí gira
-                // el badge, para poder apuntar la flecha hacia por dónde
-                // entra realmente el público.
-                const mapBearing = (map.getBearing ? map.getBearing() : 0);
-                const badgeTransform = element.type === 'entrance' ? ` transform:rotate(${element.rotation + mapBearing}deg);` : '';
 
                 const iconHTML = `<div class="map-pin" style="width:${boxW}px;" title="${displayName}">
                     ${isIllustratedMode ? `<div class="map-pin-bubble ${hiddenClass}">${displayName}</div>` : ''}
-                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;${badgeTransform}">${iconSvg}</div>
+                    <div class="map-pin-badge" style="width:${badgeSize}px;height:${badgeSize}px;">${iconSvg}</div>
                 </div>`;
                 // Posición del icono/etiqueta: centro real + illustratedOffset
                 // en Modo Ilustrado, centro real a secas fuera de él -así una
@@ -1886,8 +1898,9 @@ function bindMarkerEvents(element) {
 // uno es un pequeño "sticker" a todo color (no un trazo blanco sobre una
 // insignia cuadrada), con un fondo elíptico de sombra para que floten sobre
 // el césped como en un mapa de festival ilustrado.
-function getPinIconSVG(iconKey, color) {
+function getPinIconSVG(iconKey, color, rotationDeg) {
     const bg = color || '#7f8c8d';
+    const arrowRotation = rotationDeg || 0;
     const D = '#242424'; // trazo oscuro común a todos los iconos
     const shadow = '<ellipse cx="32" cy="57" rx="18" ry="4" fill="rgba(0,0,0,0.22)"/>';
     const icons = {
@@ -1992,13 +2005,30 @@ function getPinIconSVG(iconKey, color) {
             <path d="M32 8 52 16v16c0 14-9 22-20 26C21 54 12 46 12 32V16Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
             <path d="M23 32l6 6 12-14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
         </svg>`,
+        // El arco/porche (con sus "patas" abajo) se queda SIEMPRE derecho
+        // -si giraba entero con el elemento, con cualquier rotación dejaba
+        // de leerse como "entrada" y quedaba de lado-. Solo la flecha
+        // amarilla (dentro de su propio <g>) gira con element.rotation, ver
+        // el tercer argumento rotationDeg más abajo y su uso en
+        // updateElementShape.
         'entrance': `<svg viewBox="0 0 64 64">${shadow}
             <path d="M12 54V26a20 20 0 0 1 40 0v28" fill="none" stroke="${bg}" stroke-width="7" stroke-linecap="round"/>
             <rect x="8" y="50" width="10" height="8" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
             <rect x="46" y="50" width="10" height="8" rx="2" fill="${bg}" stroke="${D}" stroke-width="2"/>
             <path d="M22 14l3 6h6l-5 4 2 6-6-4-6 4 2-6-5-4h6Z" fill="#ffd75e" stroke="${D}" stroke-width="1.6" stroke-linejoin="round"/>
-            <path d="M58 6c6 10 2 22-10 26" fill="none" stroke="#ffd400" stroke-width="5" stroke-linecap="round"/>
-            <path d="M42 28l6 4 6-3" fill="none" stroke="#ffd400" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            <g transform="rotate(${arrowRotation} 32 32)">
+                <path d="M58 6c6 10 2 22-10 26" fill="none" stroke="#ffd400" stroke-width="5" stroke-linecap="round"/>
+                <path d="M42 28l6 4 6-3" fill="none" stroke="#ffd400" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+            </g>
+        </svg>`,
+        // Edificio de referencia (ver festivalConfig['custom-building']):
+        // mismo tono teja que los edificios reales pintados en el fondo del
+        // Mapa Ilustrado, para que uno colocado a mano no desentone.
+        'building': `<svg viewBox="0 0 64 64">${shadow}
+            <path d="M10 26 32 10 54 26v28H10Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <rect x="16" y="30" width="10" height="10" fill="#fff6df" stroke="${D}" stroke-width="1.5"/>
+            <rect x="38" y="30" width="10" height="10" fill="#fff6df" stroke="${D}" stroke-width="1.5"/>
+            <rect x="27" y="42" width="10" height="12" fill="#8f7350" stroke="${D}" stroke-width="1.5"/>
         </svg>`,
         'drunk': `<svg viewBox="0 0 64 64">${shadow}
             <circle cx="28" cy="14" r="6" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>

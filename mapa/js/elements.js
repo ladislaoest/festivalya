@@ -575,7 +575,11 @@ async function fetchIllustratedTerrain(bbox) {
     if (!rawElements) {
         try {
             const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 15000);
+            // 30s, no 15: el propio proxy (api/illustrated-terrain.js) ya
+            // espera hasta 25s a los espejos -sobre todo lentos desde su
+            // IP de Vercel-, así que el cliente tiene que dar margen de
+            // sobra para no cortarle la respuesta justo antes de que llegue.
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
             const res = await fetch('/api/illustrated-terrain', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },

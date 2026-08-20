@@ -97,11 +97,17 @@ module.exports = async (req, res) => {
         `);out geom;`;
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 8500);
+    // 25s, no 8.5: comprobado en vivo que, sobre todo desde la IP de Vercel
+    // (peor tratada por los espejos públicos que una IP normal, ver el
+    // comentario grande más arriba), algún espejo puede tardar 9-15s en
+    // responder en vez de fallar limpio y rápido -con 8.5s se descartaba
+    // antes de que le diera tiempo a llegar-. Sigue muy por debajo del
+    // límite de 300s de las funciones de Vercel.
+    const timeoutId = setTimeout(() => controller.abort(), 25000);
 
     const data = await raceBestResult(
         OVERPASS_ENDPOINTS.map(endpoint => () => queryMirror(endpoint, query, controller.signal)),
-        8500
+        25000
     );
 
     clearTimeout(timeoutId);

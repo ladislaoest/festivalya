@@ -1468,7 +1468,20 @@ function setupElementEvents() {
         document.getElementById('fence-fixed-length-group').style.display = (this.value === 'fixed') ? 'block' : 'none';
     };
 
+	let lastAddElementAt = 0;
 	document.getElementById('add-element').onclick = function() {
+		// "Añadir al mapa" no da ninguna señal visual instantánea (el
+		// elemento nuevo aparece en el centro del mapa, fuera de la vista si
+		// se está mirando otra zona, o el modo de dibujo empieza en
+		// silencio) -visto en vivo: eso lleva a pulsarlo dos veces seguidas
+		// pensando que no ha hecho nada, y cada pulsación crea un elemento
+		// nuevo de verdad, así que salían dos idénticos superpuestos. Se
+		// ignora un segundo clic tan seguido del anterior (no un clic
+		// deliberado más tarde para añadir OTRO elemento del mismo tipo).
+		const now = Date.now();
+		if (now - lastAddElementAt < 600) return;
+		lastAddElementAt = now;
+
 		const type = elemType.value;
 		if (isFenceType(type) && document.getElementById('fence-mode').value === 'draw') {
             startFenceDrawing(type);

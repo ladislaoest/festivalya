@@ -1649,12 +1649,16 @@ let buildingDrawCleanup = null;
 
 // Dibuja un "Edificio (referencia)" con su forma real -una esquina, la
 // siguiente, la siguiente... y se cierra solo contra la primera-, no un
-// simple rectángulo de dos esquinas opuestas. Mismo patrón de varios clics
-// que ya usa startPatrolPathDrawing (doble clic/Enter/Escape/botón
-// "Finalizar" para terminar), pero cerrando el trazo como POLÍGONO en vez
-// de dejarlo como un camino abierto -y, a diferencia de esa función, un
-// clic suficientemente cerca del primer punto también cierra la forma,
-// que es justo lo que se pidió-.
+// simple rectángulo de dos esquinas opuestas. Se cierra con un clic cerca
+// del primer punto, Enter/Escape o el botón "Finalizar" -a propósito NO
+// con doble clic: un doble clic real dispara "click" dos veces antes de
+// "dblclick", cada una añadiendo un vértice de más en prácticamente el
+// mismo sitio, y cuántos de esos vértices de más hay que descartar
+// depende del dispositivo/navegador (ratón, trackpad, táctil...) de forma
+// que no se puede predecir de forma fiable desde el código -de ahí el bug
+// visto en producción de un segundo edificio "torcido" apareciendo al
+// cerrar con doble clic-. Quitarlo del todo como gesto de cierre es más
+// robusto que intentar acertar cuántos puntos fantasma quitar cada vez.
 function startCustomBuildingDrawing(name) {
     if (buildingDrawCleanup) buildingDrawCleanup();
     buildingDrawPoints = [];
@@ -1719,27 +1723,12 @@ function startCustomBuildingDrawing(name) {
         addPoint(e.latlng);
     };
 
-    const onDblClick = (e) => {
-        // Un doble clic real dispara "click" DOS VECES (una por cada clic
-        // del par) antes de "dblclick" -cada una añadió un vértice de más
-        // en prácticamente el mismo sitio-, y ninguna de las dos cuenta
-        // como vértice real: era solo el gesto de "terminar aquí", no un
-        // punto del contorno. Con solo una de las dos descartada (como se
-        // hacía antes) quedaba un vértice sobrante clavado ahí, que al
-        // cerrar el polígono se veía como una "punta" cruzada encima de la
-        // forma real.
-        buildingDrawPoints.pop();
-        buildingDrawPoints.pop();
-        finish();
-    };
-
     const onKeyDown = (e) => {
         if (e.key === 'Escape' || e.key === 'Enter') finish();
     };
 
     function cleanupPreview() {
         map.off('click', onClick);
-        map.off('dblclick', onDblClick);
         map.off('mousemove', onMouseMove);
         document.removeEventListener('keydown', onKeyDown);
         map.dragging.enable();
@@ -1757,17 +1746,20 @@ function startCustomBuildingDrawing(name) {
     function finish() {
         cleanupPreview();
         // Menos de 3 puntos no forma una figura real -ni un rectángulo
-        // arrastrado por error queda ahí como un edificio degenerado-.
-        if (buildingDrawPoints.length < 3) return;
+        // arrastrado por error queda ahí como un edificio degenerado-. Se
+        // vacía buildingDrawPoints también en este caso (antes se dejaba
+        // tal cual): si no, esos 1-2 puntos sueltos de un intento cancelado
+        // podían quedar ahí pegados a la variable compartida.
+        if (buildingDrawPoints.length < 3) { buildingDrawPoints = []; return; }
 
         const element = addPolygonBuildingToMap(name, buildingDrawPoints.slice());
+        buildingDrawPoints = [];
         elements.push(element); updateElementCard(element); bindMarkerEvents(element);
         updateStats();
         saveHistory();
     }
 
     map.on('click', onClick);
-    map.on('dblclick', onDblClick);
     map.on('mousemove', onMouseMove);
     document.addEventListener('keydown', onKeyDown);
 }

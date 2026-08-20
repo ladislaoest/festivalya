@@ -1706,10 +1706,16 @@ function startCustomBuildingDrawing(name) {
     };
 
     const onDblClick = (e) => {
-        // El segundo clic del propio doble clic ya añadió un punto de más
-        // (Leaflet dispara "click" antes que "dblclick"): se descarta antes
-        // de terminar, mismo motivo que en startPatrolPathDrawing.
-        if (buildingDrawPoints.length) buildingDrawPoints.pop();
+        // Un doble clic real dispara "click" DOS VECES (una por cada clic
+        // del par) antes de "dblclick" -cada una añadió un vértice de más
+        // en prácticamente el mismo sitio-, y ninguna de las dos cuenta
+        // como vértice real: era solo el gesto de "terminar aquí", no un
+        // punto del contorno. Con solo una de las dos descartada (como se
+        // hacía antes) quedaba un vértice sobrante clavado ahí, que al
+        // cerrar el polígono se veía como una "punta" cruzada encima de la
+        // forma real.
+        buildingDrawPoints.pop();
+        buildingDrawPoints.pop();
         finish();
     };
 

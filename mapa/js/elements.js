@@ -500,11 +500,15 @@ async function loadNearbyPlaceNames() {
 
     if (!elements) {
         try {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 30000);
             const res = await fetch('/api/nearby-places', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bbox })
+                body: JSON.stringify({ bbox }),
+                signal: controller.signal
             });
+            clearTimeout(timeoutId);
             if (res.ok) {
                 const json = await res.json();
                 if (Array.isArray(json.elements)) elements = json.elements;

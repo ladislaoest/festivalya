@@ -339,16 +339,18 @@ function toggleIllustratedMode() {
                 interactive: !isIllustratedMode
             });
         } else if (el.isPolygon) {
-            // Mismo criterio que el.rectangle: la forma real se oculta en
-            // Modo Ilustrado, donde el bloque visible es el divIcon del
-            // labelMarker (recortado con clip-path a esta misma forma, ver
-            // updateElementShape), no este polígono de Leaflet.
-            el.polygon.setStyle({
-                fillOpacity: isIllustratedMode ? 0 : 0.6,
-                weight: isIllustratedMode ? 0 : 2,
-                color: isIllustratedMode ? 'transparent' : el.color,
-                interactive: !isIllustratedMode
-            });
+            // A diferencia de el.rectangle, esta forma NO se oculta en Modo
+            // Ilustrado: es la única representación visual del edificio
+            // -antes existía también un <div> con clip-path recreando la
+            // misma forma en el labelMarker (ver updateElementShape), y
+            // este polígono real se ocultaba a su favor, pero ese <div> se
+            // calculaba una sola vez en píxeles de pantalla y no se
+            // reproyectaba al mover/girar el mapa: quedaban dos capas del
+            // mismo edificio, desalineadas entre sí (el bug de "aparece un
+            // segundo edificio torcido y más oscuro"). Se quitó ese <div>
+            // duplicado, así que aquí solo queda deshabilitar la
+            // interactividad al entrar en Modo Ilustrado, no ocultar nada.
+            el.polygon.setStyle({ interactive: !isIllustratedMode });
         } else if (el.isLine) {
             // En Modo Ilustrado la valla ya no se pinta como fila de iconos
             // (ver updateElementShape): es la propia línea, como un simple
@@ -1122,28 +1124,27 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 // de composición del plano ilustrado.
                 const bg = element.color || '#cbb28c';
                 if (element.isPolygon) {
-                    // Dibujado a mano con su forma real (ver
-                    // startCustomBuildingDrawing/addPolygonBuildingToMap):
-                    // el bloque se recorta con clip-path a los vértices
-                    // reales en vez de ser siempre un rectángulo. Sin asa de
-                    // girar (no aplica a una forma arbitraria), así que no
-                    // hay rotación que aplicar aquí.
-                    const pxPoints = element.polygonPoints.map(p => map.latLngToLayerPoint(p));
-                    const minX = Math.min(...pxPoints.map(p => p.x)), maxX = Math.max(...pxPoints.map(p => p.x));
-                    const minY = Math.min(...pxPoints.map(p => p.y)), maxY = Math.max(...pxPoints.map(p => p.y));
-                    const wPx = Math.max(6, maxX - minX), hPx = Math.max(6, maxY - minY);
-                    const clipPath = pxPoints.map(p => `${((p.x - minX) / wPx * 100).toFixed(1)}% ${((p.y - minY) / hPx * 100).toFixed(1)}%`).join(', ');
-                    const centerPx = L.point((minX + maxX) / 2, (minY + maxY) / 2);
-
-                    const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; position:relative;" title="${displayName}">
-                        <div style="width:100%; height:100%; background:${bg}; border:2px solid #8f7350; clip-path: polygon(${clipPath}); box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>
-                        <div class="map-pin-bubble ${hiddenClass}" style="position:absolute; left:50%; top:-4px; transform:translate(-50%, -100%); white-space:nowrap;">${displayName}</div>
-                    </div>`;
-                    element.labelMarker.setLatLng(map.layerPointToLatLng(centerPx));
+                    // Dibujado a mano con su forma real: element.polygon (la
+                    // capa vectorial real, ver addPolygonBuildingToMap) YA
+                    // es ese bloque sólido y se reproyecta solo con el mapa
+                    // -no hace falta recrearlo aquí-. Antes SÍ se recreaba,
+                    // como un <div> aparte con clip-path recortado a los
+                    // vértices en píxeles de pantalla: eso duplicaba la
+                    // forma (dos capas visuales para el mismo edificio, la
+                    // real más clara y este <div> opaco encima, más oscuro)
+                    // y además el clip-path se calculaba una sola vez en
+                    // píxeles -al mover o girar el mapa después de dibujar,
+                    // el polígono real se reproyectaba bien pero este <div>
+                    // se quedaba con la forma vieja, torcida respecto al
+                    // real-. El labelMarker aquí solo pone el nombre encima,
+                    // sin repetir la forma.
+                    const centroid = polygonCentroid(element.polygonPoints);
+                    const iconHTML = `<div class="map-pin-bubble ${hiddenClass}" style="white-space:nowrap;">${displayName}</div>`;
+                    element.labelMarker.setLatLng(centroid);
                     element.labelMarker.setIcon(L.divIcon({
                         className: 'illustrated-label',
                         html: iconHTML,
-                        iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
+                        iconSize: [1, 1]
                     }));
                 } else {
                     // Sin dibujar a mano (el flujo antiguo "Añadir al mapa"

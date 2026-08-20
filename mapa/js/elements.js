@@ -804,15 +804,25 @@ function paintIllustratedBackdrop(bounds, terrain, viewportPx) {
 
     // 6. Edificios reales cercanos (dan contexto real de dónde cae el
     // recinto -un colegio, el pabellón de deportes, la iglesia...-, igual
-    // que ya se hace en la vista 3D con applyMapFeatures): bloque plano
-    // color teja por encima de la carretera. El nombre, igual que el de las
+    // que ya se hace en la vista 3D con applyMapFeatures): bloque plano gris
+    // neutro por encima de la carretera. El nombre, igual que el de las
     // calles, sale como etiqueta aparte -ver buildIllustratedContextLabels-.
+    // OJO: este color tiene que ser claramente distinto del que usa el
+    // elemento interactivo "EDIFICIO (referencia)" (festivalConfig
+    // ['custom-building'].color = '#cbb28c', ver startCustomBuildingDrawing/
+    // addPolygonBuildingToMap) -antes ambos usaban el mismo tono teja, y al
+    // trazar a mano un edificio que también existe en OSM el usuario veía su
+    // propio trazo justo encima del edificio real ya pintado en el fondo,
+    // ligeramente desalineado por ser un trazo manual: parecía "un edificio
+    // duplicado, uno más claro y otro más oscuro atravesado" cuando en
+    // realidad eran dos capas distintas (su dibujo + el fondo) coincidiendo
+    // casi en el mismo sitio-.
     (terrain.buildings || []).forEach(b => {
         const pts = projectPoints(b.points, project);
         if (pts.length < 3) return;
-        fillProjectedPolygon(ctx, pts, '#cbb28c');
+        fillProjectedPolygon(ctx, pts, '#a8a297');
         ctx.save();
-        ctx.strokeStyle = '#8f7350';
+        ctx.strokeStyle = '#726c60';
         ctx.lineWidth = 1.4;
         tracePolygonPath(ctx, pts);
         ctx.stroke();

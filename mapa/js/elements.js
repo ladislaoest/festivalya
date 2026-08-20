@@ -1648,7 +1648,7 @@ function startCustomBuildingDrawing(name) {
     map.doubleClickZoom.disable();
     map.getContainer().style.cursor = 'crosshair';
 
-    const CLOSE_DISTANCE_PX = 12; // radio, en píxeles de pantalla, para considerar "clic sobre el primer punto"
+    const CLOSE_DISTANCE_PX = 20; // radio, en píxeles de pantalla, para considerar "clic sobre el primer punto"
 
     const finishBtn = document.getElementById('finish-drawing-btn');
     if (finishBtn) {
@@ -1660,7 +1660,7 @@ function startCustomBuildingDrawing(name) {
         buildingDrawPoints.push(latlng);
         const isFirst = buildingDrawPoints.length === 1;
         const marker = L.circleMarker(latlng, {
-            radius: isFirst ? 7 : 4, color: '#fff', weight: 2,
+            radius: isFirst ? 8 : 4, color: '#fff', weight: 2,
             fillColor: isFirst ? '#ffd400' : '#8f7350', fillOpacity: 1, interactive: false
         }).addTo(map);
         buildingTempMarkers.push(marker);
@@ -1670,6 +1670,25 @@ function startCustomBuildingDrawing(name) {
             buildingTempPolygon = L.polygon(buildingDrawPoints, { color: '#8f7350', weight: 2, fillColor: '#cbb28c', fillOpacity: 0.4, dashArray: '4,4', interactive: false }).addTo(map);
         } else {
             buildingTempPolygon.setLatLngs(buildingDrawPoints);
+        }
+    };
+
+    // Vista previa en vivo: mientras se mueve el ratón (sin haber clicado
+    // todavía el siguiente vértice) se ve YA el polígono con ese punto
+    // fantasma incluido -mismo tipo de "goma elástica" que ya usa
+    // startFenceDrawing-, y si el cursor entra en el radio de cierre, el
+    // primer punto crece/cambia de color y el cursor pasa a "mano" para
+    // dejar claro que ahí se puede cerrar la forma.
+    const onMouseMove = (em) => {
+        if (buildingDrawPoints.length === 0) return;
+        if (buildingTempPolygon) buildingTempPolygon.setLatLngs([...buildingDrawPoints, em.latlng]);
+
+        if (buildingDrawPoints.length >= 3 && buildingFirstPointMarker) {
+            const pFirst = map.latLngToLayerPoint(buildingDrawPoints[0]);
+            const pCursor = map.latLngToLayerPoint(em.latlng);
+            const near = pFirst.distanceTo(pCursor) <= CLOSE_DISTANCE_PX;
+            buildingFirstPointMarker.setStyle({ radius: near ? 12 : 8, fillColor: near ? '#2ecc71' : '#ffd400' });
+            map.getContainer().style.cursor = near ? 'pointer' : 'crosshair';
         }
     };
 
@@ -1701,6 +1720,7 @@ function startCustomBuildingDrawing(name) {
     function cleanupPreview() {
         map.off('click', onClick);
         map.off('dblclick', onDblClick);
+        map.off('mousemove', onMouseMove);
         document.removeEventListener('keydown', onKeyDown);
         map.dragging.enable();
         map.doubleClickZoom.enable();
@@ -1726,6 +1746,7 @@ function startCustomBuildingDrawing(name) {
 
     map.on('click', onClick);
     map.on('dblclick', onDblClick);
+    map.on('mousemove', onMouseMove);
     document.addEventListener('keydown', onKeyDown);
 }
 
@@ -2080,7 +2101,11 @@ function showEditPopup(element, latlng) {
 // borraría de todos ellos, justo lo que no se quiere al estar solo
 // retocando el aspecto del plano ilustrado-. En su lugar se oculta con el
 // mismo mecanismo que el botón de ojo (◉/◌) de la lista, reversible desde
-// ahí en cualquier momento.
+// ahí en cualquier momento. El "Edificio (referencia)" queda FUERA de esta
+// protección: a diferencia del resto de elementos, ya se mueve/gira de
+// verdad dentro del Mapa Ilustrado (ver shouldShowControls), así que
+// tratarlo como "oculto, no borrado" solo confundía -parecía que "no
+// dejaba eliminar" cuando en realidad sí borraba, pero solo visualmente-.
 function hideElementFromIllustrated(element) {
     element.illustratedHidden = true;
     updateElementCard(element);
@@ -2089,7 +2114,7 @@ function hideElementFromIllustrated(element) {
 }
 
 function deleteElement(element) {
-    if (isIllustratedMode) {
+    if (isIllustratedMode && element.type !== 'custom-building') {
         hideElementFromIllustrated(element);
         return;
     }

@@ -218,6 +218,41 @@ select.form-control option {
     50% { opacity: 1; }
 }
 
+/* Aviso -a diferencia del de arriba, NO desaparece solo- para cuando la
+   consulta del terreno real falla del todo (ver setIllustratedFailedNotice
+   en elements.js): antes esto se resolvía en silencio con solo césped. */
+.illustrated-failed-badge {
+    position: absolute;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 1000;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(30, 12, 12, 0.9);
+    color: #f5b8b0;
+    font-weight: 600;
+    font-size: 13px;
+    padding: 8px 10px 8px 16px;
+    border-radius: 20px;
+    border: 1.5px solid var(--danger);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+}
+.illustrated-failed-badge button {
+    background: var(--danger);
+    color: #fff;
+    border: none;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 5px 12px;
+    border-radius: 14px;
+    cursor: pointer;
+}
+.illustrated-failed-badge button:hover {
+    filter: brightness(1.1);
+}
+
 .label-bubble {
     background: white;
     color: #333;

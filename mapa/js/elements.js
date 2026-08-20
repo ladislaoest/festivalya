@@ -250,6 +250,7 @@ function toggleIllustratedMode() {
         currentMapLayer.addTo(map);
         if (nearbyPlacesLayer) map.removeLayer(nearbyPlacesLayer);
         if (illustratedContextLabelsLayer) map.removeLayer(illustratedContextLabelsLayer);
+        setIllustratedFailedNotice(false);
 
         // Reactivar navegación total
         map.dragging.enable();
@@ -882,6 +883,7 @@ let illustratedLoadingEl = null;
 function setIllustratedLoading(show) {
     const mapEl = document.getElementById('map');
     if (show) {
+        setIllustratedFailedNotice(false); // un intento nuevo reemplaza cualquier aviso de fallo anterior
         if (illustratedLoadingEl || !mapEl) return;
         illustratedLoadingEl = document.createElement('div');
         illustratedLoadingEl.className = 'illustrated-loading-badge';
@@ -890,6 +892,28 @@ function setIllustratedLoading(show) {
     } else if (illustratedLoadingEl) {
         illustratedLoadingEl.remove();
         illustratedLoadingEl = null;
+    }
+}
+
+// Aviso -a diferencia del de "cargando", este NO desaparece solo- para
+// cuando Overpass falla del todo (los 4 espejos públicos y el proxy
+// propio): antes esto se resolvía en silencio con solo césped, sin
+// explicación, y la única forma de arreglarlo era salir y volver a entrar
+// en el Modo Ilustrado sin saber muy bien por qué. Ahora queda avisado y
+// con un botón para reintentar sin tener que salir del modo.
+let illustratedFailedEl = null;
+function setIllustratedFailedNotice(show) {
+    const mapEl = document.getElementById('map');
+    if (show) {
+        if (illustratedFailedEl || !mapEl) return;
+        illustratedFailedEl = document.createElement('div');
+        illustratedFailedEl.className = 'illustrated-failed-badge';
+        illustratedFailedEl.innerHTML = 'No se pudieron cargar calles/edificios reales ahora mismo (solo césped) <button type="button">Reintentar</button>';
+        illustratedFailedEl.querySelector('button').onclick = () => refreshIllustratedBackdrop(true);
+        mapEl.appendChild(illustratedFailedEl);
+    } else if (illustratedFailedEl) {
+        illustratedFailedEl.remove();
+        illustratedFailedEl = null;
     }
 }
 
@@ -964,6 +988,11 @@ async function refreshIllustratedBackdrop(forceRefetch) {
     }
 
     if (!isIllustratedMode || myRequestId !== illustratedBackdropRequestId) return;
+
+    // Si el intento de ahora falló (o si se está reutilizando un intento
+    // previo que había fallado, ver más abajo), avisar de forma visible en
+    // vez de dejar solo el césped sin explicación -ver setIllustratedFailedNotice-.
+    setIllustratedFailedNotice(illustratedTerrainData && illustratedTerrainData.ok === false);
 
     const dataUrl = paintIllustratedBackdrop(bounds, illustratedTerrainData, viewportPx);
     if (illustratedBackdropLayer) map.removeLayer(illustratedBackdropLayer);

@@ -368,10 +368,10 @@ function toggleIllustratedMode() {
 }
 
 // Lugares reales cercanos (campo de fútbol, colegio, parque, hospital...)
-// para dar contexto de dónde cae el recinto en el Mapa Ilustrado -reutiliza
-// OVERPASS_ENDPOINTS/queryOverpassMirror/raceFirstNonEmpty ya definidos en
-// view3d.js (mismo patrón que fetchMapFeatures: directo desde el navegador
-// primero, proxy propio /api/nearby-places si eso falla).
+// para dar contexto de dónde cae el recinto en el Mapa Ilustrado -se pide
+// siempre al proxy propio /api/nearby-places (nunca directo a Overpass
+// desde el navegador, ver el comentario grande en fetchIllustratedTerrain
+// sobre por qué se abandonó ese intento directo).
 let nearbyPlacesLayer = null;
 let nearbyPlacesFetchKey = null;
 
@@ -429,18 +429,6 @@ function nearbyPlacesBboxKey(bbox) {
     return `${r(bbox.minLat)},${r(bbox.minLng)},${r(bbox.maxLat)},${r(bbox.maxLng)}`;
 }
 
-function nearbyPlacesQuery(bboxStr) {
-    return `[out:json][timeout:20];(
-        node["leisure"]["name"](${bboxStr});
-        way["leisure"]["name"](${bboxStr});
-        node["amenity"~"^(school|university|hospital|place_of_worship)$"]["name"](${bboxStr});
-        way["amenity"~"^(school|university|hospital|place_of_worship)$"]["name"](${bboxStr});
-        way["landuse"="recreation_ground"]["name"](${bboxStr});
-        way["natural"="water"]["name"](${bboxStr});
-        node["tourism"]["name"](${bboxStr});
-    );out center;`;
-}
-
 // Construye (o reconstruye, tras ocultar/restablecer un nombre a mano) la
 // capa de lugares cercanos con nombre a partir de los elementos ya
 // obtenidos de Overpass -sin volver a pedir red-.
@@ -484,38 +472,23 @@ async function loadNearbyPlaceNames() {
         return;
     }
 
-    const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
     let elements = null;
     try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
-        elements = await raceFirstNonEmpty(
-            OVERPASS_ENDPOINTS.map(endpoint => () => queryOverpassMirror(endpoint, nearbyPlacesQuery(bboxStr), controller.signal)),
-            20000
-        );
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const res = await fetch('/api/nearby-places', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bbox }),
+            signal: controller.signal
+        });
         clearTimeout(timeoutId);
-    } catch (err) {
-        console.warn('[Mapa Ilustrado] Fallo consultando Overpass directo para lugares cercanos, se prueba el proxy propio.', err);
-    }
-
-    if (!elements) {
-        try {
-            const controller = new AbortController();
-            const timeoutId = setTimeout(() => controller.abort(), 30000);
-            const res = await fetch('/api/nearby-places', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bbox }),
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-            if (res.ok) {
-                const json = await res.json();
-                if (Array.isArray(json.elements)) elements = json.elements;
-            }
-        } catch (err) {
-            console.warn('[Mapa Ilustrado] No se pudieron obtener lugares cercanos reales (ni directo ni por el proxy), se omiten.', err);
+        if (res.ok) {
+            const json = await res.json();
+            if (Array.isArray(json.elements)) elements = json.elements;
         }
+    } catch (err) {
+        console.warn('[Mapa Ilustrado] No se pudieron obtener lugares cercanos reales, se omiten.', err);
     }
     if (!elements) return;
 
@@ -528,76 +501,47 @@ async function loadNearbyPlaceNames() {
 // (canvas) con césped/agua/playa/carretera con la paleta de un plano de
 // festival dibujado a mano, y la coloca con L.imageOverlay -ver
 // refreshIllustratedBackdrop, enganchado en toggleIllustratedMode-. El
-// terreno real cercano (agua, playa, bosque, carreteras) se pide a Overpass
-// con el mismo patrón que loadNearbyPlaceNames/fetchMapFeatures (directo
-// desde el navegador primero, proxy propio /api/illustrated-terrain si eso
-// falla), pero pidiendo geometría real (`out geom;`) porque aquí hace falta
-// el contorno para poder rellenarlo/trazarlo, no solo un punto central.
+// terreno real cercano (agua, playa, bosque, carreteras) se pide siempre al
+// proxy propio /api/illustrated-terrain (que construye la query con
+// geometría real, `out geom;`, porque aquí hace falta el contorno para
+// poder rellenarlo/trazarlo, no solo un punto central).
 let illustratedBackdropLayer = null;
 let illustratedBackdropBounds = null;
 let illustratedTerrainData = null;
 let illustratedTerrainQueryBounds = null; // bounds ya cubiertos por illustratedTerrainData
 
-function illustratedTerrainQuery(bboxStr) {
-    return `[out:json][timeout:20];(
-        way["natural"="water"](${bboxStr});
-        way["waterway"~"^(river|stream|canal)$"](${bboxStr});
-        way["natural"="beach"](${bboxStr});
-        way["natural"="wood"](${bboxStr});
-        way["landuse"~"^(forest|wood)$"](${bboxStr});
-        way["highway"~"^(motorway|trunk|primary|secondary|tertiary|unclassified|residential)$"](${bboxStr});
-        way["building"](${bboxStr});
-        way["leisure"="sports_centre"](${bboxStr});
-        way["amenity"="sports_centre"](${bboxStr});
-    );out geom;`;
-}
-
 async function fetchIllustratedTerrain(bbox) {
-    const bboxStr = `${bbox.minLat},${bbox.minLng},${bbox.maxLat},${bbox.maxLng}`;
+    // Antes se probaba Overpass DIRECTO desde el navegador primero, pensando
+    // que la IP real de quien usa la app tendría mejor trato que la de
+    // Vercel. Comprobado en vivo repetidas veces en producción
+    // (festivalya.vercel.app): ese intento directo se bloquea SIEMPRE por
+    // CORS (el espejo no manda Access-Control-Allow-Origin), sin excepción,
+    // llenando la consola de errores alarmantes y retrasando ~20s la carga
+    // real antes de caer al proxy de todos modos. Se va directo al proxy
+    // propio (/api/illustrated-terrain, que ya cachea por bbox y prueba los
+    // 4 espejos en paralelo desde el servidor) para no volver a repetir
+    // ese barrido inútil.
     let rawElements = null;
     try {
         const controller = new AbortController();
-        // OJO: 20s a propósito, NO se acorta. Comprobado en vivo (ver
-        // comentarios de fetchMapFeatures en view3d.js/api/map-features.js):
-        // los espejos públicos de Overpass tratan mal el tráfico que sale
-        // desde un rango de IP compartido de nube -el propio proxy
-        // (/api/illustrated-terrain, en Vercel) es en realidad el camino
-        // MENOS fiable de los dos, no el más rápido-, así que este intento
-        // directo desde el navegador (con la IP real de quien lo usa) es el
-        // que de verdad tiene que tener margen para encontrar un espejo sano
-        // entre los 4, no el que hay que acortar.
-        const timeoutId = setTimeout(() => controller.abort(), 20000);
-        rawElements = await raceFirstNonEmpty(
-            OVERPASS_ENDPOINTS.map(endpoint => () => queryOverpassMirror(endpoint, illustratedTerrainQuery(bboxStr), controller.signal)),
-            20000
-        );
+        // 30s, no 15: el propio proxy (api/illustrated-terrain.js) ya
+        // espera hasta 25s a los espejos, así que el cliente tiene que dar
+        // margen de sobra para no cortarle la respuesta justo antes de que
+        // llegue.
+        const timeoutId = setTimeout(() => controller.abort(), 30000);
+        const res = await fetch('/api/illustrated-terrain', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ bbox }),
+            signal: controller.signal
+        });
         clearTimeout(timeoutId);
-    } catch (err) {
-        console.warn('[Mapa Ilustrado] Fallo consultando Overpass directo para el terreno, se prueba el proxy propio.', err);
-    }
-
-    if (!rawElements) {
-        try {
-            const controller = new AbortController();
-            // 30s, no 15: el propio proxy (api/illustrated-terrain.js) ya
-            // espera hasta 25s a los espejos -sobre todo lentos desde su
-            // IP de Vercel-, así que el cliente tiene que dar margen de
-            // sobra para no cortarle la respuesta justo antes de que llegue.
-            const timeoutId = setTimeout(() => controller.abort(), 30000);
-            const res = await fetch('/api/illustrated-terrain', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ bbox }),
-                signal: controller.signal
-            });
-            clearTimeout(timeoutId);
-            if (res.ok) {
-                const json = await res.json();
-                if (Array.isArray(json.elements)) rawElements = json.elements;
-            }
-        } catch (err) {
-            console.warn('[Mapa Ilustrado] No se pudo obtener el terreno real (ni directo ni por el proxy), se pinta solo césped.', err);
+        if (res.ok) {
+            const json = await res.json();
+            if (Array.isArray(json.elements)) rawElements = json.elements;
         }
+    } catch (err) {
+        console.warn('[Mapa Ilustrado] No se pudo obtener el terreno real, se pinta solo césped.', err);
     }
 
     const empty = { water: [], rivers: [], beaches: [], forests: [], roads: [], buildings: [] };
@@ -1670,6 +1614,15 @@ function startFenceDrawing(type = 'fence') {
 }
 
 let buildingDrawPoints = [], buildingTempPolygon = null, buildingTempMarkers = [], buildingFirstPointMarker = null;
+// Si se pulsa "Añadir al mapa" dos veces (p.ej. porque no parece pasar nada
+// al instante y se insiste), startCustomBuildingDrawing se llamaba dos veces
+// sin que la sesión anterior se limpiara: como buildingDrawPoints es
+// compartido y map.on(...) APILA listeners en vez de sustituirlos, cada clic
+// en el mapa disparaba dos veces "añadir vértice" y, al cerrar, dos veces
+// "finish()" -> dos edificios idénticos superpuestos (el bug de "aparecen
+// dos"). Este guardián cierra/descarta cualquier sesión anterior antes de
+// empezar una nueva, para que nunca haya dos juegos de listeners a la vez.
+let buildingDrawCleanup = null;
 
 // Dibuja un "Edificio (referencia)" con su forma real -una esquina, la
 // siguiente, la siguiente... y se cierra solo contra la primera-, no un
@@ -1680,6 +1633,7 @@ let buildingDrawPoints = [], buildingTempPolygon = null, buildingTempMarkers = [
 // clic suficientemente cerca del primer punto también cierra la forma,
 // que es justo lo que se pidió-.
 function startCustomBuildingDrawing(name) {
+    if (buildingDrawCleanup) buildingDrawCleanup();
     buildingDrawPoints = [];
     map.dragging.disable();
     map.doubleClickZoom.disable();
@@ -1773,7 +1727,9 @@ function startCustomBuildingDrawing(name) {
         buildingTempMarkers.forEach(m => map.removeLayer(m));
         buildingTempMarkers = [];
         buildingFirstPointMarker = null;
+        buildingDrawCleanup = null;
     }
+    buildingDrawCleanup = cleanupPreview;
 
     function finish() {
         cleanupPreview();

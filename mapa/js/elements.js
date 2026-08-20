@@ -1346,7 +1346,15 @@ function addRotateHandle(element) {
         const dLat = (pos.lat - center.lat);
         const angle = Math.atan2(dLng, dLat) * (180 / Math.PI);
         element.rotation = (angle + 360) % 360;
-        updateElementShape(element, false);
+        // "true" (recalcular también la etiqueta/icono), no "false": para
+        // tipos cuyo aspecto vive en el icono -Edificio de referencia,
+        // zonas, entrada, flecha de dirección- ese icono lleva la rotación
+        // metida en su propio HTML (transform:rotate). Con solo el
+        // contorno recalculado (lo que hacía "false"), girar no se veía
+        // en vivo -parecía que "no hacía nada" hasta que otra acción
+        // cualquiera (p.ej. abrir y cerrar la ficha de edición) disparaba
+        // por fin un refresco completo-.
+        updateElementShape(element, true);
         if (editingElement && editingElement.id === element.id) {
             document.getElementById('element-rotation').value = Math.round(element.rotation);
         }
@@ -1587,58 +1595,51 @@ function startFenceDrawing(type = 'fence') {
 	});
 }
 
-// Dibuja un "Edificio (referencia)" pinchando y arrastrando directamente
-// sobre el mapa (un solo gesto: bajar el ratón en una esquina, arrastrar a
-// la esquina opuesta, soltar) en vez de soltarlo en el centro del mapa y
-// tener que ajustar Largo/Ancho a mano después -mismo patrón de eventos que
-// startFenceDrawing, pero con mousedown/mousemove/mouseup (un gesto
-// continuo) en lugar de dos clics sueltos, porque aquí hace falta previsualizar
-// un RECTÁNGULO, no una línea-.
+// Dibuja un "Edificio (referencia)" a golpe de clic -una esquina, luego la
+// esquina opuesta-, en vez de soltarlo en el centro del mapa y tener que
+// ajustar Largo/Ancho a mano después. Mismo patrón de dos clics sueltos que
+// ya usa startFenceDrawing (más fiable en trackpad/táctil que un
+// mousedown+arrastre+mouseup continuo), solo que aquí se previsualiza un
+// RECTÁNGULO en vez de una línea.
 function startCustomBuildingDrawing(name) {
     map.dragging.disable();
     map.getContainer().style.cursor = 'crosshair';
-    let startLatLng = null;
-    let previewRect = null;
 
-    function onMouseMove(e) {
-        if (!previewRect) return;
-        previewRect.setBounds(L.latLngBounds(startLatLng, e.latlng));
-    }
-
-    function finishDrawing(endLatLng) {
-        map.off('mousemove', onMouseMove);
-        map.off('mouseup', onMouseUp);
-        map.dragging.enable();
-        map.getContainer().style.cursor = '';
-        if (previewRect) { map.removeLayer(previewRect); previewRect = null; }
-
-        // Un clic suelto sin arrastre real (o un arrastre minúsculo,
-        // temblor de mano/trackpad) no debe crear un edificio de 0x0m.
-        const pStart = map.latLngToLayerPoint(startLatLng);
-        const pEnd = map.latLngToLayerPoint(endLatLng);
-        if (pStart.distanceTo(pEnd) < 6) return;
-
-        const centerLat = (startLatLng.lat + endLatLng.lat) / 2;
-        const centerLng = (startLatLng.lng + endLatLng.lng) / 2;
-        const latScale = Math.cos(centerLat * Math.PI / 180);
-        const length = Math.max(2, Math.round(Math.abs(endLatLng.lng - startLatLng.lng) * 111320 * latScale * 10) / 10);
-        const width = Math.max(2, Math.round(Math.abs(endLatLng.lat - startLatLng.lat) * 111320 * 10) / 10);
-
-        const element = addRectangleToMap(name, 'custom-building', L.latLng(centerLat, centerLng), length, width);
-        elements.push(element); updateElementCard(element); bindMarkerEvents(element);
-        updateStats();
-        saveHistory();
-    }
-
-    function onMouseUp(e) { finishDrawing(e.latlng); }
-
-    map.once('mousedown', (e) => {
-        startLatLng = e.latlng;
-        previewRect = L.rectangle(L.latLngBounds(startLatLng, startLatLng), {
+    map.once('click', (e1) => {
+        const startLatLng = e1.latlng;
+        const previewRect = L.rectangle(L.latLngBounds(startLatLng, startLatLng), {
             color: '#8f7350', weight: 2, fillColor: '#cbb28c', fillOpacity: 0.4, dashArray: '4,4', interactive: false
         }).addTo(map);
+
+        function onMouseMove(em) {
+            previewRect.setBounds(L.latLngBounds(startLatLng, em.latlng));
+        }
         map.on('mousemove', onMouseMove);
-        map.once('mouseup', onMouseUp);
+
+        map.once('click', (e2) => {
+            map.off('mousemove', onMouseMove);
+            map.dragging.enable();
+            map.getContainer().style.cursor = '';
+            map.removeLayer(previewRect);
+
+            const endLatLng = e2.latlng;
+            // Segundo clic pegado casi al mismo sitio (o justo el mismo
+            // punto): no debe crear un edificio de 0x0m.
+            const pStart = map.latLngToLayerPoint(startLatLng);
+            const pEnd = map.latLngToLayerPoint(endLatLng);
+            if (pStart.distanceTo(pEnd) < 6) return;
+
+            const centerLat = (startLatLng.lat + endLatLng.lat) / 2;
+            const centerLng = (startLatLng.lng + endLatLng.lng) / 2;
+            const latScale = Math.cos(centerLat * Math.PI / 180);
+            const length = Math.max(2, Math.round(Math.abs(endLatLng.lng - startLatLng.lng) * 111320 * latScale * 10) / 10);
+            const width = Math.max(2, Math.round(Math.abs(endLatLng.lat - startLatLng.lat) * 111320 * 10) / 10);
+
+            const element = addRectangleToMap(name, 'custom-building', L.latLng(centerLat, centerLng), length, width);
+            elements.push(element); updateElementCard(element); bindMarkerEvents(element);
+            updateStats();
+            saveHistory();
+        });
     });
 }
 

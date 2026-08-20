@@ -66,7 +66,11 @@ function getProjectData() {
             color: el.color,
             illustratedHidden: el.illustratedHidden || false,
             illustratedOffset: el.illustratedOffset || { dx: 0, dy: 0 },
-            pathCoords: el.pathCoords || null
+            pathCoords: el.pathCoords || null,
+            // Edificio de referencia dibujado a mano con su forma real (ver
+            // addPolygonBuildingToMap en elements.js), no un rectángulo.
+            isPolygon: el.isPolygon || false,
+            polygonPoints: el.isPolygon ? el.polygonPoints : null
         })),
         // Nombres reales (calles, plazas, edificios...) ocultados uno a uno
         // a mano en el Mapa Ilustrado -ver hiddenContextNames en elements.js-.
@@ -190,7 +194,10 @@ function loadProjectData(data) {
             : (el.type === 'signal-wc' && OLD_SIGNAL_WC_NAMES.has(el.name))
             ? festivalConfig['signal-wc'].label
             : el.name;
-        if (el.isRectangle) {
+        if (el.isPolygon && Array.isArray(el.polygonPoints) && el.polygonPoints.length >= 3) {
+            element = addPolygonBuildingToMap(elName, el.polygonPoints);
+            group.addLayer(element.polygon);
+        } else if (el.isRectangle) {
             element = addRectangleToMap(elName, el.type, el.coords, el.length, el.width, el.rotation || 0, el.pathCoords || null);
             group.addLayer(element.rectangle);
         } else {

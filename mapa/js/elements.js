@@ -335,7 +335,18 @@ function toggleIllustratedMode() {
                 fillOpacity: isIllustratedMode ? 0 : 0.6,
                 weight: isIllustratedMode ? 0 : 2,
                 color: isIllustratedMode ? 'transparent' : el.color,
-                interactive: !isIllustratedMode 
+                interactive: !isIllustratedMode
+            });
+        } else if (el.isPolygon) {
+            // Mismo criterio que el.rectangle: la forma real se oculta en
+            // Modo Ilustrado, donde el bloque visible es el divIcon del
+            // labelMarker (recortado con clip-path a esta misma forma, ver
+            // updateElementShape), no este polígono de Leaflet.
+            el.polygon.setStyle({
+                fillOpacity: isIllustratedMode ? 0 : 0.6,
+                weight: isIllustratedMode ? 0 : 2,
+                color: isIllustratedMode ? 'transparent' : el.color,
+                interactive: !isIllustratedMode
             });
         } else if (el.isLine) {
             // En Modo Ilustrado la valla ya no se pinta como fila de iconos
@@ -1114,32 +1125,58 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
                 // Edificio de referencia: un bloque sólido a escala real (no
                 // un pin/sticker) del mismo aspecto que los edificios reales
                 // pintados en el fondo -"un recuadro como los que ya
-                // existen"-, que se puede moldear/alargar/girar con los
-                // mismos campos y asas que cualquier elemento -incluida el
-                // asa de girar, visible también en el Mapa Ilustrado para
-                // este tipo, ver shouldShowControls-. A propósito NO usa
-                // illustratedOffset: representa un edificio real, así que su
-                // posición tiene que ser la misma en todos los planos, no
-                // solo un ajuste de composición del plano ilustrado.
-                const mapBearing = (map.getBearing ? map.getBearing() : 0);
-                const totalRotation = element.rotation + mapBearing;
-                const pCenter = map.latLngToLayerPoint(center);
-                const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
-                const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
-                const wPx = Math.max(6, length * pxPerMeter);
-                const hPx = Math.max(6, width * pxPerMeter);
+                // existen"-. A propósito NO usa illustratedOffset:
+                // representa un edificio real, así que su posición tiene
+                // que ser la misma en todos los planos, no solo un ajuste
+                // de composición del plano ilustrado.
                 const bg = element.color || '#cbb28c';
+                if (element.isPolygon) {
+                    // Dibujado a mano con su forma real (ver
+                    // startCustomBuildingDrawing/addPolygonBuildingToMap):
+                    // el bloque se recorta con clip-path a los vértices
+                    // reales en vez de ser siempre un rectángulo. Sin asa de
+                    // girar (no aplica a una forma arbitraria), así que no
+                    // hay rotación que aplicar aquí.
+                    const pxPoints = element.polygonPoints.map(p => map.latLngToLayerPoint(p));
+                    const minX = Math.min(...pxPoints.map(p => p.x)), maxX = Math.max(...pxPoints.map(p => p.x));
+                    const minY = Math.min(...pxPoints.map(p => p.y)), maxY = Math.max(...pxPoints.map(p => p.y));
+                    const wPx = Math.max(6, maxX - minX), hPx = Math.max(6, maxY - minY);
+                    const clipPath = pxPoints.map(p => `${((p.x - minX) / wPx * 100).toFixed(1)}% ${((p.y - minY) / hPx * 100).toFixed(1)}%`).join(', ');
+                    const centerPx = L.point((minX + maxX) / 2, (minY + maxY) / 2);
 
-                const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; position:relative; transform:rotate(${totalRotation}deg);" title="${displayName}">
-                    <div style="width:100%; height:100%; background:${bg}; border:2px solid #8f7350; border-radius:2px; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>
-                    <div class="map-pin-bubble ${hiddenClass}" style="position:absolute; left:50%; bottom:100%; margin-bottom:4px; transform:translateX(-50%) rotate(${-totalRotation}deg); transform-origin:center;">${displayName}</div>
-                </div>`;
-                element.labelMarker.setLatLng(center);
-                element.labelMarker.setIcon(L.divIcon({
-                    className: 'illustrated-label',
-                    html: iconHTML,
-                    iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
-                }));
+                    const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; position:relative;" title="${displayName}">
+                        <div style="width:100%; height:100%; background:${bg}; border:2px solid #8f7350; clip-path: polygon(${clipPath}); box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>
+                        <div class="map-pin-bubble ${hiddenClass}" style="position:absolute; left:50%; top:-4px; transform:translate(-50%, -100%); white-space:nowrap;">${displayName}</div>
+                    </div>`;
+                    element.labelMarker.setLatLng(map.layerPointToLatLng(centerPx));
+                    element.labelMarker.setIcon(L.divIcon({
+                        className: 'illustrated-label',
+                        html: iconHTML,
+                        iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
+                    }));
+                } else {
+                    // Sin dibujar a mano (el flujo antiguo "Añadir al mapa"
+                    // directo, si se usa): rectángulo simple a partir de
+                    // Largo/Ancho/rotación, como el resto de elementos.
+                    const mapBearing = (map.getBearing ? map.getBearing() : 0);
+                    const totalRotation = element.rotation + mapBearing;
+                    const pCenter = map.latLngToLayerPoint(center);
+                    const pEdge = map.latLngToLayerPoint(L.latLng(center.lat, center.lng + (10 / (111320 * latScale))));
+                    const pxPerMeter = pCenter.distanceTo(pEdge) / 10;
+                    const wPx = Math.max(6, length * pxPerMeter);
+                    const hPx = Math.max(6, width * pxPerMeter);
+
+                    const iconHTML = `<div style="width:${wPx}px; height:${hPx}px; position:relative; transform:rotate(${totalRotation}deg);" title="${displayName}">
+                        <div style="width:100%; height:100%; background:${bg}; border:2px solid #8f7350; border-radius:2px; box-shadow:0 2px 4px rgba(0,0,0,0.3);"></div>
+                        <div class="map-pin-bubble ${hiddenClass}" style="position:absolute; left:50%; bottom:100%; margin-bottom:4px; transform:translateX(-50%) rotate(${-totalRotation}deg); transform-origin:center;">${displayName}</div>
+                    </div>`;
+                    element.labelMarker.setLatLng(center);
+                    element.labelMarker.setIcon(L.divIcon({
+                        className: 'illustrated-label',
+                        html: iconHTML,
+                        iconSize: [wPx, hPx], iconAnchor: [wPx / 2, hPx / 2]
+                    }));
+                }
             } else if (isZone) {
                 // Área traslúcida a escala real, con una etiqueta centrada y,
                 // además, un icono real (mismo sticker que los elementos
@@ -1595,52 +1632,161 @@ function startFenceDrawing(type = 'fence') {
 	});
 }
 
-// Dibuja un "Edificio (referencia)" a golpe de clic -una esquina, luego la
-// esquina opuesta-, en vez de soltarlo en el centro del mapa y tener que
-// ajustar Largo/Ancho a mano después. Mismo patrón de dos clics sueltos que
-// ya usa startFenceDrawing (más fiable en trackpad/táctil que un
-// mousedown+arrastre+mouseup continuo), solo que aquí se previsualiza un
-// RECTÁNGULO en vez de una línea.
+let buildingDrawPoints = [], buildingTempPolygon = null, buildingTempMarkers = [], buildingFirstPointMarker = null;
+
+// Dibuja un "Edificio (referencia)" con su forma real -una esquina, la
+// siguiente, la siguiente... y se cierra solo contra la primera-, no un
+// simple rectángulo de dos esquinas opuestas. Mismo patrón de varios clics
+// que ya usa startPatrolPathDrawing (doble clic/Enter/Escape/botón
+// "Finalizar" para terminar), pero cerrando el trazo como POLÍGONO en vez
+// de dejarlo como un camino abierto -y, a diferencia de esa función, un
+// clic suficientemente cerca del primer punto también cierra la forma,
+// que es justo lo que se pidió-.
 function startCustomBuildingDrawing(name) {
+    buildingDrawPoints = [];
     map.dragging.disable();
+    map.doubleClickZoom.disable();
     map.getContainer().style.cursor = 'crosshair';
 
-    map.once('click', (e1) => {
-        const startLatLng = e1.latlng;
-        const previewRect = L.rectangle(L.latLngBounds(startLatLng, startLatLng), {
-            color: '#8f7350', weight: 2, fillColor: '#cbb28c', fillOpacity: 0.4, dashArray: '4,4', interactive: false
+    const CLOSE_DISTANCE_PX = 12; // radio, en píxeles de pantalla, para considerar "clic sobre el primer punto"
+
+    const finishBtn = document.getElementById('finish-drawing-btn');
+    if (finishBtn) {
+        finishBtn.style.display = 'block';
+        finishBtn.onclick = () => finish();
+    }
+
+    const addPoint = (latlng) => {
+        buildingDrawPoints.push(latlng);
+        const isFirst = buildingDrawPoints.length === 1;
+        const marker = L.circleMarker(latlng, {
+            radius: isFirst ? 7 : 4, color: '#fff', weight: 2,
+            fillColor: isFirst ? '#ffd400' : '#8f7350', fillOpacity: 1, interactive: false
         }).addTo(map);
+        buildingTempMarkers.push(marker);
+        if (isFirst) buildingFirstPointMarker = marker;
 
-        function onMouseMove(em) {
-            previewRect.setBounds(L.latLngBounds(startLatLng, em.latlng));
+        if (!buildingTempPolygon) {
+            buildingTempPolygon = L.polygon(buildingDrawPoints, { color: '#8f7350', weight: 2, fillColor: '#cbb28c', fillOpacity: 0.4, dashArray: '4,4', interactive: false }).addTo(map);
+        } else {
+            buildingTempPolygon.setLatLngs(buildingDrawPoints);
         }
-        map.on('mousemove', onMouseMove);
+    };
 
-        map.once('click', (e2) => {
-            map.off('mousemove', onMouseMove);
-            map.dragging.enable();
-            map.getContainer().style.cursor = '';
-            map.removeLayer(previewRect);
+    const onClick = (e) => {
+        // Clic cerca del primer punto (con 3+ puntos ya puestos, para que
+        // el segundo clic -que define el segundo vértice- nunca se
+        // confunda con "cerrar"): cierra la forma ahí mismo, sin añadir
+        // este clic como un vértice más pegado al primero.
+        if (buildingDrawPoints.length >= 3) {
+            const pFirst = map.latLngToLayerPoint(buildingDrawPoints[0]);
+            const pClick = map.latLngToLayerPoint(e.latlng);
+            if (pFirst.distanceTo(pClick) <= CLOSE_DISTANCE_PX) { finish(); return; }
+        }
+        addPoint(e.latlng);
+    };
 
-            const endLatLng = e2.latlng;
-            // Segundo clic pegado casi al mismo sitio (o justo el mismo
-            // punto): no debe crear un edificio de 0x0m.
-            const pStart = map.latLngToLayerPoint(startLatLng);
-            const pEnd = map.latLngToLayerPoint(endLatLng);
-            if (pStart.distanceTo(pEnd) < 6) return;
+    const onDblClick = (e) => {
+        // El segundo clic del propio doble clic ya añadió un punto de más
+        // (Leaflet dispara "click" antes que "dblclick"): se descarta antes
+        // de terminar, mismo motivo que en startPatrolPathDrawing.
+        if (buildingDrawPoints.length) buildingDrawPoints.pop();
+        finish();
+    };
 
-            const centerLat = (startLatLng.lat + endLatLng.lat) / 2;
-            const centerLng = (startLatLng.lng + endLatLng.lng) / 2;
-            const latScale = Math.cos(centerLat * Math.PI / 180);
-            const length = Math.max(2, Math.round(Math.abs(endLatLng.lng - startLatLng.lng) * 111320 * latScale * 10) / 10);
-            const width = Math.max(2, Math.round(Math.abs(endLatLng.lat - startLatLng.lat) * 111320 * 10) / 10);
+    const onKeyDown = (e) => {
+        if (e.key === 'Escape' || e.key === 'Enter') finish();
+    };
 
-            const element = addRectangleToMap(name, 'custom-building', L.latLng(centerLat, centerLng), length, width);
-            elements.push(element); updateElementCard(element); bindMarkerEvents(element);
-            updateStats();
-            saveHistory();
-        });
-    });
+    function cleanupPreview() {
+        map.off('click', onClick);
+        map.off('dblclick', onDblClick);
+        document.removeEventListener('keydown', onKeyDown);
+        map.dragging.enable();
+        map.doubleClickZoom.enable();
+        map.getContainer().style.cursor = '';
+        if (finishBtn) { finishBtn.style.display = 'none'; finishBtn.onclick = null; }
+        if (buildingTempPolygon) { map.removeLayer(buildingTempPolygon); buildingTempPolygon = null; }
+        buildingTempMarkers.forEach(m => map.removeLayer(m));
+        buildingTempMarkers = [];
+        buildingFirstPointMarker = null;
+    }
+
+    function finish() {
+        cleanupPreview();
+        // Menos de 3 puntos no forma una figura real -ni un rectángulo
+        // arrastrado por error queda ahí como un edificio degenerado-.
+        if (buildingDrawPoints.length < 3) return;
+
+        const element = addPolygonBuildingToMap(name, buildingDrawPoints.slice());
+        elements.push(element); updateElementCard(element); bindMarkerEvents(element);
+        updateStats();
+        saveHistory();
+    }
+
+    map.on('click', onClick);
+    map.on('dblclick', onDblClick);
+    document.addEventListener('keydown', onKeyDown);
+}
+
+// Calcula el centroide (promedio simple de vértices) de un polígono: de
+// sobra de preciso para colocar el asa de mover y la etiqueta de un
+// edificio -no hace falta el centroide "de área" exacto para una forma de
+// unos pocos metros-.
+function polygonCentroid(points) {
+    const lat = points.reduce((s, p) => s + p.lat, 0) / points.length;
+    const lng = points.reduce((s, p) => s + p.lng, 0) / points.length;
+    return L.latLng(lat, lng);
+}
+
+// Edificio de referencia con su forma REAL (no un rectángulo con
+// largo/ancho/rotación, como el resto de elementos): el usuario dibuja el
+// contorno a mano -ver startCustomBuildingDrawing-, así que se guarda tal
+// cual como polígono. No tiene asa de girar (no aplica a una forma
+// arbitraria) ni usa illustratedOffset (igual que el resto de "Edificio
+// (referencia)": su posición debe ser la misma en todos los planos).
+function addPolygonBuildingToMap(name, points) {
+    const config = festivalConfig['custom-building'];
+    const polygon = L.polygon(points, { color: config.color, fillColor: config.color, weight: 2, fillOpacity: 0.6, interactive: true, bubblingMouseEvents: false }).addTo(map);
+    const centroid = polygonCentroid(points);
+    const moveMarker = L.marker(centroid, { icon: moveHandleIcon, draggable: true, zIndexOffset: 2000 });
+    const labelMarker = L.marker(centroid, { icon: L.divIcon({ className: 'rectangle-label', html: '' }), draggable: true, zIndexOffset: 1000 });
+
+    if (!isFestivalMode) { moveMarker.addTo(map); labelMarker.addTo(map); }
+
+    // Ancho/largo de la caja que envuelve el polígono: solo informativos
+    // (se muestran como texto en modo normal, "AxB m"), no definen la forma.
+    const lats = points.map(p => p.lat), lngs = points.map(p => p.lng);
+    const latScale = Math.cos(centroid.lat * Math.PI / 180);
+    const length = Math.max(2, Math.round((Math.max(...lngs) - Math.min(...lngs)) * 111320 * latScale * 10) / 10);
+    const width = Math.max(2, Math.round((Math.max(...lats) - Math.min(...lats)) * 111320 * 10) / 10);
+
+    const element = {
+        id: Date.now(), type: 'custom-building', name, polygon, labelMarker, moveMarker,
+        isRectangle: false, isLine: false, isPolygon: true,
+        polygonPoints: points.map(p => L.latLng(p.lat, p.lng)),
+        length, width, rotation: 0,
+        color: config.color, iconUrl: getGenericIconUrl(config.icon),
+        illustratedOffset: { dx: 0, dy: 0 }
+    };
+
+    function onDragStart(e) { element.lastPos = e.target.getLatLng(); }
+    function onDrag(e) {
+        const newPos = e.target.getLatLng();
+        const oldPos = element.lastPos || centroid;
+        const dLat = newPos.lat - oldPos.lat, dLng = newPos.lng - oldPos.lng;
+        element.polygonPoints = element.polygonPoints.map(p => L.latLng(p.lat + dLat, p.lng + dLng));
+        element.polygon.setLatLngs(element.polygonPoints);
+        const curLabelPos = labelMarker.getLatLng();
+        labelMarker.setLatLng([curLabelPos.lat + dLat, curLabelPos.lng + dLng]);
+        element.lastPos = newPos;
+    }
+    moveMarker.on('dragstart', onDragStart);
+    moveMarker.on('drag', onDrag);
+    moveMarker.on('dragend', () => saveHistory());
+
+    updateElementShape(element, true);
+    return element;
 }
 
 function addFixedFenceToMap(len, center = map.getCenter(), rotation = 0, type = 'fence') {
@@ -1947,7 +2093,9 @@ function deleteElement(element) {
         hideElementFromIllustrated(element);
         return;
     }
-	if (element.isRectangle) map.removeLayer(element.rectangle); else if (element.isLine) map.removeLayer(element.line);
+	if (element.isRectangle) map.removeLayer(element.rectangle);
+    else if (element.isPolygon) map.removeLayer(element.polygon);
+    else if (element.isLine) map.removeLayer(element.line);
     map.removeLayer(element.labelMarker); map.removeLayer(element.moveMarker);
     if (element.rotateMarker) map.removeLayer(element.rotateMarker);
     if (element.routeLine) map.removeLayer(element.routeLine);
@@ -1991,8 +2139,8 @@ function bindMarkerEvents(element) {
     element.labelMarker.on('touchstart', onTouchStart);
     element.labelMarker.on('contextmenu', (e) => onDblClick(e));
 
-    // Eventos para la forma (Rectángulo o Línea)
-    const shape = element.isRectangle ? element.rectangle : element.line;
+    // Eventos para la forma (Rectángulo, Línea, o Polígono a mano)
+    const shape = element.isRectangle ? element.rectangle : (element.isPolygon ? element.polygon : element.line);
     shape.on('dblclick', onDblClick);
     shape.on('touchstart', onTouchStart);
     shape.on('contextmenu', (e) => onDblClick(e));

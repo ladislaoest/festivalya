@@ -1516,6 +1516,8 @@ function setupElementEvents() {
 	document.getElementById('edit-element-name').onchange = () => saveHistory();
     document.getElementById('edit-element-length').onchange = () => saveHistory();
     document.getElementById('edit-element-width').onchange = () => saveHistory();
+    document.getElementById('edit-element-scale').oninput = updatePolygonScaleFromEdit;
+    document.getElementById('edit-element-scale').onchange = () => saveHistory();
 
 	document.getElementById('delete-element-btn').onclick = () => {
 		if (editingElement) {
@@ -2013,9 +2015,46 @@ function updateElementCard(element) {
 
 function selectElement(element) {
 	editingElement = element; document.getElementById('edit-panel').style.display = 'block'; document.getElementById('edit-element-name').value = element.name;
-    document.getElementById('edit-rotation-group').style.display = 'block'; document.getElementById('element-rotation').value = Math.round(element.rotation) || 0;
-    document.getElementById('edit-dimension-controls').style.display = 'block'; document.getElementById('edit-width-group').style.display = element.isRectangle ? 'block' : 'none';
+    // Un "Edificio (referencia)" dibujado a mano (isPolygon) no tiene asa
+    // de girar ni un Largo/Ancho que de verdad cambien su forma -son solo
+    // texto informativo de la caja que lo envuelve-, así que esos
+    // controles se ocultan y en su lugar se muestra "Tamaño (%)", que
+    // escala el contorno real dibujado alrededor de su centro.
+    document.getElementById('edit-rotation-group').style.display = element.isPolygon ? 'none' : 'block';
+    document.getElementById('element-rotation').value = Math.round(element.rotation) || 0;
+    document.getElementById('edit-dimension-controls').style.display = element.isPolygon ? 'none' : 'block';
+    document.getElementById('edit-width-group').style.display = element.isRectangle ? 'block' : 'none';
 	document.getElementById('edit-element-length').value = element.length; if (element.isRectangle) document.getElementById('edit-element-width').value = element.width;
+
+    const scaleGroup = document.getElementById('edit-scale-group');
+    if (element.isPolygon) {
+        scaleGroup.style.display = 'block';
+        // Se parte siempre de 100% y de una foto fija de los vértices
+        // actuales -así, si se mueve el slider varias veces seguidas, cada
+        // cambio escala desde la MISMA forma base en vez de ir arrastrando
+        // redondeos sobre el resultado del cambio anterior-.
+        element._scaleBasePoints = element.polygonPoints.map(p => L.latLng(p.lat, p.lng));
+        const scaleInput = document.getElementById('edit-element-scale');
+        scaleInput.value = 100;
+        document.getElementById('edit-element-scale-val').textContent = '100';
+    } else {
+        scaleGroup.style.display = 'none';
+    }
+}
+
+function updatePolygonScaleFromEdit() {
+    if (!editingElement || !editingElement.isPolygon || !editingElement._scaleBasePoints) return;
+    const pct = parseFloat(document.getElementById('edit-element-scale').value) || 100;
+    document.getElementById('edit-element-scale-val').textContent = Math.round(pct);
+    const factor = pct / 100;
+    const base = editingElement._scaleBasePoints;
+    const centroid = polygonCentroid(base);
+    editingElement.polygonPoints = base.map(p => L.latLng(
+        centroid.lat + (p.lat - centroid.lat) * factor,
+        centroid.lng + (p.lng - centroid.lng) * factor
+    ));
+    editingElement.polygon.setLatLngs(editingElement.polygonPoints);
+    updateElementShape(editingElement, true);
 }
 
 function showEditPopup(element, latlng) {

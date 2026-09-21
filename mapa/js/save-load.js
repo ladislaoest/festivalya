@@ -187,12 +187,18 @@ function loadProjectData(data) {
     // "SEÑAL WC" y pasó a llamarse solo "WC" -un proyecto guardado con el
     // nombre viejo se corrige solo al cargar.
     const OLD_SIGNAL_WC_NAMES = new Set(['SEÑAL WC']);
+    // Igual que con el "borracho" y el WC: "Seguridad" pasó a llamarse
+    // "Control de acceso" -un proyecto guardado con el nombre viejo se
+    // corrige solo al cargar.
+    const OLD_SECURITY_NAMES = new Set(['SEGURIDAD', 'Seguridad']);
     elementsData.forEach(el => {
         let element;
         const elName = (el.type === 'drunk' && OLD_DRUNK_NAMES.has(el.name))
             ? festivalConfig['drunk'].label
             : (el.type === 'signal-wc' && OLD_SIGNAL_WC_NAMES.has(el.name))
             ? festivalConfig['signal-wc'].label
+            : (el.type === 'security' && OLD_SECURITY_NAMES.has(el.name))
+            ? festivalConfig['security'].label
             : el.name;
         if (el.isPolygon && Array.isArray(el.polygonPoints) && el.polygonPoints.length >= 3) {
             element = addPolygonBuildingToMap(elName, el.polygonPoints);

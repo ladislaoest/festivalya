@@ -6,9 +6,11 @@ const festivalConfig = {
     'food-truck': { label: 'FOOD TRUCK', color: '#e67e22', icon: 'food', defaultLen: 4, defaultWid: 2 },
     'generator': { label: 'GENERADOR', color: '#9b59b6', icon: 'custom', defaultLen: 4, defaultWid: 2 },
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
-    'security': { label: 'CONTROL DE ACCESO', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
-    'drunk': { label: 'BREAD & WATHER', color: '#d9a441', icon: 'drunk', defaultLen: 1, defaultWid: 1 },
-    'tiburon': { label: 'TIBURÓN', color: '#1f8a4c', icon: 'tiburon', defaultLen: 1, defaultWid: 1 },
+    'security': { label: 'VIGILANTE', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
+    // Puesto fijo de control de acceso (caseta + barrera), distinto del
+    // "vigilante" que patrulla a pie: sin recorrido, se queda siempre en el
+    // punto donde se coloca.
+    'access-control': { label: 'CONTROL DE ACCESO', color: '#3498db', icon: 'access-control', defaultLen: 3, defaultWid: 2 },
     'fence': { label: 'VALLA DE OBRA', color: '#f39c12', icon: 'fence' },
     'panic-fence': { label: 'VALLA ANTIPÁNICO', color: '#95a5a6', icon: 'panic-fence' },
     'signal-parking': { label: 'PARKING', color: '#3498db', icon: 'parking', defaultLen: 4, defaultWid: 4 },
@@ -1098,12 +1100,12 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
 		
         const hasBadgeIcon = isIllustratedMode || element.type === 'security';
         // El Mapa Ilustrado es un plano "de cara al público" -escenarios,
-        // barras, zonas...-, no un plano técnico de producción: seguridad,
-        // Tiburón y el generador no pintan nada ahí (si hace falta verlos,
-        // para eso está la vista normal/3D). Las vallas sí se muestran (fila
-        // de icono, ver más abajo), pero se pueden ocultar con el botón
+        // barras, zonas...-, no un plano técnico de producción: el vigilante
+        // y el generador no pintan nada ahí (si hace falta verlos, para eso
+        // está la vista normal/3D). Las vallas sí se muestran (fila de
+        // icono, ver más abajo), pero se pueden ocultar con el botón
         // "OCULTAR VALLAS" (showFencesIllustrated) para no saturar el plano.
-        const alwaysHiddenInIllustrated = ['security', 'tiburon', 'generator'];
+        const alwaysHiddenInIllustrated = ['security', 'generator'];
         const isFenceHiddenByToggle = isFenceType(element.type) && !showFencesIllustrated;
         if (isIllustratedMode && (element.illustratedHidden || isFenceHiddenByToggle || alwaysHiddenInIllustrated.includes(element.type))) {
             element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
@@ -1340,7 +1342,7 @@ function updateStats() {
         if (elements.length > 0) {
             legend.style.display = 'block';
             legendItems.innerHTML = '';
-            const legendHiddenTypes = ['security', 'tiburon', 'generator', 'fence', 'panic-fence'];
+            const legendHiddenTypes = ['security', 'generator', 'fence', 'panic-fence'];
             Array.from(typesPresent).sort().forEach(type => {
                 if (isIllustratedMode && legendHiddenTypes.includes(type)) return;
                 const config = festivalConfig[type];
@@ -1441,8 +1443,7 @@ function setupElementEvents() {
                 'stage': 'main-stage', 'food': 'food-truck', 'bar': 'bar',
                 'wc': 'signal-wc', 'fence': 'fence', 'panic-fence': 'panic-fence', 'custom': 'generator',
                 'parking': 'signal-parking', 'disabled': 'signal-disabled', 'noparking': 'signal-no-parking',
-                'exit': 'signal-exit', 'no-entry': 'signal-no-entry', 'security': 'security', 'entrance': 'entrance', 'drunk': 'drunk',
-                'tiburon': 'tiburon'
+                'exit': 'signal-exit', 'no-entry': 'signal-no-entry', 'security': 'security', 'access-control': 'access-control', 'entrance': 'entrance'
             };
 			if (elemType) { elemType.value = mapIconToType[this.dataset.icon]; elemType.dispatchEvent(new Event('change')); }
 		};
@@ -2349,7 +2350,7 @@ function getPinIconSVG(iconKey, color, rotationDeg) {
         'panic-fence': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16"/><path d="M6 6v12M18 6v12"/></svg>`,
         // Vigilante: figura de guardia con gorra de visera e insignia en el
         // pecho, en vez del antiguo escudo genérico, para que se lea de un
-        // vistazo como una persona de control de acceso.
+        // vistazo como una persona (el que patrulla a pie).
         'security': `<svg viewBox="0 0 64 64">${shadow}
             <circle cx="32" cy="17" r="8" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>
             <path d="M22 15a10 10 0 0 1 20 0v1H22Z" fill="${bg}" stroke="${D}" stroke-width="2.2" stroke-linejoin="round"/>
@@ -2360,6 +2361,19 @@ function getPinIconSVG(iconKey, color, rotationDeg) {
             <circle cx="32" cy="39" r="7" fill="none" stroke="#ffd75e" stroke-width="2"/>
             <path d="M18 34 8 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
             <path d="M46 34 56 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+        </svg>`,
+        // Control de acceso: caseta con barrera levadiza, un puesto fijo
+        // (no una persona), para distinguirlo del vigilante que patrulla.
+        'access-control': `<svg viewBox="0 0 64 64">${shadow}
+            <rect x="8" y="30" width="16" height="22" rx="2" fill="${bg}" stroke="${D}" stroke-width="2.2" stroke-linejoin="round"/>
+            <rect x="10" y="18" width="12" height="12" rx="1" fill="#bfe3ff" stroke="${D}" stroke-width="1.8"/>
+            <rect x="19" y="36" width="7" height="9" fill="${D}"/>
+            <g transform="rotate(-28 26 42)">
+                <rect x="26" y="39" width="34" height="6" rx="2" fill="#fff" stroke="${D}" stroke-width="1.8"/>
+                <rect x="30" y="39" width="6" height="6" fill="#e74c3c"/>
+                <rect x="42" y="39" width="6" height="6" fill="#e74c3c"/>
+                <rect x="54" y="39" width="6" height="6" fill="#e74c3c"/>
+            </g>
         </svg>`,
         // El arco/porche (con sus "patas" abajo) se queda SIEMPRE derecho
         // -si giraba entero con el elemento, con cualquier rotación dejaba
@@ -2385,28 +2399,6 @@ function getPinIconSVG(iconKey, color, rotationDeg) {
             <rect x="16" y="30" width="10" height="10" fill="#fff6df" stroke="${D}" stroke-width="1.5"/>
             <rect x="38" y="30" width="10" height="10" fill="#fff6df" stroke="${D}" stroke-width="1.5"/>
             <rect x="27" y="42" width="10" height="12" fill="#8f7350" stroke="${D}" stroke-width="1.5"/>
-        </svg>`,
-        'drunk': `<svg viewBox="0 0 64 64">${shadow}
-            <circle cx="28" cy="14" r="6" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>
-            <path d="M28 20v16" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
-            <path d="M28 24 18 20" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
-            <path d="M28 24 40 20" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
-            <rect x="38" y="14" width="8" height="8" fill="${bg}" stroke="${D}" stroke-width="2"/>
-            <path d="M24 36 16 54" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
-            <path d="M28 36 36 54" stroke="${D}" stroke-width="3" stroke-linecap="round"/>
-        </svg>`,
-        'tiburon': `<svg viewBox="0 0 64 64">${shadow}
-            <circle cx="32" cy="14" r="6.5" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>
-            <rect x="24" y="12" width="16" height="4" rx="1" fill="${D}"/>
-            <path d="M32 21v14" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
-            <path d="M32 24 18 16" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
-            <path d="M32 24 46 16" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
-            <path d="M27 35 20 54" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
-            <path d="M32 35 39 54" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
-            <g transform="translate(13,10) rotate(-15)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
-            <g transform="translate(11,15) rotate(-25)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
-            <g transform="translate(41,10) rotate(15)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
-            <g transform="translate(43,15) rotate(25)"><rect width="11" height="6" rx="1" fill="${bg}" stroke="${D}" stroke-width="1.4"/></g>
         </svg>`
     };
     return icons[iconKey] || `<svg viewBox="0 0 64 64">${shadow}<circle cx="32" cy="30" r="18" fill="${bg}" stroke="${D}" stroke-width="2.5"/></svg>`;
@@ -2425,8 +2417,8 @@ function getGenericIconUrl(type) {
         'panic-fence': 'assets/icons/panic-fence.svg',
         'tent': 'assets/icons/tent.svg',
         'security': 'assets/icons/security.svg',
+        'access-control': 'assets/icons/access-control.svg',
         'entrance': 'assets/icons/entrance.svg',
-        'drunk': 'assets/icons/drunk.svg',
         'disabled': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Wheelchair_symbol.svg',
         'noparking': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzM0OThkYiIgc3Ryb2tlPSIjZTc0YzNjIiBzdHJva2Utd2lkdGg9IjEwIi8+PGxpbmUgeDE9IjE4IiB5MT0iMTgiIHgyPSI4MiIgeTI9IjgyIiBzdHJva2U9IiNlNzRjM2MiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=',
         'exit': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMjdhZTYwIi8+PHBhdGggZD0iTTMwIDIwaDQwdjYwSDMwek03NSA1MGwtMTUgMTBNNzUgNTBsLTE1LTEwIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjgiLz48L3N2Zz4=',

@@ -6,59 +6,6 @@ let map3dPlaneSize = 100;
 const SECURITY_FIGURE_SCALE = 1.4;
 const SECURITY_FIGURE_HEIGHT = 1.77 * SECURITY_FIGURE_SCALE;
 
-const DRUNK_FIGURE_SCALE = 1.6;
-const DRUNK_FIGURE_HEIGHT = 1.99 * DRUNK_FIGURE_SCALE; // 1.99 = tope de la cabeza (ver createDrunkFigure)
-const DRUNK_WANDER_RADIUS = 2.5;
-
-// Figuras "borracho" que deambulan solas cada frame (ver updateWanderingDrunks).
-// Se reconstruye entera cada vez que se regenera la escena 3D.
-let wanderingDrunks = [];
-
-// "Tiburón": personaje que ronda la barra más cercana lanzando billetes
-// (ver createTiburonFigure/updateMoneyWalkers/setupMoneyWalkers). Recorre un
-// arco de 260° centrado en el "frente" de la barra (su rotación + 90°) yendo
-// y viniendo -nunca completa el círculo entero-, para no cruzar nunca la
-// franja de detrás de la barra (donde iría el personal). Se reconstruye
-// entera en cada generate3DView().
-let moneyWalkers = [];
-const TIBURON_FIGURE_SCALE = 1.5;
-const TIBURON_FIGURE_HEIGHT = 1.85 * TIBURON_FIGURE_SCALE;
-const TIBURON_WALK_RADIUS = 3.2;
-const TIBURON_ARC_RANGE = (260 * Math.PI / 180) / 2; // amplitud a cada lado del "frente" de la barra
-// Ángulo de brazo levantado (0 = colgando, PI = totalmente hacia arriba):
-// con este valor el brazo queda en diagonal, hacia arriba Y hacia afuera del
-// cuerpo -así el abanico de billetes en la mano queda bien a la vista en vez
-// de escondido junto al torso-. Signo +/- por brazo, ver createTiburonFigure.
-const TIBURON_ARM_RAISE_ANGLE = 2.2;
-const TIBURON_BILL_POOL_SIZE = 7; // billetes cayendo simultáneos, reciclados en rueda
-const TIBURON_BILL_SPAWN_INTERVAL = 0.3; // segundos entre cada billete nuevo
-const TIBURON_BILL_FALL_GRAVITY = 2.0; // m/s² reducida a propósito: caída lenta/vistosa, no realista
-const TIBURON_BILL_LIFETIME = 3; // tope de segundos por si nunca "toca suelo" (terreno raro/():
-
-// Textura compartida (un único canvas para todos los "Tiburón" de la
-// escena) con un billete verde y el símbolo "$" bien grande, para el fajo en
-// la mano y para los billetes que caen -ver buildBillFan/spawnFallingBill.
-let tiburonBillTexture = null;
-function getTiburonBillTexture() {
-	if (tiburonBillTexture) return tiburonBillTexture;
-	const canvas = document.createElement('canvas');
-	canvas.width = 128;
-	canvas.height = 64;
-	const ctx = canvas.getContext('2d');
-	ctx.fillStyle = '#3fae5c';
-	ctx.fillRect(0, 0, 128, 64);
-	ctx.strokeStyle = '#f4e8b8';
-	ctx.lineWidth = 5;
-	ctx.strokeRect(5, 5, 118, 54);
-	ctx.fillStyle = '#f4e8b8';
-	ctx.font = 'bold 42px Arial';
-	ctx.textAlign = 'center';
-	ctx.textBaseline = 'middle';
-	ctx.fillText('$', 64, 35);
-	tiburonBillTexture = new THREE.CanvasTexture(canvas);
-	return tiburonBillTexture;
-}
-
 // Porteros ("security") con un recorrido dibujado a mano en el mapa 2D (ver
 // startPathDrawing en elements.js): patrullan ese trayecto de ida y vuelta,
 // tramo a tramo, en vez de quedarse fijos (ver updateSecurityPatrols). Se
@@ -857,13 +804,6 @@ function generate3DViewInner(style) {
 
 	drawElements(elements, threeScene);
 
-	// "Tiburón" necesita saber dónde está la barra más cercana para poder
-	// rondarla -y eso solo se conoce con seguridad una vez que drawElements
-	// ya ha creado TODOS los elementos (si "bar" apareciera más adelante en
-	// la lista, buscarla a mitad del propio drawElements se la habría
-	// perdido).
-	setupMoneyWalkers(elements);
-
 	// drawElements acaba de rellenar "terrainPads" (una plataforma nivelada
 	// por cada elemento con huella real): el suelo ya se construyó ANTES de
 	// saber esto, así que se reconstruye una vez más ahora para allanarlo
@@ -977,8 +917,6 @@ function generate3DViewInner(style) {
 			} else {
 				threeControls.update();
 			}
-			updateWanderingDrunks();
-			updateMoneyWalkers();
 			updateSecurityPatrols();
 			threeRenderer.render(threeScene, threeCamera);
 		} catch (err) {
@@ -1004,173 +942,6 @@ function planeToLatLng(x, z, bbox) {
 	const lng = ((x + planeSize / 2) / planeSize) * (bbox.maxLng - bbox.minLng) + bbox.minLng;
 	const lat = bbox.maxLat - ((z + planeSize / 2) / planeSize) * (bbox.maxLat - bbox.minLat);
 	return L.latLng(lat, lng);
-}
-
-// Paseo/tambaleo de los "borrachos": en vez de moverlos por todo el
-// recinto (que exigiría evitar otros elementos y los límites del suelo),
-// dan vueltas en un círculo pequeño alrededor de donde se colocaron, con
-// balanceo de piernas/brazo y un ligero tambaleo lateral.
-function updateWanderingDrunks() {
-	if (!wanderingDrunks.length) return;
-	const t = performance.now() / 1000;
-	wanderingDrunks.forEach(entry => {
-		if (dragState && dragState.element === entry.element) return;
-
-		const angle = t * 0.25 + entry.phase;
-		const x = entry.centerX + Math.cos(angle) * DRUNK_WANDER_RADIUS;
-		const z = entry.centerZ + Math.sin(angle) * DRUNK_WANDER_RADIUS;
-		const heading = angle + Math.PI / 2;
-		const wobble = Math.sin(t * 3 + entry.phase) * 0.25;
-
-		entry.group.position.x = x;
-		entry.group.position.z = z;
-		// Altura del terreno en el punto donde está ahora (no donde se
-		// colocó): si no, al alejarse del centro de su paseo se lo tragaba
-		// o quedaba flotando sobre el relieve real (ver getTerrainHeight).
-		entry.group.position.y = getTerrainHeight(x, -z) + Math.abs(Math.sin(t * 7 + entry.phase)) * 0.04;
-		entry.group.rotation.y = heading + wobble;
-		entry.group.rotation.z = Math.sin(t * 5 + entry.phase) * 0.08;
-
-		const stride = Math.sin(t * 7 + entry.phase);
-		if (entry.group.userData.legL) entry.group.userData.legL.rotation.x = stride * 0.5;
-		if (entry.group.userData.legR) entry.group.userData.legR.rotation.x = -stride * 0.5;
-		if (entry.group.userData.armDown) entry.group.userData.armDown.rotation.x = -stride * 0.4;
-
-		if (entry.element._threeLabel) {
-			entry.element._threeLabel.position.x = x;
-			entry.element._threeLabel.position.z = z;
-			entry.element._threeLabel.position.y = getTerrainHeight(x, -z) + DRUNK_FIGURE_HEIGHT + 0.3;
-		}
-	});
-}
-
-// Calcula, para cada "Tiburón" ya colocado (ver drawElements), el centro y
-// "frente" real de su paseo: la barra MÁS CERCANA a donde se colocó (si hay
-// alguna en el recinto). El "frente" se asume perpendicular al eje largo de
-// la barra -mismo criterio que su rotación en el plano 2D-, ya que no hay
-// forma de saber en los datos qué lado es el de los clientes; si el paseo
-// se ve "por detrás" de la barra en algún caso concreto, basta con rotar esa
-// barra 90°/180° en el editor. Sin ninguna barra en el recinto, se queda
-// dando vueltas en círculo completo alrededor de donde se colocó (igual que
-// un "borracho", ver updateWanderingDrunks).
-function setupMoneyWalkers(elementsList) {
-	if (!moneyWalkers.length) return;
-	const bars = elementsList.filter(el => el.type === 'bar' && el._threeObj);
-	moneyWalkers.forEach(entry => {
-		if (!bars.length) { entry.hasBar = false; return; }
-
-		let nearestBar = null, nearestDist = Infinity;
-		bars.forEach(bar => {
-			const d = Math.hypot(bar._threeObj.position.x - entry.startX, bar._threeObj.position.z - entry.startZ);
-			if (d < nearestDist) { nearestDist = d; nearestBar = bar; }
-		});
-
-		entry.hasBar = true;
-		entry.centerX = nearestBar._threeObj.position.x;
-		entry.centerZ = nearestBar._threeObj.position.z;
-		// El "frente" se toma de dónde se colocó Tiburón respecto a la barra
-		// -mucho más fiable que adivinarlo a partir de la rotación de la
-		// barra, que no distingue el lado del público del de detrás de la
-		// barra-: si se colocó pegado al centro (caso degenerado), se cae de
-		// vuelta a la perpendicular de la rotación.
-		const dx = entry.startX - entry.centerX, dz = entry.startZ - entry.centerZ;
-		entry.frontAngle = (dx * dx + dz * dz > 0.01)
-			? Math.atan2(dz, dx)
-			: -((nearestBar.rotation || 0) * Math.PI / 180) + Math.PI / 2;
-		entry.radius = Math.max(nearestBar.length || 2, nearestBar.width || 2) / 2 + TIBURON_WALK_RADIUS;
-	});
-}
-
-// Anima a "Tiburón" rondando la barra (ver setupMoneyWalkers): en vez de dar
-// la vuelta entera, oscila de un lado a otro dentro de un arco de 260°
-// centrado en el "frente" -así nunca pasa por detrás de la barra-, con el
-// mismo paso/balanceo que "updateWanderingDrunks" y los brazos abriéndose y
-// cerrándose para simular que lanza billetes al aire.
-function updateMoneyWalkers() {
-	if (!moneyWalkers.length) return;
-	const t = performance.now() / 1000;
-	moneyWalkers.forEach(entry => {
-		if (dragState && dragState.element === entry.element) return;
-
-		let angle, heading;
-		if (entry.hasBar) {
-			angle = entry.frontAngle + Math.sin(t * 0.12 + entry.phase) * TIBURON_ARC_RANGE;
-			heading = angle + Math.PI / 2 * Math.sign(Math.cos(t * 0.12 + entry.phase) || 1);
-		} else {
-			angle = t * 0.12 + entry.phase;
-			heading = angle + Math.PI / 2;
-		}
-		const cx = entry.hasBar ? entry.centerX : entry.startX;
-		const cz = entry.hasBar ? entry.centerZ : entry.startZ;
-		const radius = entry.hasBar ? entry.radius : TIBURON_WALK_RADIUS;
-		const x = cx + Math.cos(angle) * radius;
-		const z = cz + Math.sin(angle) * radius;
-
-		entry.group.position.x = x;
-		entry.group.position.z = z;
-		entry.group.position.y = getTerrainHeight(x, -z);
-		entry.group.rotation.y = heading;
-
-		const stride = Math.sin(t * 3 + entry.phase);
-		const ud = entry.group.userData;
-		if (ud.legL) ud.legL.rotation.x = stride * 0.35;
-		if (ud.legR) ud.legR.rotation.x = -stride * 0.35;
-		// Brazos en alto abriéndose y cerrándose tipo "hace llover billetes",
-		// en vez del balanceo de caminar normal.
-		const spray = Math.abs(Math.sin(t * 3 + entry.phase));
-		if (ud.armL) ud.armL.rotation.z = TIBURON_ARM_RAISE_ANGLE + spray * 0.3;
-		if (ud.armR) ud.armR.rotation.z = -TIBURON_ARM_RAISE_ANGLE - spray * 0.3;
-		if (ud.billsL) ud.billsL.rotation.x = spray * 0.5;
-		if (ud.billsR) ud.billsR.rotation.x = -spray * 0.5;
-
-		// Billetes cayendo (ver createTiburonFigure): uno nuevo desde una mano
-		// al azar cada cierto intervalo, reciclando la piscina en rueda -hay
-		// que actualizar las matrices YA (los rotation.z de arriba son de este
-		// mismo frame) para leer la posición real de la mano, no la del frame
-		// anterior.
-		entry.group.updateMatrixWorld(true);
-		const spawnSlot = Math.floor((t + entry.phase * 3) / TIBURON_BILL_SPAWN_INTERVAL);
-		if (spawnSlot !== ud.lastBillSlot) {
-			ud.lastBillSlot = spawnSlot;
-			const handGroup = (spawnSlot % 2 === 0) ? ud.billsL : ud.billsR;
-			const handPos = new THREE.Vector3();
-			handGroup.getWorldPosition(handPos);
-			const slot = ud.fallingBills[ud.nextBillIdx];
-			ud.nextBillIdx = (ud.nextBillIdx + 1) % ud.fallingBills.length;
-			slot.active = true;
-			slot.spawnTime = t;
-			slot.spawnX = handPos.x; slot.spawnY = handPos.y; slot.spawnZ = handPos.z;
-			slot.vx = (Math.random() - 0.5) * 0.7;
-			slot.vz = (Math.random() - 0.5) * 0.7;
-			slot.spinX = (Math.random() - 0.5) * 5;
-			slot.spinZ = (Math.random() - 0.5) * 5;
-			slot.baseRotX = Math.random() * Math.PI;
-			slot.baseRotZ = Math.random() * Math.PI;
-			slot.mesh.visible = true;
-		}
-
-		ud.fallingBills.forEach(slot => {
-			if (!slot.active) return;
-			const elapsed = t - slot.spawnTime;
-			const bx = slot.spawnX + slot.vx * elapsed;
-			const bz = slot.spawnZ + slot.vz * elapsed;
-			const by = slot.spawnY - 0.5 * TIBURON_BILL_FALL_GRAVITY * elapsed * elapsed;
-			const ground = getTerrainHeight(bx, -bz);
-			if (by <= ground || elapsed > TIBURON_BILL_LIFETIME) {
-				slot.active = false;
-				slot.mesh.visible = false;
-				return;
-			}
-			slot.mesh.position.set(bx, by, bz);
-			slot.mesh.rotation.set(slot.baseRotX + slot.spinX * elapsed, elapsed * 2, slot.baseRotZ + slot.spinZ * elapsed);
-		});
-
-		if (entry.element._threeLabel) {
-			entry.element._threeLabel.position.x = x;
-			entry.element._threeLabel.position.z = z;
-			entry.element._threeLabel.position.y = getTerrainHeight(x, -z) + TIBURON_FIGURE_HEIGHT + 0.3;
-		}
-	});
 }
 
 // Anima a cada portero con recorrido dibujado (ver drawElements) patrullando
@@ -1359,10 +1130,7 @@ function buildTourKeyframes() {
 				target,
 				pos,
 				hold: 1600,
-				// Las figuras que deambulan (ver updateWanderingDrunks) se mueven
-				// solas: durante el hold (y ya desde la transición) seguimos su
-				// posición real en vez de la congelada al construir el fotograma.
-				followElement: el.type === 'drunk' ? el : null
+				followElement: null
 			});
 			elIdx++;
 		});
@@ -1628,17 +1396,6 @@ function setupElementDragging(canvas) {
 		element.labelMarker.setLatLng([labelPos.lat + dLat, labelPos.lng + dLng]);
 		updateElementShape(element, true);
 		saveHistory();
-
-		// Si es un "borracho" que deambula solo, que retome el paseo
-		// centrado en el punto donde se soltó, no en el de antes de arrastrarlo.
-		const wanderEntry = wanderingDrunks.find(w => w.element === element);
-		if (wanderEntry) { wanderEntry.centerX = lastX; wanderEntry.centerZ = lastZ; }
-
-		// Igual para "Tiburón" sin ninguna barra en el recinto (ver
-		// setupMoneyWalkers): si hay barra, el paseo sigue centrado en ELLA
-		// sin importar dónde se suelte, así que no hace falta tocar nada.
-		const moneyEntry = moneyWalkers.find(w => w.element === element);
-		if (moneyEntry && !moneyEntry.hasBar) { moneyEntry.startX = lastX; moneyEntry.startZ = lastZ; }
 	}
 	canvas.addEventListener('pointerup', endDrag);
 	canvas.addEventListener('pointercancel', endDrag);
@@ -1649,8 +1406,6 @@ function drawElements(elements, threeScene) {
 	const ground = threeScene.children.find(obj => obj.type === 'Mesh' && obj.userData && obj.userData.minLat !== undefined);
 	if (!ground) return;
 	const bbox = ground.userData;
-	wanderingDrunks = [];
-	moneyWalkers = [];
 	securityPatrols = [];
 	const skipped = [];
 
@@ -1719,17 +1474,6 @@ function drawElements(elements, threeScene) {
             }
         } else if (element.type === 'entrance') {
             obj3d = createEntranceArch(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
-        } else if (element.type === 'drunk') {
-            obj3d = createDrunkFigure(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
-            wanderingDrunks.push({ element, group: obj3d, centerX: pos.x, centerZ: pos.z, phase: Math.random() * Math.PI * 2 });
-        } else if (element.type === 'tiburon') {
-            // El centro real del paseo (la barra más cercana) se resuelve
-            // aparte, después de dibujar TODOS los elementos -ver
-            // setupMoneyWalkers-, igual que antes hacía "gabry" para saber
-            // dónde aparcar: puede que la barra aún no exista si el bucle no
-            // ha llegado a ella todavía.
-            obj3d = createTiburonFigure(new THREE.Vector3(pos.x, groundY, pos.z), element.rotation, threeScene);
-            moneyWalkers.push({ element, group: obj3d, startX: pos.x, startZ: pos.z, phase: Math.random() * Math.PI * 2 });
         } else if (element.type === 'fence') {
             obj3d = createConstructionFenceSegment(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'panic-fence') {
@@ -1755,10 +1499,6 @@ function drawElements(elements, threeScene) {
             // Pegada justo encima de la cabeza del muñeco, y bastante más
             // pequeña que la de un elemento grande (escenario, zonas...).
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
-        } else if (element.type === 'drunk') {
-            label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + DRUNK_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
-        } else if (element.type === 'tiburon') {
-            label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + TIBURON_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
         } else if (element.type !== 'fence' && element.type !== 'panic-fence') {
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + 8, pos.z), threeScene);
         }
@@ -1919,9 +1659,7 @@ function createFoodTruckModel(pos, element, scene) {
 }
 
 // Persona con ropa de calle (no el uniforme de seguridad), con piernas y
-// brazo por separado para poder animar el paso al caminar, igual que se
-// hace con el "borracho" que deambula (ver updateWanderingDrunks) y con
-// las patrullas de seguridad con recorrido (ver updateSecurityPatrols).
+// brazo por separado para poder animar el paso al caminar.
 function createCasualPersonFigure(pos, rotation, scene) {
 	const group = new THREE.Group();
 	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
@@ -2049,247 +1787,6 @@ function createSecurityFigure(pos, rotation, scene) {
 	});
 
 	group.scale.set(SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE, SECURITY_FIGURE_SCALE);
-	group.position.copy(pos);
-	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
-	scene.add(group);
-	return group;
-}
-
-// "El borracho del pueblo": personaje genérico (no un personaje con
-// copyright) tambaleándose con una jarra en la mano. Deambula solo en un
-// pequeño círculo alrededor de donde se coloca (ver updateWanderingDrunks);
-// las piernas/brazo se animan igual, con oscilaciones en el mismo bucle.
-function createDrunkFigure(pos, element, scene) {
-	const group = new THREE.Group();
-	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
-	const shirtMat = new THREE.MeshStandardMaterial({ color: 0xf5f5f5 });
-	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x4a4a4a });
-	const mugMat = new THREE.MeshStandardMaterial({ color: 0xd9a441 });
-	const foamMat = new THREE.MeshStandardMaterial({ color: 0xfff8e0 });
-
-	// Cabeza grande, cabezón desproporcionado estilo cartoon; la cara real
-	// va pegada delante como textura (ver más abajo). Más arriba que el
-	// centro geométrico del torso (que llega hasta y=1.395) para que no se
-	// coma la barbilla/boca de la cara real: con la cabeza a 1.55 el torso
-	// tapaba la parte de abajo del parche de la cara y solo se veía hasta
-	// la nariz.
-	const head = new THREE.Mesh(new THREE.SphereGeometry(0.27, 14, 14), skinMat);
-	head.position.set(0, 1.72, 0);
-	group.add(head);
-
-	// Cara real del "borracho" tallada en la propia cabeza: en vez de una
-	// cartulina plana (se metía dentro de la esfera y dejaba un agujero
-	// donde la piel asomaba por encima), es un parche curvo concéntrico a
-	// la cabeza -radio ligeramente mayor, sin z-fighting- con un mapa de
-	// desplazamiento generado a partir del brillo de la foto para que la
-	// nariz sobresalga un poco (relieve 3D real, no solo la textura
-	// pintada). El desplazamiento SOLO empuja hacia afuera (bias 0, nunca
-	// negativo): si las zonas oscuras (ojos) se hundieran por debajo del
-	// radio de la cabeza, volvía a asomar la esfera pelada por debajo,
-	// el mismo "agujero" que con la cartulina plana.
-	const faceTextureLoader = new THREE.TextureLoader();
-	const faceColorMap = faceTextureLoader.load('assets/faces/borracho.jpg');
-	const faceDepthMap = faceTextureLoader.load('assets/faces/borracho_depth.jpg');
-	// Un arco demasiado ancho (antes 0.8*PI) hace que el borde de la foto
-	// -donde está la barbilla/boca, ya que el recorte llega hasta ahí- caiga
-	// cerca del "horizonte" visible de la esfera: en un plano de frente esa
-	// zona queda tan escorzada por la curvatura que se ve casi ilegible,
-	// como si la cara estuviera cortada aunque la textura sí llegue hasta
-	// ahí. Con un arco más estrecho el contenido queda más cerca del centro
-	// (de frente a la cámara) y se lee entero.
-	const facePatchAngle = Math.PI * 0.58;
-	const faceGeom = new THREE.SphereGeometry(
-		0.27 + 0.006, 48, 48,
-		Math.PI / 2 - facePatchAngle / 2, facePatchAngle,
-		Math.PI / 2 - facePatchAngle / 2, facePatchAngle
-	);
-	const face = new THREE.Mesh(
-		faceGeom,
-		new THREE.MeshStandardMaterial({
-			map: faceColorMap,
-			displacementMap: faceDepthMap,
-			displacementScale: 0.02,
-			displacementBias: 0
-		})
-	);
-	face.position.set(0, 1.72, 0);
-	group.add(face);
-
-	// Torso panzón con camiseta de tirantes (los brazos, aparte, quedan al
-	// aire) y una barriga prominente asomando por debajo.
-	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.26, 0.55, 10), shirtMat);
-	torso.position.set(0, 1.12, 0);
-	group.add(torso);
-
-	const belly = new THREE.Mesh(new THREE.SphereGeometry(0.24, 12, 10), shirtMat);
-	belly.scale.set(1, 0.85, 0.95);
-	belly.position.set(0, 0.92, 0.06);
-	group.add(belly);
-
-	const hips = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.14, 0.2, 8), pantsMat);
-	hips.position.set(0, 0.75, 0);
-	group.add(hips);
-
-	// Piernas: geometría trasladada para que el pivote quede en la cadera,
-	// así rotation.x las balancea como al caminar en vez de girar por el centro.
-	const legHeight = 0.55;
-	const legGeom = new THREE.CylinderGeometry(0.08, 0.09, legHeight, 8);
-	legGeom.translate(0, -legHeight / 2, 0);
-	const hipY = 0.65;
-
-	const legL = new THREE.Mesh(legGeom, pantsMat);
-	legL.position.set(0.1, hipY, 0);
-	group.add(legL);
-
-	const legR = new THREE.Mesh(legGeom.clone(), pantsMat);
-	legR.position.set(-0.1, hipY, 0);
-	group.add(legR);
-
-	// Brazo que cuelga y se balancea al caminar
-	const armHeight = 0.48;
-	const armGeom = new THREE.CylinderGeometry(0.06, 0.07, armHeight, 8);
-	armGeom.translate(0, -armHeight / 2, 0);
-	const shoulderY = 1.35;
-
-	const armDown = new THREE.Mesh(armGeom, skinMat);
-	armDown.position.set(-0.24, shoulderY, 0);
-	group.add(armDown);
-
-	// Brazo levantado con la jarra pegada a la mano: van en un grupo juntos
-	// para que al rotar el brazo la jarra se mueva con él, ya en su sitio.
-	const armUpGroup = new THREE.Group();
-	armUpGroup.position.set(0.24, shoulderY, 0);
-	armUpGroup.rotation.z = -2.0;
-
-	const armUp = new THREE.Mesh(armGeom.clone(), skinMat);
-	armUpGroup.add(armUp);
-
-	const mug = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.045, 0.13, 10), mugMat);
-	mug.position.set(0, -armHeight - 0.05, 0);
-	armUpGroup.add(mug);
-
-	const foam = new THREE.Mesh(new THREE.SphereGeometry(0.05, 8, 8), foamMat);
-	foam.position.set(0, -armHeight + 0.03, 0);
-	armUpGroup.add(foam);
-
-	group.add(armUpGroup);
-
-	// Referencias para animar piernas/brazo cada frame (updateWanderingDrunks)
-	group.userData.legL = legL;
-	group.userData.legR = legR;
-	group.userData.armDown = armDown;
-
-	group.scale.set(DRUNK_FIGURE_SCALE, DRUNK_FIGURE_SCALE, DRUNK_FIGURE_SCALE);
-	group.position.copy(pos);
-	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
-	scene.add(group);
-	return group;
-}
-
-// "Tiburón": traje verde y gafas de sol, brazos siempre en alto con un
-// abanico de billetes en cada mano (ver updateMoneyWalkers, que los anima
-// "haciendo llover" dinero mientras ronda la barra). Mismo esqueleto que
-// createCasualPersonFigure -piernas/brazos por separado para poder animar
-// el paso-, con la pose de brazos ya abierta de base en vez de colgando.
-function createTiburonFigure(pos, rotation, scene) {
-	const group = new THREE.Group();
-	const skinMat = new THREE.MeshStandardMaterial({ color: 0xe0a878 });
-	const suitMat = new THREE.MeshStandardMaterial({ color: 0x1f8a4c });
-	const pantsMat = new THREE.MeshStandardMaterial({ color: 0x14432a });
-	const glassesMat = new THREE.MeshStandardMaterial({ color: 0x101010 });
-	// Billete real (textura "$" compartida, ver getTiburonBillTexture): a
-	// dos caras, para que no desaparezca al girar mientras cae.
-	const billGeom = new THREE.PlaneGeometry(0.26, 0.13);
-	const billMat = new THREE.MeshStandardMaterial({ map: getTiburonBillTexture(), side: THREE.DoubleSide });
-
-	const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), skinMat);
-	head.position.set(0, 1.55, 0);
-	group.add(head);
-
-	const glasses = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.08, 0.06), glassesMat);
-	glasses.position.set(0, 1.57, 0.19);
-	group.add(glasses);
-
-	const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.17, 0.19, 0.7, 8), suitMat);
-	torso.position.set(0, 1.15, 0);
-	group.add(torso);
-
-	const legHeight = 0.78;
-	const legGeom = new THREE.CylinderGeometry(0.08, 0.09, legHeight, 8);
-	legGeom.translate(0, -legHeight / 2, 0);
-	const hipY = 0.78;
-	const legL = new THREE.Mesh(legGeom, pantsMat);
-	legL.position.set(0.1, hipY, 0);
-	group.add(legL);
-	const legR = new THREE.Mesh(legGeom.clone(), pantsMat);
-	legR.position.set(-0.1, hipY, 0);
-	group.add(legR);
-
-	// Fajo de billetes en abanico: un puñado de placas finas superpuestas en
-	// ángulos ligeramente distintos, en vez de un único bloque liso.
-	function buildBillFan() {
-		const fan = new THREE.Group();
-		for (let i = 0; i < 4; i++) {
-			const bill = new THREE.Mesh(billGeom, billMat);
-			bill.position.set(0.05 * i, -0.03 * i, 0.015 * i);
-			bill.rotation.z = (i - 1.5) * 0.22;
-			fan.add(bill);
-		}
-		return fan;
-	}
-
-	const armHeight = 0.55;
-	const armGeom = new THREE.CylinderGeometry(0.065, 0.075, armHeight, 8);
-	armGeom.translate(0, -armHeight / 2, 0);
-	const shoulderY = 1.4;
-
-	// Brazos en alto de base (rotation.z), con el abanico de billetes
-	// colgando de la muñeca -mismo truco que la jarra del "borracho": el
-	// brazo y su abanico van en el mismo grupo, así al rotar el grupo
-	// (updateMoneyWalkers) se mueven juntos como una sola pieza.
-	const armLGroup = new THREE.Group();
-	armLGroup.position.set(0.24, shoulderY, 0);
-	armLGroup.rotation.z = TIBURON_ARM_RAISE_ANGLE;
-	const armL = new THREE.Mesh(armGeom, skinMat);
-	armLGroup.add(armL);
-	const billsL = buildBillFan();
-	billsL.position.set(0, -armHeight, 0);
-	armLGroup.add(billsL);
-	group.add(armLGroup);
-
-	const armRGroup = new THREE.Group();
-	armRGroup.position.set(-0.24, shoulderY, 0);
-	armRGroup.rotation.z = -TIBURON_ARM_RAISE_ANGLE;
-	const armR = new THREE.Mesh(armGeom.clone(), skinMat);
-	armRGroup.add(armR);
-	const billsR = buildBillFan();
-	billsR.position.set(0, -armHeight, 0);
-	armRGroup.add(billsR);
-	group.add(armRGroup);
-
-	group.userData.legL = legL;
-	group.userData.legR = legR;
-	group.userData.armL = armLGroup;
-	group.userData.armR = armRGroup;
-	group.userData.billsL = billsL;
-	group.userData.billsR = billsR;
-
-	// Billetes que caen "haciendo llover dinero" (ver updateMoneyWalkers):
-	// piscina fija de mallas en el propio "scene" -en espacio de mundo, no
-	// colgando del personaje, para que caigan rectos sin heredar su rotación
-	// al caminar-, recicladas en rueda en vez de crear/destruir cada vez.
-	const fallingBills = [];
-	for (let i = 0; i < TIBURON_BILL_POOL_SIZE; i++) {
-		const bill = new THREE.Mesh(billGeom, billMat);
-		bill.visible = false;
-		scene.add(bill);
-		fallingBills.push({ mesh: bill, active: false, spawnTime: 0, spawnX: 0, spawnY: 0, spawnZ: 0, vx: 0, vz: 0, spinX: 0, spinZ: 0, baseRotX: 0, baseRotZ: 0 });
-	}
-	group.userData.fallingBills = fallingBills;
-	group.userData.nextBillIdx = 0;
-	group.userData.lastBillSlot = -1;
-
-	group.scale.set(TIBURON_FIGURE_SCALE, TIBURON_FIGURE_SCALE, TIBURON_FIGURE_SCALE);
 	group.position.copy(pos);
 	group.rotation.y = -((rotation || 0) * Math.PI) / 180;
 	scene.add(group);

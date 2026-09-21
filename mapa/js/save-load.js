@@ -178,24 +178,22 @@ function loadProjectData(data) {
     }
 
     const group = new L.FeatureGroup();
-    // El nombre por defecto del "borracho" cambió más de una vez
-    // (BORRACHO -> Bread&Water -> BREAD & WATHER): un proyecto guardado
-    // con cualquiera de los nombres viejos se corrige solo al cargar, en
-    // vez de dejar que dependa de editarlo a mano elemento por elemento.
-    const OLD_DRUNK_NAMES = new Set(['BORRACHO', 'Bread&Water']);
     // Igual que con el "borracho": el cartel de la señal de WC se llamaba
     // "SEÑAL WC" y pasó a llamarse solo "WC" -un proyecto guardado con el
     // nombre viejo se corrige solo al cargar.
     const OLD_SIGNAL_WC_NAMES = new Set(['SEÑAL WC']);
-    // Igual que con el "borracho" y el WC: "Seguridad" pasó a llamarse
-    // "Control de acceso" -un proyecto guardado con el nombre viejo se
-    // corrige solo al cargar.
-    const OLD_SECURITY_NAMES = new Set(['SEGURIDAD', 'Seguridad']);
+    // Igual que con el WC: "Seguridad" pasó a llamarse "Vigilante" -un
+    // proyecto guardado con el nombre viejo se corrige solo al cargar.
+    const OLD_SECURITY_NAMES = new Set(['SEGURIDAD', 'Seguridad', 'CONTROL DE ACCESO', 'Control de acceso']);
+    // "Bread & Wather" (borracho) y "Tiburón" se eliminaron del mapa: un
+    // proyecto guardado con alguno de los dos simplemente los descarta al
+    // cargar, en vez de romper la carga entera contra un tipo que ya no
+    // existe en festivalConfig.
+    const REMOVED_TYPES = new Set(['drunk', 'tiburon']);
     elementsData.forEach(el => {
+        if (REMOVED_TYPES.has(el.type)) return;
         let element;
-        const elName = (el.type === 'drunk' && OLD_DRUNK_NAMES.has(el.name))
-            ? festivalConfig['drunk'].label
-            : (el.type === 'signal-wc' && OLD_SIGNAL_WC_NAMES.has(el.name))
+        const elName = (el.type === 'signal-wc' && OLD_SIGNAL_WC_NAMES.has(el.name))
             ? festivalConfig['signal-wc'].label
             : (el.type === 'security' && OLD_SECURITY_NAMES.has(el.name))
             ? festivalConfig['security'].label

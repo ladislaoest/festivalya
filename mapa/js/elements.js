@@ -6,7 +6,7 @@ const festivalConfig = {
     'food-truck': { label: 'FOOD TRUCK', color: '#e67e22', icon: 'food', defaultLen: 4, defaultWid: 2 },
     'generator': { label: 'GENERADOR', color: '#9b59b6', icon: 'custom', defaultLen: 4, defaultWid: 2 },
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
-    'security': { label: 'SEGURIDAD', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
+    'security': { label: 'CONTROL DE ACCESO', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
     'drunk': { label: 'BREAD & WATHER', color: '#d9a441', icon: 'drunk', defaultLen: 1, defaultWid: 1 },
     'tiburon': { label: 'TIBURÓN', color: '#1f8a4c', icon: 'tiburon', defaultLen: 1, defaultWid: 1 },
     'fence': { label: 'VALLA DE OBRA', color: '#f39c12', icon: 'fence' },
@@ -2347,9 +2347,19 @@ function getPinIconSVG(iconKey, color, rotationDeg) {
             <path d="M32 3 58 32H44v29H20V32H6Z" fill="${bg}" stroke="${D}" stroke-width="2.8" stroke-linejoin="round"/>
         </svg>`,
         'panic-fence': `<svg viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h16M4 15h16"/><path d="M6 6v12M18 6v12"/></svg>`,
+        // Vigilante: figura de guardia con gorra de visera e insignia en el
+        // pecho, en vez del antiguo escudo genérico, para que se lea de un
+        // vistazo como una persona de control de acceso.
         'security': `<svg viewBox="0 0 64 64">${shadow}
-            <path d="M32 8 52 16v16c0 14-9 22-20 26C21 54 12 46 12 32V16Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
-            <path d="M23 32l6 6 12-14" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="32" cy="17" r="8" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>
+            <path d="M22 15a10 10 0 0 1 20 0v1H22Z" fill="${bg}" stroke="${D}" stroke-width="2.2" stroke-linejoin="round"/>
+            <path d="M20 16h24" stroke="${D}" stroke-width="2.2" stroke-linecap="round"/>
+            <path d="M18 50V30a14 14 0 0 1 28 0v20Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <path d="M32 27v23" stroke="${D}" stroke-width="1.6"/>
+            <path d="M27 34l5 5 6-8" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="32" cy="39" r="7" fill="none" stroke="#ffd75e" stroke-width="2"/>
+            <path d="M18 34 8 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+            <path d="M46 34 56 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
         </svg>`,
         // El arco/porche (con sus "patas" abajo) se queda SIEMPRE derecho
         // -si giraba entero con el elemento, con cualquier rotación dejaba

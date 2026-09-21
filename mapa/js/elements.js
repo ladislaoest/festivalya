@@ -10,7 +10,7 @@ const festivalConfig = {
     // Puesto fijo de control de acceso (caseta + barrera), distinto del
     // "vigilante" que patrulla a pie: sin recorrido, se queda siempre en el
     // punto donde se coloca.
-    'access-control': { label: 'CONTROL DE ACCESO', color: '#3498db', icon: 'access-control', defaultLen: 3, defaultWid: 2 },
+    'access-control': { label: 'CONTROLADOR DE ACCESO', color: '#3498db', icon: 'access-control', defaultLen: 1, defaultWid: 1 },
     'fence': { label: 'VALLA DE OBRA', color: '#f39c12', icon: 'fence' },
     'panic-fence': { label: 'VALLA ANTIPÁNICO', color: '#95a5a6', icon: 'panic-fence' },
     'signal-parking': { label: 'PARKING', color: '#3498db', icon: 'parking', defaultLen: 4, defaultWid: 4 },
@@ -1061,7 +1061,7 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
 
     if (!onlyLabel) {
         if (element.isRectangle) {
-            const hasBadgeIcon = isIllustratedMode || element.type === 'security';
+            const hasBadgeIcon = isIllustratedMode || element.type === 'security' || element.type === 'access-control';
             element.rectangle.setStyle({
                 fillOpacity: hasBadgeIcon ? 0 : 0.6,
                 weight: hasBadgeIcon ? (isFestivalMode ? 0 : 1) : 2,
@@ -1098,14 +1098,14 @@ function updateElementShape(element, updateLabel = false, onlyLabel = false) {
         const distText = element.isLine ? `${element.length.toFixed(1)}m` : `${element.length}x${element.width}m`;
         const sectionsText = element.isLine ? `<br>${element.numVallas} vallas` : '';
 		
-        const hasBadgeIcon = isIllustratedMode || element.type === 'security';
+        const hasBadgeIcon = isIllustratedMode || element.type === 'security' || element.type === 'access-control';
         // El Mapa Ilustrado es un plano "de cara al público" -escenarios,
         // barras, zonas...-, no un plano técnico de producción: el vigilante
         // y el generador no pintan nada ahí (si hace falta verlos, para eso
         // está la vista normal/3D). Las vallas sí se muestran (fila de
         // icono, ver más abajo), pero se pueden ocultar con el botón
         // "OCULTAR VALLAS" (showFencesIllustrated) para no saturar el plano.
-        const alwaysHiddenInIllustrated = ['security', 'generator'];
+        const alwaysHiddenInIllustrated = ['security', 'access-control', 'generator'];
         const isFenceHiddenByToggle = isFenceType(element.type) && !showFencesIllustrated;
         if (isIllustratedMode && (element.illustratedHidden || isFenceHiddenByToggle || alwaysHiddenInIllustrated.includes(element.type))) {
             element.labelMarker.setIcon(L.divIcon({ className: 'illustrated-label', html: '', iconSize: [0, 0] }));
@@ -1342,7 +1342,7 @@ function updateStats() {
         if (elements.length > 0) {
             legend.style.display = 'block';
             legendItems.innerHTML = '';
-            const legendHiddenTypes = ['security', 'generator', 'fence', 'panic-fence'];
+            const legendHiddenTypes = ['security', 'access-control', 'generator', 'fence', 'panic-fence'];
             Array.from(typesPresent).sort().forEach(type => {
                 if (isIllustratedMode && legendHiddenTypes.includes(type)) return;
                 const config = festivalConfig[type];
@@ -2362,18 +2362,18 @@ function getPinIconSVG(iconKey, color, rotationDeg) {
             <path d="M18 34 8 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
             <path d="M46 34 56 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
         </svg>`,
-        // Control de acceso: caseta con barrera levadiza, un puesto fijo
-        // (no una persona), para distinguirlo del vigilante que patrulla.
+        // Controlador de acceso: misma silueta de persona que el vigilante,
+        // pero con una tarjeta identificativa en el pecho en vez de gorra de
+        // guardia -así se ve parecido (los dos son personas) pero se
+        // distingue de un vistazo cuál revisa acreditaciones en un punto fijo.
         'access-control': `<svg viewBox="0 0 64 64">${shadow}
-            <rect x="8" y="30" width="16" height="22" rx="2" fill="${bg}" stroke="${D}" stroke-width="2.2" stroke-linejoin="round"/>
-            <rect x="10" y="18" width="12" height="12" rx="1" fill="#bfe3ff" stroke="${D}" stroke-width="1.8"/>
-            <rect x="19" y="36" width="7" height="9" fill="${D}"/>
-            <g transform="rotate(-28 26 42)">
-                <rect x="26" y="39" width="34" height="6" rx="2" fill="#fff" stroke="${D}" stroke-width="1.8"/>
-                <rect x="30" y="39" width="6" height="6" fill="#e74c3c"/>
-                <rect x="42" y="39" width="6" height="6" fill="#e74c3c"/>
-                <rect x="54" y="39" width="6" height="6" fill="#e74c3c"/>
-            </g>
+            <circle cx="32" cy="17" r="8" fill="#f4c790" stroke="${D}" stroke-width="2.2"/>
+            <path d="M18 50V30a14 14 0 0 1 28 0v20Z" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <rect x="25" y="31" width="14" height="17" rx="1.5" fill="#fff" stroke="${D}" stroke-width="1.8"/>
+            <circle cx="32" cy="37" r="3.2" fill="${bg}" stroke="${D}" stroke-width="1.2"/>
+            <path d="M28 44h8M27 47h10" stroke="${D}" stroke-width="1.6" stroke-linecap="round"/>
+            <path d="M18 34 8 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
+            <path d="M46 34 56 43" stroke="${D}" stroke-width="4" stroke-linecap="round"/>
         </svg>`,
         // El arco/porche (con sus "patas" abajo) se queda SIEMPRE derecho
         // -si giraba entero con el elemento, con cualquier rotación dejaba

@@ -185,6 +185,10 @@ function loadProjectData(data) {
     // Igual que con el WC: "Seguridad" pasó a llamarse "Vigilante" -un
     // proyecto guardado con el nombre viejo se corrige solo al cargar.
     const OLD_SECURITY_NAMES = new Set(['SEGURIDAD', 'Seguridad', 'CONTROL DE ACCESO', 'Control de acceso']);
+    // "Control de acceso" (el puesto fijo) pasó a llamarse "Controlador de
+    // acceso" -un proyecto guardado con el nombre viejo se corrige solo al
+    // cargar, igual que con el vigilante.
+    const OLD_ACCESS_CONTROL_NAMES = new Set(['CONTROL DE ACCESO', 'Control de acceso']);
     // "Bread & Wather" (borracho) y "Tiburón" se eliminaron del mapa: un
     // proyecto guardado con alguno de los dos simplemente los descarta al
     // cargar, en vez de romper la carga entera contra un tipo que ya no
@@ -197,6 +201,8 @@ function loadProjectData(data) {
             ? festivalConfig['signal-wc'].label
             : (el.type === 'security' && OLD_SECURITY_NAMES.has(el.name))
             ? festivalConfig['security'].label
+            : (el.type === 'access-control' && OLD_ACCESS_CONTROL_NAMES.has(el.name))
+            ? festivalConfig['access-control'].label
             : el.name;
         if (el.isPolygon && Array.isArray(el.polygonPoints) && el.polygonPoints.length >= 3) {
             element = addPolygonBuildingToMap(elName, el.polygonPoints);

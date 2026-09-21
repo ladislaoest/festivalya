@@ -1472,6 +1472,10 @@ function drawElements(elements, threeScene) {
             } else {
                 obj3d = createSecurityFigure(new THREE.Vector3(pos.x, groundY, pos.z), element.rotation, threeScene);
             }
+        } else if (element.type === 'access-control') {
+            // Mismo "pelele" fijo que el vigilante sin recorrido, pero en
+            // azul -no patrulla, se queda siempre en el punto donde se coloca.
+            obj3d = createSecurityFigure(new THREE.Vector3(pos.x, groundY, pos.z), element.rotation, threeScene, 0x3498db);
         } else if (element.type === 'entrance') {
             obj3d = createEntranceArch(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'fence') {
@@ -1495,7 +1499,7 @@ function drawElements(elements, threeScene) {
         // Etiqueta flotante 3D para todos, salvo las vallas: con muchos
         // tramos juntos, un "Valla" flotando sobre cada uno satura la vista.
         let label;
-        if (element.type === 'security') {
+        if (element.type === 'security' || element.type === 'access-control') {
             // Pegada justo encima de la cabeza del muñeco, y bastante más
             // pequeña que la de un elemento grande (escenario, zonas...).
             label = create3DLabel(element.name, new THREE.Vector3(pos.x, groundY + SECURITY_FIGURE_HEIGHT + 0.3, pos.z), threeScene, [3, 1.5]);
@@ -1760,9 +1764,9 @@ function createSecurityWalkerFigure(pos, rotation, scene) {
 
 // Muñeco rojo tipo "pelele" (Santos Inocentes) para el personal de
 // seguridad, en vez de la caja genérica que salía antes.
-function createSecurityFigure(pos, rotation, scene) {
+function createSecurityFigure(pos, rotation, scene, color = 0xe74c3c) {
 	const group = new THREE.Group();
-	const mat = new THREE.MeshStandardMaterial({ color: 0xe74c3c });
+	const mat = new THREE.MeshStandardMaterial({ color });
 
 	const head = new THREE.Mesh(new THREE.SphereGeometry(0.22, 12, 12), mat);
 	head.position.set(0, 1.55, 0);

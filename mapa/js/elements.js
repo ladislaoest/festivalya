@@ -5,6 +5,10 @@ const festivalConfig = {
     'bar': { label: 'BARRA', color: '#f1c40f', icon: 'bar', defaultLen: 6, defaultWid: 2 },
     'food-truck': { label: 'FOOD TRUCK', color: '#e67e22', icon: 'food', defaultLen: 4, defaultWid: 2 },
     'generator': { label: 'GENERADOR', color: '#9b59b6', icon: 'custom', defaultLen: 4, defaultWid: 2 },
+    // Caseta de obra (módulo prefabricado) usada como camerino: medida
+    // estándar de este tipo de caseta, 6x2,4m y 2m de alto (el alto es fijo,
+    // ver createDressingRoomModel en view3d.js).
+    'dressing-room': { label: 'CAMERINO', color: '#e3d5b8', icon: 'dressing-room', defaultLen: 6, defaultWid: 2.4 },
     'wc': { label: 'ASEOS', color: '#3498db', icon: 'wc', defaultLen: 1, defaultWid: 1 },
     'security': { label: 'VIGILANTE', color: '#e74c3c', icon: 'security', defaultLen: 1, defaultWid: 1 },
     // Puesto fijo de control de acceso (caseta + barrera), distinto del
@@ -1443,7 +1447,8 @@ function setupElementEvents() {
                 'stage': 'main-stage', 'food': 'food-truck', 'bar': 'bar',
                 'wc': 'signal-wc', 'fence': 'fence', 'panic-fence': 'panic-fence', 'custom': 'generator',
                 'parking': 'signal-parking', 'disabled': 'signal-disabled', 'noparking': 'signal-no-parking',
-                'exit': 'signal-exit', 'no-entry': 'signal-no-entry', 'security': 'security', 'access-control': 'access-control', 'entrance': 'entrance'
+                'exit': 'signal-exit', 'no-entry': 'signal-no-entry', 'security': 'security', 'access-control': 'access-control', 'entrance': 'entrance',
+                'dressing-room': 'dressing-room'
             };
 			if (elemType) { elemType.value = mapIconToType[this.dataset.icon]; elemType.dispatchEvent(new Event('change')); }
 		};
@@ -2399,6 +2404,15 @@ function getPinIconSVG(iconKey, color, rotationDeg) {
             <rect x="16" y="30" width="10" height="10" fill="#fff6df" stroke="${D}" stroke-width="1.5"/>
             <rect x="38" y="30" width="10" height="10" fill="#fff6df" stroke="${D}" stroke-width="1.5"/>
             <rect x="27" y="42" width="10" height="12" fill="#8f7350" stroke="${D}" stroke-width="1.5"/>
+        </svg>`,
+        // Camerino: caseta de obra (módulo prefabricado) vista de frente, con
+        // el remate del techo, dos ventanas pequeñas y la puerta central.
+        'dressing-room': `<svg viewBox="0 0 64 64">${shadow}
+            <rect x="6" y="17" width="52" height="5" rx="1.5" fill="${D}"/>
+            <rect x="8" y="20" width="48" height="30" rx="2" fill="${bg}" stroke="${D}" stroke-width="2.5" stroke-linejoin="round"/>
+            <rect x="14" y="28" width="10" height="10" fill="#bfe3ff" stroke="${D}" stroke-width="1.6"/>
+            <rect x="40" y="28" width="10" height="10" fill="#bfe3ff" stroke="${D}" stroke-width="1.6"/>
+            <rect x="28" y="32" width="8" height="18" fill="#7a6a4f" stroke="${D}" stroke-width="1.6"/>
         </svg>`
     };
     return icons[iconKey] || `<svg viewBox="0 0 64 64">${shadow}<circle cx="32" cy="30" r="18" fill="${bg}" stroke="${D}" stroke-width="2.5"/></svg>`;
@@ -2419,6 +2433,7 @@ function getGenericIconUrl(type) {
         'security': 'assets/icons/security.svg',
         'access-control': 'assets/icons/access-control.svg',
         'entrance': 'assets/icons/entrance.svg',
+        'dressing-room': 'assets/icons/dressing-room.svg',
         'disabled': 'https://upload.wikimedia.org/wikipedia/commons/0/0c/Wheelchair_symbol.svg',
         'noparking': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48Y2lyY2xlIGN4PSI1MCIgY3k9IjUwIiByPSI0NSIgZmlsbD0iIzM0OThkYiIgc3Ryb2tlPSIjZTc0YzNjIiBzdHJva2Utd2lkdGg9IjEwIi8+PGxpbmUgeDE9IjE4IiB5MT0iMTgiIHgyPSI4MiIgeTI9IjgyIiBzdHJva2U9IiNlNzRjM2MiIHN0cm9rZS13aWR0aD0iMTAiLz48L3N2Zz4=',
         'exit': 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxMDAiIGhlaWdodD0iMTAwIj48cmVjdCB3aWR0aD0iMTAwJSIgaGVpZ2h0PSIxMDAlIiBmaWxsPSIjMjdhZTYwIi8+PHBhdGggZD0iTTMwIDIwaDQwdjYwSDMwek03NSA1MGwtMTUgMTBNNzUgNTBsLTE1LTEwIiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjgiLz48L3N2Zz4=',

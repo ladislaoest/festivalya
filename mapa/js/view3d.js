@@ -1476,6 +1476,8 @@ function drawElements(elements, threeScene) {
             // Mismo "pelele" fijo que el vigilante sin recorrido, pero en
             // azul -no patrulla, se queda siempre en el punto donde se coloca.
             obj3d = createSecurityFigure(new THREE.Vector3(pos.x, groundY, pos.z), element.rotation, threeScene, 0x3498db);
+        } else if (element.type === 'dressing-room') {
+            obj3d = createDressingRoomModel(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'entrance') {
             obj3d = createEntranceArch(new THREE.Vector3(pos.x, groundY, pos.z), element, threeScene);
         } else if (element.type === 'fence') {
@@ -1654,6 +1656,44 @@ function createFoodTruckModel(pos, element, scene) {
 		wheel.rotation.x = Math.PI / 2;
 		wheel.position.set(x, 0.35, z);
 		group.add(wheel);
+	});
+
+	group.position.copy(pos);
+	group.rotation.y = -((element.rotation || 0) * Math.PI) / 180;
+	scene.add(group);
+	return group;
+}
+
+// Camerino: caseta de obra (módulo prefabricado) de medida estándar
+// 6x2,4m y 2m de alto -el alto se deja fijo aquí en vez de venir de
+// element.width/length, que solo dan la huella en planta-, con remate de
+// techo, puerta central y una ventana a cada lado.
+function createDressingRoomModel(pos, element, scene) {
+	const group = new THREE.Group();
+	const length = element.length || 6;
+	const width = element.width || 2.4;
+	const height = 2;
+	const bodyMat = new THREE.MeshStandardMaterial({ color: element.color || 0xe3d5b8 });
+	const trimMat = new THREE.MeshStandardMaterial({ color: 0x7a6a4f });
+
+	const body = new THREE.Mesh(new THREE.BoxGeometry(length, height, width), bodyMat);
+	body.position.set(0, height / 2, 0);
+	group.add(body);
+
+	const roof = new THREE.Mesh(new THREE.BoxGeometry(length + 0.2, 0.12, width + 0.2), trimMat);
+	roof.position.set(0, height + 0.06, 0);
+	group.add(roof);
+
+	const door = new THREE.Mesh(new THREE.BoxGeometry(0.9, height * 0.85, 0.06), trimMat);
+	door.position.set(0, (height * 0.85) / 2, width / 2 + 0.01);
+	group.add(door);
+
+	const winMat = new THREE.MeshStandardMaterial({ color: 0xbfe3ff });
+	const winGeom = new THREE.BoxGeometry(0.7, 0.7, 0.06);
+	[-length * 0.28, length * 0.28].forEach(x => {
+		const win = new THREE.Mesh(winGeom, winMat);
+		win.position.set(x, height * 0.55, width / 2 + 0.01);
+		group.add(win);
 	});
 
 	group.position.copy(pos);

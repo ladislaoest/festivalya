@@ -1070,7 +1070,8 @@ function buildOverviewKeyframe(idx, hold, baseAngleOffset, center) {
 // Agrupa los elementos por tipo (conservando el orden de primera aparición
 // de cada tipo, y el orden original dentro de cada uno): así, p.ej., todos
 // los de seguridad se recorren seguidos, cámara en mano de uno a otro sin
-// volver al plano general -eso solo pasa al cambiar de tipo de elemento.
+// volver al plano general -eso solo pasa cuando hace falta reorientar (ver
+// "reorientDist" en buildTourKeyframes).
 function groupElementsByType(tourable) {
 	const groups = [];
 	const groupByType = new Map();
@@ -1086,6 +1087,99 @@ function groupElementsByType(tourable) {
 	return groups;
 }
 
+function elementTourSize(el) {
+	return Math.max(el.length || 0, el.width || 0, 3);
+}
+
+// Dentro de un mismo tipo, agrupa por cercanía real (encadenando vecinos a
+// distancia <= umbral, proporcional al tamaño del elemento): así, p.ej., una
+// fila de 7 baños contiguos se visita en un único plano que los engloba a
+// todos, en vez de acercarse y cortar a cada uno por separado -eso solo
+// tiene sentido cuando están realmente separados en el recinto, y en ese
+// caso cada uno cae en su propio grupo de tamaño 1.
+function clusterElementsByProximity(group, positions) {
+	const clusters = [];
+	const visited = new Set();
+	group.forEach(el => {
+		if (visited.has(el)) return;
+		visited.add(el);
+		const cluster = [el];
+		const queue = [el];
+		while (queue.length) {
+			const cur = queue.pop();
+			const curPos = positions.get(cur);
+			const threshold = Math.max(elementTourSize(cur) * 4, 10);
+			group.forEach(other => {
+				if (visited.has(other)) return;
+				if (curPos.distanceTo(positions.get(other)) <= threshold) {
+					visited.add(other);
+					cluster.push(other);
+					queue.push(other);
+				}
+			});
+		}
+		clusters.push(cluster);
+	});
+	return clusters;
+}
+
+function buildElementKeyframe(el, positions, elIdx) {
+	const worldPos = positions.get(el);
+	const cfg = (typeof festivalConfig !== 'undefined' && festivalConfig[el.type]) || {};
+	const dist = Math.max(elementTourSize(el) * 1.5, 4.5);
+	const angle = elIdx * GOLDEN_ANGLE; // variedad de encuadres por elemento
+	const targetHeight = 1.3;
+	const target = new THREE.Vector3(worldPos.x, targetHeight, worldPos.z);
+	const pos = new THREE.Vector3(
+		worldPos.x + Math.sin(angle) * dist,
+		targetHeight + dist * 0.5,
+		worldPos.z + Math.cos(angle) * dist
+	);
+	return {
+		label: el.name || cfg.label || el.type,
+		target,
+		pos,
+		hold: 1600,
+		followElement: null
+	};
+}
+
+// Un único plano para todo un grupo de elementos cercanos entre sí: la
+// cámara se aleja lo suficiente para encuadrarlos a todos a la vez (radio =
+// distancia del más lejano al centro, más su propio tamaño) en vez de saltar
+// de uno a otro.
+function buildClusterKeyframe(cluster, positions, elIdx) {
+	const center = new THREE.Vector3();
+	cluster.forEach(el => center.add(positions.get(el)));
+	center.divideScalar(cluster.length);
+
+	let maxReach = 0;
+	cluster.forEach(el => {
+		const reach = center.distanceTo(positions.get(el)) + elementTourSize(el) * 0.6;
+		if (reach > maxReach) maxReach = reach;
+	});
+
+	const dist = Math.max(maxReach * 2.4, 9);
+	const angle = elIdx * GOLDEN_ANGLE;
+	const targetHeight = 1.3;
+	const target = new THREE.Vector3(center.x, targetHeight, center.z);
+	const pos = new THREE.Vector3(
+		center.x + Math.sin(angle) * dist,
+		targetHeight + dist * 0.55,
+		center.z + Math.cos(angle) * dist
+	);
+	const cfg = (typeof festivalConfig !== 'undefined' && festivalConfig[cluster[0].type]) || {};
+	return {
+		label: `${cfg.label || cluster[0].type} (${cluster.length})`,
+		target,
+		pos,
+		// Un grupo grande merece un pelín más de tiempo para que se vea
+		// completo, pero sin pasarse.
+		hold: Math.min(3200, 1800 + cluster.length * 120),
+		followElement: null
+	};
+}
+
 function buildTourKeyframes() {
 	const keyframes = [];
 	const baseAngleOffset = Math.random() * Math.PI * 2;
@@ -1098,46 +1192,45 @@ function buildTourKeyframes() {
 	// nunca coinciden -con pocos elementos lejos del origen, el plano
 	// general apuntaba a suelo vacío.
 	const overviewCenter = new THREE.Vector3();
+	const positions = new Map();
+	tourable.forEach(el => {
+		const wp = new THREE.Vector3();
+		el._threeObj.getWorldPosition(wp);
+		positions.set(el, wp);
+		overviewCenter.add(wp);
+	});
 	if (tourable.length) {
-		tourable.forEach(el => {
-			const wp = new THREE.Vector3();
-			el._threeObj.getWorldPosition(wp);
-			overviewCenter.add(wp);
-		});
 		overviewCenter.divideScalar(tourable.length);
 		overviewCenter.y = 0;
 	}
 	keyframes.push(buildOverviewKeyframe(overviewCount++, 3000, baseAngleOffset, overviewCenter));
 	let elIdx = 0;
+	let lastCenter = overviewCenter.clone();
+
+	// El plano general de reorientación solo se inserta cuando el próximo
+	// grupo de elementos queda lejos del último punto visitado -si está
+	// cerca, la cámara hace una panorámica directa (ya suave, por la propia
+	// transición) en vez de ir y volver siempre a la misma vista general,
+	// que es lo que daba la sensación de saltos y repetición.
+	const reorientDist = Math.max(map3dPlaneSize * 0.22, 18);
 
 	groupElementsByType(tourable).forEach(group => {
-		group.forEach(el => {
-			const worldPos = new THREE.Vector3();
-			el._threeObj.getWorldPosition(worldPos);
-			const cfg = (typeof festivalConfig !== 'undefined' && festivalConfig[el.type]) || {};
-			const size = Math.max(el.length || 0, el.width || 0, 3);
-			const dist = Math.max(size * 1.5, 4.5);
-			const angle = elIdx * GOLDEN_ANGLE; // variedad de encuadres por elemento
-			const targetHeight = 1.3;
-			const target = new THREE.Vector3(worldPos.x, targetHeight, worldPos.z);
-			const pos = new THREE.Vector3(
-				worldPos.x + Math.sin(angle) * dist,
-				targetHeight + dist * 0.5,
-				worldPos.z + Math.cos(angle) * dist
-			);
-			keyframes.push({
-				label: el.name || cfg.label || el.type,
-				target,
-				pos,
-				hold: 1600,
-				followElement: null
-			});
+		const groupCenter = new THREE.Vector3();
+		group.forEach(el => groupCenter.add(positions.get(el)));
+		groupCenter.divideScalar(group.length);
+
+		if (groupCenter.distanceTo(lastCenter) > reorientDist) {
+			keyframes.push(buildOverviewKeyframe(overviewCount++, 1700, baseAngleOffset, overviewCenter));
+		}
+
+		clusterElementsByProximity(group, positions).forEach(cluster => {
+			keyframes.push(cluster.length > 1
+				? buildClusterKeyframe(cluster, positions, elIdx)
+				: buildElementKeyframe(cluster[0], positions, elIdx));
 			elIdx++;
 		});
 
-		// Solo al terminar cada TIPO de elemento -no entre cada uno- un
-		// respiro de plano general desde otro punto antes de seguir.
-		keyframes.push(buildOverviewKeyframe(overviewCount++, 1700, baseAngleOffset, overviewCenter));
+		lastCenter = groupCenter;
 	});
 
 	return keyframes;

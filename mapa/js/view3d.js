@@ -1012,20 +1012,34 @@ function updateSecurityPatrols() {
 // --- Tour automático: plano general + recorrido por todos los elementos ---
 function setupTourButton() {
 	const btn = document.getElementById('tour-3d-btn');
-	if (!btn || btn.dataset.tourHandlerBound) return;
-	btn.dataset.tourHandlerBound = '1';
-	btn.addEventListener('click', () => {
-		if (tourActive) stopTour(); else startTour();
-	});
+	if (btn && !btn.dataset.tourHandlerBound) {
+		btn.dataset.tourHandlerBound = '1';
+		btn.addEventListener('click', () => {
+			if (tourActive) stopTour(); else startTour();
+		});
+	}
+	const skipBtn = document.getElementById('tour-3d-skip-btn');
+	if (skipBtn && !skipBtn.dataset.tourHandlerBound) {
+		skipBtn.dataset.tourHandlerBound = '1';
+		skipBtn.addEventListener('click', () => {
+			// Corta la escena actual (esté en transición o en espera) y pasa
+			// a la siguiente ya mismo: advanceTourKeyframe() arranca la
+			// transición desde la posición actual de la cámara, así que no
+			// hay salto ni corte brusco, solo se acorta la escena.
+			if (tourActive && tourState) advanceTourKeyframe();
+		});
+	}
 }
 
 function updateTourUI() {
 	const btn = document.getElementById('tour-3d-btn');
+	const skipBtn = document.getElementById('tour-3d-skip-btn');
 	const caption = document.getElementById('tour-3d-caption');
 	if (btn) {
 		btn.textContent = tourActive ? '⏹ Detener tour' : '🎬 Tour automático';
 		btn.classList.toggle('active', tourActive);
 	}
+	if (skipBtn) skipBtn.style.display = tourActive ? '' : 'none';
 	if (caption) caption.style.display = tourActive ? 'block' : 'none';
 }
 

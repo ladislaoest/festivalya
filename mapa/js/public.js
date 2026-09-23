@@ -43,4 +43,6 @@ function showPublicMapError(message) {
     }
     const tourBtn = document.getElementById('tour-3d-btn');
     if (tourBtn) tourBtn.style.display = 'none';
+    const tourSkipBtn = document.getElementById('tour-3d-skip-btn');
+    if (tourSkipBtn) tourSkipBtn.style.display = 'none';
 }

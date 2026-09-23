@@ -601,12 +601,17 @@ body {
     z-index: 6;
 }
 
-.btn-3d-tour {
+.tour-3d-controls {
     position: absolute;
     bottom: 24px;
     left: 50%;
     transform: translateX(-50%);
     z-index: 10;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+.btn-3d-tour {
     background: linear-gradient(135deg, var(--accent-gold-bright), var(--accent-gold));
     border: none;
     padding: 11px 22px;
@@ -619,6 +624,19 @@ body {
 .btn-3d-tour.active {
     background: linear-gradient(135deg, #e74c3c, #c0392b);
     color: #fff;
+}
+.btn-3d-tour-skip {
+    background: rgba(20,18,10,0.75);
+    border: 1px solid rgba(255,255,255,0.25);
+    padding: 11px 18px;
+    border-radius: 24px;
+    color: #fff;
+    font-weight: bold;
+    cursor: pointer;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+}
+.btn-3d-tour-skip:hover {
+    background: rgba(20,18,10,0.92);
 }
 #tour-3d-caption {
     position: absolute;
